@@ -1,0 +1,36 @@
+[Unit]
+Description=TripProof API (dev.tripproofonline.com)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spsimmons
+Group=www-data
+UMask=0027
+WorkingDirectory=/applications/dev.tripproofonline.com/api
+EnvironmentFile=/applications/dev.tripproofonline.com/.env
+
+# The venv is run through its own python, never through the bin/ scripts: those carry an absolute
+# shebang from wherever the venv was built, and this one was built in a staging directory.
+ExecStartPre=/applications/dev.tripproofonline.com/venv/bin/python -m app.cli migrate
+ExecStart=/applications/dev.tripproofonline.com/venv/bin/python -m uvicorn app.main:app \
+    --host 127.0.0.1 --port 8010 --proxy-headers --forwarded-allow-ips 127.0.0.1
+
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/applications/dev.tripproofonline.com/storage
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dev-tripproof-api
+
+[Install]
+WantedBy=multi-user.target

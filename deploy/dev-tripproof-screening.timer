@@ -1,0 +1,14 @@
+# The 11th of each month, after OIG has republished on the 10th.
+#
+# Persistent=true so a month is never silently skipped: if the box was down on the 11th the run
+# happens when it comes back, because a missing month is the thing an auditor asks about.
+[Unit]
+Description=Monthly TripProof exclusion screening
+
+[Timer]
+OnCalendar=*-*-11 04:30:00
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+-- ################################################################################################
+-- # 098 - what to say when something arrives.
+-- #
+-- # An event carries ids so that a client has to go and ask rather than trusting the feed. But a
+-- # toast in the corner of the screen has nothing to ask: it appears for a second and says what
+-- # happened. Fetching a driver's name to write one sentence is three round trips for a line of
+-- # text, so the sentence travels with the event.
+-- #
+-- # It is a sentence, not state: nothing is read back from it, nothing decides anything on it, and
+-- # it says only what the account can already see everywhere else in the portal.
+-- ################################################################################################
+ALTER TABLE events ADD COLUMN label VARCHAR(160) NULL AFTER detail;

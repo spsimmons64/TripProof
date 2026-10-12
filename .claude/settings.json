@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.law.cornell.edu)",
+      "mcp__claude_ai_Claude_Docs__batch",
+      "WebFetch(domain:www.flrules.org)"
+    ]
+  }
+}

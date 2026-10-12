@@ -1,0 +1,13 @@
+-- ################################################################################################
+-- # 093 - a driver can be medically qualified without a card in the ordinary way.
+-- #
+-- # Some drivers operate under an exemption or a waiver rather than a plain medical examiner's
+-- # certificate - a federal exemption programme, a skill performance evaluation certificate, an
+-- # intrastate waiver a state issues for a condition the federal standard would bar. The file still
+-- # has to say the driver is medically qualified and until when; what it does not have is the card
+-- # everyone else's file holds.
+-- #
+-- # Recording that as "no certificate on file" is wrong - it reads as a gap where there is none. So
+-- # the record says so itself, and a copy stops being required for that one.
+-- ################################################################################################
+ALTER TABLE credentials ADD COLUMN exempt TINYINT(1) NOT NULL DEFAULT 0 AFTER expireson;

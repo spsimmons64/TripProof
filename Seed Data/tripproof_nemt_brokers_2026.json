@@ -1,0 +1,411 @@
+{
+  "dataset": "TripProof US NEMT broker and transportation coordinator directory",
+  "as_of": "2026-10-10",
+  "scope": "Curated notable organizations; not exhaustive or ranked by market share",
+  "disclaimer": "Addresses may be headquarters or mailing offices, not claim remittance addresses. Contact numbers may be corporate, provider, or member lines; see type. Verify contractual routing before use.",
+  "brokers": [
+    {
+      "id": "modivcare",
+      "name": "Modivcare",
+      "alternate_names": [
+        "LogistiCare"
+      ],
+      "market_segments": [
+        "Medicaid",
+        "Medicare Advantage",
+        "managed care"
+      ],
+      "address": {
+        "street": "6900 E. Layton Avenue",
+        "unit": "12th Floor",
+        "city": "Denver",
+        "state": "CO",
+        "postal_code": "80237",
+        "country": "US",
+        "type": "corporate headquarters"
+      },
+      "phones": [
+        {
+          "number": "720-258-2130",
+          "type": "corporate, SEC-listed"
+        }
+      ],
+      "website": "https://www.modivcare.com/",
+      "notes": "Provider inquiries are routed through its transportation provider contact forms; the corporate number is not a dedicated provider line.",
+      "sources": [
+        "https://www.modivcare.com/contact-us-business/",
+        "https://www.sec.gov/Archives/edgar/data/1220754/000143774925038831/modv20251226_8k.htm"
+      ]
+    },
+    {
+      "id": "mtm",
+      "name": "MTM",
+      "alternate_names": [
+        "Medical Transportation Management",
+        "Veyo (acquired brand)"
+      ],
+      "market_segments": [
+        "Medicaid",
+        "Medicare Advantage",
+        "managed care"
+      ],
+      "address": {
+        "street": "16 Hawk Ridge Drive",
+        "unit": null,
+        "city": "Lake St. Louis",
+        "state": "MO",
+        "postal_code": "63367",
+        "country": "US",
+        "type": "corporate headquarters"
+      },
+      "phones": [
+        {
+          "number": "636-561-5686",
+          "type": "corporate"
+        }
+      ],
+      "website": "https://www.mtm-inc.net/",
+      "notes": "Contracted transportation providers should use their assigned Vendor Account Manager.",
+      "sources": [
+        "https://www.mtm-inc.net/contact/",
+        "https://www.veyo.com/home-2/"
+      ]
+    },
+    {
+      "id": "access2care",
+      "name": "Access2Care",
+      "alternate_names": [],
+      "market_segments": [
+        "Medicaid",
+        "managed care"
+      ],
+      "address": {
+        "street": "P.O. Box 1627",
+        "unit": null,
+        "city": "Royal Oak",
+        "state": "MI",
+        "postal_code": "48068",
+        "country": "US",
+        "type": "published mailing address"
+      },
+      "phones": [
+        {
+          "number": "844-427-7772",
+          "type": "published general contact"
+        },
+        {
+          "number": "888-373-4812",
+          "type": "help center"
+        }
+      ],
+      "website": "https://www.access2care.com/",
+      "notes": "A Global Medical Response solution; public contact address is a PO box, not a verified headquarters.",
+      "sources": [
+        "https://info.access2care.com/",
+        "https://info.access2care.com/helpCenter"
+      ]
+    },
+    {
+      "id": "saferide_health",
+      "name": "SafeRide Health",
+      "alternate_names": [],
+      "market_segments": [
+        "Medicaid",
+        "Medicare Advantage",
+        "managed care"
+      ],
+      "address": {
+        "street": "18302 Talavera Ridge",
+        "unit": "Suite 300",
+        "city": "San Antonio",
+        "state": "TX",
+        "postal_code": "78257",
+        "country": "US",
+        "type": "published claims mailing address and headquarters location"
+      },
+      "phones": [
+        {
+          "number": "855-955-7433",
+          "type": "care-provider/health-plan support"
+        }
+      ],
+      "website": "https://www.saferidehealth.com/",
+      "notes": "Contact number is for health plans and care providers; NEMT providers may have separate channels.",
+      "sources": [
+        "https://www.saferidehealth.com/help-center/care-providers",
+        "https://saferidehealth.com/caresource"
+      ]
+    },
+    {
+      "id": "verida",
+      "name": "Verida",
+      "alternate_names": [
+        "Southeastrans"
+      ],
+      "market_segments": [
+        "Medicaid",
+        "Medicare Advantage",
+        "managed care"
+      ],
+      "address": {
+        "street": "843 Dallas Highway",
+        "unit": null,
+        "city": "Villa Rica",
+        "state": "GA",
+        "postal_code": "30180",
+        "country": "US",
+        "type": "office"
+      },
+      "phones": [
+        {
+          "number": "678-510-4600",
+          "type": "office"
+        }
+      ],
+      "website": "https://verida.com/",
+      "notes": "Phone numbers for member reservations differ by state and Medicaid region.",
+      "sources": [
+        "https://verida.com/"
+      ]
+    },
+    {
+      "id": "alivi",
+      "name": "Alivi Health",
+      "alternate_names": [
+        "Alivi Technology"
+      ],
+      "market_segments": [
+        "Medicaid",
+        "Medicare Advantage",
+        "managed care"
+      ],
+      "address": {
+        "street": "2290 10th Avenue North",
+        "unit": "6th Floor",
+        "city": "Lake Worth",
+        "state": "FL",
+        "postal_code": "33461",
+        "country": "US",
+        "type": "published legal contact address"
+      },
+      "phones": [
+        {
+          "number": "786-441-8500",
+          "type": "published privacy/general contact"
+        }
+      ],
+      "website": "https://alivi.com/",
+      "notes": "Public pages also list a Miami registered address. Member ride numbers are health-plan specific.",
+      "sources": [
+        "https://alivi.com/legal/",
+        "https://alivi.com/aliviride/pp/"
+      ]
+    },
+    {
+      "id": "cts",
+      "name": "Coordinated Transportation Solutions (CTS)",
+      "alternate_names": [],
+      "market_segments": [
+        "Medicaid",
+        "managed care",
+        "government programs",
+        "workers compensation"
+      ],
+      "address": {
+        "street": "35 Nutmeg Drive",
+        "unit": "Suite 120",
+        "city": "Trumbull",
+        "state": "CT",
+        "postal_code": "06611",
+        "country": "US",
+        "type": "Connecticut headquarters"
+      },
+      "phones": [
+        {
+          "number": "203-736-8810",
+          "type": "headquarters"
+        }
+      ],
+      "website": "https://www.ctstransit.com/",
+      "notes": "Not-for-profit transportation broker and mobility manager.",
+      "sources": [
+        "https://www.ctstransit.com/"
+      ]
+    },
+    {
+      "id": "mas",
+      "name": "Medical Answering Services (MAS)",
+      "alternate_names": [],
+      "market_segments": [
+        "New York Medicaid"
+      ],
+      "address": {
+        "street": "P.O. Box 12000",
+        "unit": null,
+        "city": "Syracuse",
+        "state": "NY",
+        "postal_code": "13218",
+        "country": "US",
+        "type": "published mailing address"
+      },
+      "phones": [
+        {
+          "number": "800-850-5340",
+          "type": "general"
+        },
+        {
+          "number": "844-666-6270",
+          "type": "downstate member scheduling"
+        },
+        {
+          "number": "866-932-7740",
+          "type": "upstate member scheduling"
+        }
+      ],
+      "website": "https://www.medanswering.com/",
+      "notes": "New York Medicaid transportation broker. Publishes transportation-provider API documentation.",
+      "sources": [
+        "https://www.health.ny.gov/health_care/medicaid/members/medtrans_overview.htm",
+        "https://www.medanswering.com/documents/Doc-MAS_Public_Site--2017-08-01-13-35-28.pdf"
+      ]
+    },
+    {
+      "id": "meditrans",
+      "name": "MediTrans",
+      "alternate_names": [
+        "Medi Trans, LLC"
+      ],
+      "market_segments": [
+        "Louisiana Medicaid managed care",
+        "managed care"
+      ],
+      "address": {
+        "street": "102 Asma Boulevard",
+        "unit": "Suite 200",
+        "city": "Lafayette",
+        "state": "LA",
+        "postal_code": "70508",
+        "country": "US",
+        "type": "office"
+      },
+      "phones": [
+        {
+          "number": "337-534-4484",
+          "type": "office"
+        },
+        {
+          "number": "844-349-4326",
+          "type": "Louisiana transportation coordination/provider inquiries; options vary"
+        }
+      ],
+      "website": "https://meditrans.com/",
+      "notes": "Louisiana-focused broker; plan-specific reservation phone numbers vary.",
+      "sources": [
+        "https://meditrans.com/contact-us/",
+        "https://ldh.la.gov/medicaid/medical-transportation-provider-resources"
+      ]
+    },
+    {
+      "id": "transdev_intelliride",
+      "name": "Transdev Health Solutions / IntelliRide",
+      "alternate_names": [
+        "IntelliRide"
+      ],
+      "market_segments": [
+        "Colorado Medicaid",
+        "government programs"
+      ],
+      "address": {
+        "street": "720 E. Butterfield Road",
+        "unit": "Suite 400",
+        "city": "Lombard",
+        "state": "IL",
+        "postal_code": "60148",
+        "country": "US",
+        "type": "parent company headquarters"
+      },
+      "phones": [
+        {
+          "number": "303-316-3848",
+          "type": "Colorado transportation provider line"
+        },
+        {
+          "number": "855-489-4999",
+          "type": "IntelliRide general toll-free"
+        },
+        {
+          "number": "800-225-8880",
+          "type": "Transdev corporate"
+        }
+      ],
+      "website": "https://transdevhealthsolutions.com/",
+      "notes": "Address is for parent Transdev, not confirmed as the local IntelliRide program office.",
+      "sources": [
+        "https://transdevhealthsolutions.com/colorado/transportation-providers/",
+        "https://transdevna.com/about-us/contact/"
+      ]
+    },
+    {
+      "id": "ride_health",
+      "name": "Ride Health",
+      "alternate_names": [],
+      "market_segments": [
+        "health plans",
+        "health systems",
+        "care coordination"
+      ],
+      "address": {
+        "street": null,
+        "unit": null,
+        "city": "New York",
+        "state": "NY",
+        "postal_code": "10001",
+        "country": "US",
+        "type": "published city/ZIP mailing location; no street address"
+      },
+      "phones": [
+        {
+          "number": "833-267-7433",
+          "type": "direct contact"
+        }
+      ],
+      "website": "https://www.ridehealth.com/",
+      "notes": "Healthcare transportation coordination platform; distinct from state Medicaid brokerage contractors.",
+      "sources": [
+        "https://www.ridehealth.com/contact"
+      ]
+    },
+    {
+      "id": "one_call",
+      "name": "One Call",
+      "alternate_names": [
+        "One Call Care Management"
+      ],
+      "market_segments": [
+        "workers compensation",
+        "injured worker transport"
+      ],
+      "address": {
+        "street": "841 Prudential Drive",
+        "unit": "Suite 204",
+        "city": "Jacksonville",
+        "state": "FL",
+        "postal_code": "32207",
+        "country": "US",
+        "type": "corporate headquarters"
+      },
+      "phones": [
+        {
+          "number": "866-697-2680",
+          "type": "referrals and general"
+        }
+      ],
+      "website": "https://onecallcm.com/",
+      "notes": "Workers compensation transportation coordinator, not a general Medicaid broker.",
+      "sources": [
+        "https://onecallcm.com/become-a-provider",
+        "https://refer.onecallcm.com/"
+      ]
+    }
+  ]
+}

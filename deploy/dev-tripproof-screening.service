@@ -1,0 +1,24 @@
+# Monthly exclusion screening.
+#
+# Every driver on the platform against the OIG exclusion list. Runs on the 11th because OIG
+# republishes by the 10th - screening against last month's file and calling it this month's check
+# is the failure this whole job exists to avoid.
+[Unit]
+Description=TripProof exclusion screening (dev.tripproofonline.com)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=spsimmons
+Group=www-data
+UMask=0027
+WorkingDirectory=/applications/dev.tripproofonline.com/api
+EnvironmentFile=/applications/dev.tripproofonline.com/.env
+ExecStart=/applications/dev.tripproofonline.com/venv/bin/python -m app.cli screen-exclusions
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/applications/dev.tripproofonline.com/storage

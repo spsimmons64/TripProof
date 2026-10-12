@@ -1,0 +1,39 @@
+"""Create a company requirement, see it reach a driver, then retire it. All rolled back."""
+import sys
+sys.path.insert(0, '/applications/dev.tripproofonline.com/api')
+from app.db import engine, row
+from app import rules, facts as factset
+from app.routers import vault
+
+class Req:
+    client = None
+    headers = {}
+
+def look(conn, d, code, label):
+    g = factset.assemble(conn, d['accountid'], d['recordid'])
+    items = rules.for_driver(conn, d['accountid'], d['recordid'], g['facts'])
+    i = next((x for x in items if x['code'] == code), None)
+    if not i:
+        print(f'{label:34} not in this driver\'s list')
+        return
+    print(f'{label:34} applies={str(i["applies"]):5} {i["status"]:10} gate={i["gate"]:10} '
+          f'stage={i["duestage"]}')
+
+import asyncio
+with engine.begin() as conn:
+    d = row(conn, "SELECT recordid, accountid FROM drivers WHERE lastname LIKE 'HORTON%' LIMIT 1")
+    user = {"accountid": d['accountid'], "recordid": None, "timezone": "America/New_York"}
+    out = asyncio.get_event_loop().run_until_complete(
+        vault.add_company_requirement(
+            Req(),
+            body='{"name":"Defensive driving course","description":"Our own refresher.",'
+                 '"audience":"all","duestage":"athire","duedays":45,'
+                 '"expiresafterdays":1095,"blocking":false,"reason":"ABC Transit contract"}',
+            template=None, user=user, conn=conn))
+    code = out['code']
+    print('created', code)
+    look(conn, d, code, 'the company requirement')
+    vault.retire_company_requirement(code, Req(), user=user, conn=conn)
+    look(conn, d, code, 'after retiring it')
+    conn.rollback()
+    print('\nrolled back')

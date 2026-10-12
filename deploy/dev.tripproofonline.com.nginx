@@ -1,0 +1,52 @@
+# dev.tripproofonline.com - the SPA is served from disk, /api goes to the uvicorn unit on :8010.
+# certbot --nginx adds the TLS server block and the redirect; leave its lines in place.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name dev.tripproofonline.com;
+
+    root /applications/dev.tripproofonline.com/web;
+    index index.html;
+
+    access_log /var/log/nginx/dev.tripproofonline.com.access.log;
+    error_log  /var/log/nginx/dev.tripproofonline.com.error.log;
+
+    client_max_body_size 50m;           # credential scans and licence photographs
+
+    # The application view is one large JSON document of HTML; over a domestic uplink the transfer
+    # is the whole of the wait, so it is worth compressing.
+    gzip on;
+    gzip_proxied any;
+    gzip_min_length 1024;
+    gzip_comp_level 5;
+    gzip_types application/json application/javascript text/css text/plain image/svg+xml;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8010;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;        # full re-checks and PDF rendering
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    }
+
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
+    # index.html names the current hashed bundles, so it must be re-checked on every load.
+    location / {
+        try_files $uri /index.html;
+        add_header Cache-Control "no-cache" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    }
+}

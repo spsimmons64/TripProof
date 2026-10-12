@@ -1,0 +1,26 @@
+# Override: run a local MariaDB instead of using DBServer. Development only.
+services:
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: ${LOCALDB_ROOT_PASSWORD:-devroot}
+      MARIADB_DATABASE: ${DB_NAME:-tripproof}
+      MARIADB_USER: ${DB_USER:-tripproof}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-devpass}
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+
+  api:
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  dbdata:

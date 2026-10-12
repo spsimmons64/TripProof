@@ -1,0 +1,13 @@
+# Deploying dev.tripproofonline.com without a password prompt: restart the app, look at it, and
+# reload nginx after its own syntax check. Nothing else, and no shell.
+#
+#   sudo install -m 440 -o root -g root ~/tripproof-stage/deploy/tripproof-dev.sudoers \
+#        /etc/sudoers.d/tripproof-dev
+#   sudo visudo -c -f /etc/sudoers.d/tripproof-dev
+#
+# Remove it with: sudo rm /etc/sudoers.d/tripproof-dev
+spsimmons ALL=(root) NOPASSWD: /usr/bin/systemctl restart dev-tripproof-api, \
+                               /usr/bin/systemctl status dev-tripproof-api, \
+                               /usr/bin/systemctl is-active dev-tripproof-api, \
+                               /usr/bin/systemctl reload nginx, \
+                               /usr/sbin/nginx -t

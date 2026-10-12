@@ -1,0 +1,36 @@
+# TripProof — API + web. The database is the existing MariaDB on DBServer (set in .env).
+#
+#   cp .env.example .env    # fill in DB credentials, JWT_SECRET, PHI_KEYS
+#   docker compose up -d --build
+#   docker compose exec api python -m app.cli create-account --name "..." --email you@example.com
+#
+# For a throwaway local MariaDB instead of DBServer:
+#   docker compose -f docker-compose.yml -f docker-compose.localdb.yml up -d --build
+services:
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    env_file: .env
+    environment:
+      CORS_ORIGINS: ${PUBLIC_URL:-http://localhost:8080}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+    volumes:
+      - storage:/data/storage
+    restart: unless-stopped
+    # If DBServer is not resolvable from inside containers, map it here:
+    # extra_hosts:
+    #   - "DBServer:10.0.0.10"
+
+  web:
+    build: ./web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  # Encrypted document and packet blobs. Back this up together with the database — and keep the
+  # PHI_KEYS somewhere else: the blobs are unreadable without them.
+  storage:
