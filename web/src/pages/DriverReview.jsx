@@ -10,6 +10,7 @@ import { Modal } from '../admin/common.jsx'
 import Pager, { PAGE_SIZES } from '../components/Pager.jsx'
 import { useUser } from '../App.jsx'
 import SignatureBlock from '../components/UserSignature.jsx'
+import { ItemPanel, PanelsDialog, ReadingViewer, SingleDocumentDialog, docStanding } from '../components/RequirementDialogs.jsx'
 import DocumentViewer, { DocumentPane } from '../components/DocumentViewer.jsx'
 import ApplicantForm from '../components/ApplicantForm.jsx'
 import SignedDocViewer from '../components/SignedDocViewer.jsx'
@@ -2120,36 +2121,19 @@ function TestingHistory({ id, onChanged }) {
   )
 }
 
-// Signed documents that are read from a LIST of what is on file, rather than by opening the one
-// document straight away.
-//
-// The distinction is whether a driver can have MORE THAN ONE. A policy acknowledgement is signed
-// once and never again, so the requirement and the document are the same thing and a list in
-// front of it is a door with nothing behind it. An application, a PHI acknowledgement and an FCRA
-// authorisation are all re-signed - on rehire, when a policy is reissued, before a new screening
-// - and then the question somebody opens the requirement with is WHICH one is on file and whether
-// anybody has read it. A document cannot answer that: it never says what is beside it.
-const READ_FROM_A_LIST = new Set(['APPLICATION', 'PHI_ACK', 'FCRA_AUTH', 'I9', 'W4', 'PREV7_ONDUTY'])
-// Read from the list, and completed again from it too.
+// Every requirement backed by one document - a signed form, a certificate - opens in the one layout
+// (components/RequirementDialogs.jsx): the latest on file, its standing, and View. Which extras it
+// carries is read off the rule rather than kept in a list here - a rule that recurs gets the expiry,
+// the next upload and its history - so a requirement added tomorrow opens the way the others do.
+// A form completed again from the same dialog - a new W-4 when withholding changes. The I-9 is
+// completed once.
 const COMPLETED_AGAIN = new Set(['W4'])
-// Credentials read the same way.
-const CREDENTIAL_FROM_A_LIST = new Set(['ELDT', 'FL_LEVEL1', 'HIPAA_TRAINING',
-  'WHEELCHAIR_SECUREMENT', 'BLOODBORNE_PATHOGENS', 'PASSENGER_ASSISTANCE', 'DOT_MEDICAL_CARD',
-  'SPE_CERTIFICATE', 'DEFENSIVE_DRIVING', 'FIRST_AID', 'SAFETY_SENSITIVITY', 'SPILL_KIT_BIOHAZARD'])
-// Of those, the ones that run out and are replaced: the list says when, and the next one is added
-// or asked for from it.
-const RENEWED = new Set(['DOT_MEDICAL_CARD', 'SPE_CERTIFICATE', 'DEFENSIVE_DRIVING', 'FIRST_AID',
-  'SAFETY_SENSITIVITY', 'SPILL_KIT_BIOHAZARD'])
 // Where a screening came from. Only the first two are the authority itself.
 const PROVENANCE = { fdle: 'FDLE', ahca: 'AHCA Clearinghouse', vendor: 'Screening vendor' }
-// Trainings filed as a certificate: the empty file says so in the middle of the dialog, and what
-// puts one on it is uploading the document.
 // The company's own drug screen: the panel run, and what came back.
 const SCREEN_TYPES = ['5-Panel', '10-Panel', '12-Panel', 'Other']
 const SCREEN_RESULTS = { negative: 'Negative', negativedilute: 'Negative-Dilute', positive: 'Positive',
   refusal: 'Refusal', cancelled: 'Cancelled' }
-const UPLOAD_ONLY = new Set(['HIPAA_TRAINING', 'WHEELCHAIR_SECUREMENT', 'BLOODBORNE_PATHOGENS',
-  'PASSENGER_ASSISTANCE'])
 
 // Everything on file for this driver, in sections. A signed document is rebuilt from the record
 // rather than stored, so it opens its own way.
@@ -3905,52 +3889,35 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
     const states = coverage?.required || []
     return (
       <>
-      <Modal title={r.name} onClose={onClose} brief={r?.description} width={DETAIL}
-        footer={<button type="button" onClick={onClose}>Close</button>}>
-        <div className="stack">
-          {err && <div className="notice bad">{err}</div>}
-          {!states.length ? (
-            <div className="notice warn">
-              {coverage?.why || 'No licenses are on file, so there is nothing to say which states to ask.'}
-            </div>
-          ) : (
-            <div className="mvrpanels">
-              {/* One panel per license, each with the last record pulled on it. */}
-              {(coverage?.cards || []).map((s) => {
-                const label = `${s.state} ${s.number}`
-                const rec = s.record
-                return (
-                  <section key={s.licenseid} className="mvrpanel">
-                    <header>
-                      <span className="mvrlicense">{label}</span>
-                      <span className={s.active ? 'st-active' : 'st-inactive'}>
-                        {s.active ? 'Active' : 'Inactive'}
-                      </span>
-                    </header>
-                    <dl className="mvrfacts">
-                      <div><dt>Last record</dt>
-                        <dd className={rec ? (expiry(s.expireson) === 'st-expired' ? 'st-expired' : 'st-active')
-                          : s.ordered ? undefined : 'st-expired'}>
-                          {rec ? (rec.norecord ? 'None available'
-                            : rec.issuedon ? date(rec.issuedon) : 'On file')
-                            : 'Not on file'}
-                        </dd></div>
-                      <div><dt>Expires</dt>
-                        <dd className={expiry(s.expireson)}>{s.expireson ? date(s.expireson) : '-'}</dd></div>
-                      <div><dt>Review</dt>
-                        <dd className={unread(s) ? 'st-ordered'
-                          : rec?.finding === 'disqualified' ? 'st-expired'
-                            : rec?.finding ? 'st-active' : undefined}>
-                          {!rec || rec.norecord ? '-'
-                            : unread(s) ? 'Not reviewed'
-                              : MVR_FINDING[rec.finding] || 'Reviewed'}
-                        </dd></div>
-                      <div><dt>Order</dt>
-                        <dd className={s.ordered ? 'st-ordered' : undefined}>
-                          {s.ordered ? `Ordered ${date(s.ordered.orderedon)}` : 'None outstanding'}
-                        </dd></div>
-                    </dl>
-                    <footer>
+      {/* One panel per license, each with the last record pulled on it. */}
+      <PanelsDialog title={r.name} brief={r?.description} err={err} width={DETAIL}
+        onClose={onClose}
+        empty={<div className="notice warn">
+          {coverage?.why || 'No licenses are on file, so there is nothing to say which states to ask.'}
+        </div>}>
+        {states.length > 0 && (coverage?.cards || []).map((s) => {
+          const label = `${s.state} ${s.number}`
+          const rec = s.record
+          return (
+            <ItemPanel key={s.licenseid} title={label}
+              status={s.active ? ['Active', 'st-active'] : ['Inactive', 'st-inactive']}
+              facts={[
+                { label: 'Last record',
+                  tone: rec ? (expiry(s.expireson) === 'st-expired' ? 'st-expired' : 'st-active')
+                    : s.ordered ? undefined : 'st-expired',
+                  value: rec ? (rec.norecord ? 'None available'
+                    : rec.issuedon ? date(rec.issuedon) : 'On file') : 'Not on file' },
+                { label: 'Expires', tone: expiry(s.expireson),
+                  value: s.expireson ? date(s.expireson) : '-' },
+                { label: 'Review',
+                  tone: unread(s) ? 'st-ordered' : rec?.finding === 'disqualified' ? 'st-expired'
+                    : rec?.finding ? 'st-active' : undefined,
+                  value: !rec || rec.norecord ? '-' : unread(s) ? 'Not reviewed'
+                    : MVR_FINDING[rec.finding] || 'Reviewed' },
+                { label: 'Order', tone: s.ordered ? 'st-ordered' : undefined,
+                  value: s.ordered ? `Ordered ${date(s.ordered.orderedon)}` : 'None outstanding' },
+              ]}
+              actions={<>
                       {rec?.documentid && (
                         <button type="button" className={unread(s) ? 'primary' : undefined}
                           onClick={() => {
@@ -3994,14 +3961,10 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
                         onClick={() => setMvrHistory(s)}>
                         <History size={13} /> History
                       </button>
-                    </footer>
-                  </section>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </Modal>
+                    </>} />
+          )
+        })}
+      </PanelsDialog>
       {mvrHistory && (
         <Modal title={`Motor Vehicle Records - ${mvrHistory.state} ${mvrHistory.number}`}
           onClose={() => setMvrHistory(null)} width={DETAIL}
@@ -4348,9 +4311,8 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
               driver is sent - and without the explanation, which the list dialog in front of it
               has already given. */}
           <SignedDocViewer doc={signedDoc} onClose={onClose}
-            asPdf={READ_FROM_A_LIST.has(source.which)
-              ? `/drivers/${id}/signed/${source.which}/pdf` : undefined}
-            brief={READ_FROM_A_LIST.has(source.which) ? undefined : r?.description}
+            asPdf={`/drivers/${id}/signed/${source.which}/pdf`}
+            brief={undefined}
             action={unread && (
               /* Reading it is the last thing anybody does here, so this closes rather than
                  dropping back into a view that would set about re-opening the same document.
@@ -4407,64 +4369,34 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
     const onfile = shown
       .filter((x) => x.sourcetable === 'documentsignatures' || x.documentid)
       .slice(0, 1)
-    if (READ_FROM_A_LIST.has(source.which) && !loadingSigned && onfile.length) {
+    if (!loadingSigned && onfile.length) {
+      const x = onfile[0]
       return (
         <>
-        <Modal title={r.name} onClose={onClose} brief={r?.description} width={720}
-          footer={<>
-            {/* Open whichever kind is actually on file. Asking for the signed version of a
-                document that was uploaded rather than signed answers 404 - "This driver has not
-                signed that" - and that is a true sentence about a thing nobody asked, shown as
-                an error over a document that is sitting right there. Leaving the list is enough
-                on its own; the branches below know which viewer the evidence wants. */}
-            {/* The latest, whichever kind it is: a copy filed after an earlier signing is the
-                one on file, and opening the signing would show the form it replaced. */}
-            <button type="button" className="primary" disabled={busy || !onfile.length}
-              onClick={() => (onfile[0]?.sourcetable !== 'documentsignatures' && onfile[0]?.documentid
-                ? setViewing({ documentid: onfile[0].documentid, filename: r.name })
-                : signed ? openSigned() : setLoadingSigned(true))}>
-              <Eye size={14} /> {unread ? 'Review' : 'View'}
+        <SingleDocumentDialog title={r.name} brief={r?.description} err={err}
+          notice={COMPLETED_AGAIN.has(source.which) ? asked : null} unread={unread}
+          // Signed here, or a copy somebody filed - the row says which, because they are not the
+          // same evidence.
+          row={{ on: x.effectiveon || x.recordedon,
+                 document: x.sourcetable === 'documentsignatures' ? r.name : 'Copy filed by the office',
+                 status: docStanding({ unread: x.needsreading || unread }) }}
+          // Open whichever kind is actually on file: the latest, whether a copy filed after an
+          // earlier signing or the signing itself.
+          onView={() => (x.sourcetable !== 'documentsignatures' && x.documentid
+            ? setViewing({ documentid: x.documentid, filename: r.name })
+            : signed ? openSigned() : setLoadingSigned(true))}
+          // A form completed again - a new W-4 when withholding changes. The I-9 is done once.
+          actions={COMPLETED_AGAIN.has(source.which) && <>
+            <button type="button" onClick={() => setFiling('against')}>
+              <FileUp size={13} /> Upload Document
             </button>
-            {/* A form completed again - a new W-4 when withholding changes. Another goes on the
-                file either way; the table shows the latest. The I-9 is completed once. */}
-            {COMPLETED_AGAIN.has(source.which) && (
-              <>
-                <button type="button" onClick={() => setFiling('against')}>
-                  <FileUp size={13} /> Upload Document
-                </button>
-                {signable && (
-                  <button type="button" disabled={busy} onClick={ask}>
-                    <FileSignature size={13} /> Ask the driver to sign
-                  </button>
-                )}
-              </>
+            {signable && (
+              <button type="button" disabled={busy} onClick={ask}>
+                <FileSignature size={13} /> Ask the driver to sign
+              </button>
             )}
-            <button type="button" onClick={onClose}>Close</button>
-          </>}>
-          <div className="stack">
-            {err && <div className="notice bad">{err}</div>}
-            {COMPLETED_AGAIN.has(source.which) && asked}
-            {(
-              <table className="residencetable recordtable">
-                <thead><tr><th>Date</th><th>Document</th><th>Status</th></tr></thead>
-                <tbody>
-                  {onfile.map((x) => (
-                    <tr key={x.recordid}>
-                      <td>{date(x.effectiveon || x.recordedon)}</td>
-                      {/* Signed here, or a copy somebody filed - the row says which, because
-                          they are not the same evidence. */}
-                      <td>{x.sourcetable === 'documentsignatures'
-                        ? r.name : 'Copy filed by the office'}</td>
-                      <td className={x.needsreading || unread ? 'st-ordered' : 'st-active'}>
-                        {x.needsreading || unread ? 'Not Reviewed' : 'Reviewed'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </Modal>
+          </>}
+          onClose={onClose} />
         {viewing && <DocumentViewer id={viewing.documentid} name={viewing.filename}
           onClose={() => setViewing(null)} />}
         </>
@@ -4480,7 +4412,7 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
     if (active?.documentid) {
       return (
         <DocumentViewer id={active.documentid} name={r.name} onClose={onClose}
-          brief={READ_FROM_A_LIST.has(source.which) ? undefined : r?.description}
+          brief={undefined}
           action={
             <button type="button" onClick={() => setFiling('against')}>
               <Plus size={13} /> Upload a new copy
@@ -4488,12 +4420,11 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
           } />
       )
     }
-    // Nothing signed and nothing filed: laid out as the PHI acknowledgement's empty file is - the
-    // line saying so in the middle, and the two ways to put one on it below. The paper copy is
-    // filed in a dialog of its own.
+    // Nothing signed and nothing filed: the empty file, and the two ways to put one on it. The
+    // paper copy is filed in a dialog of its own.
     return (
-      <Modal title={r.name} onClose={onClose} brief={r?.description} width={720}
-        footer={<>
+      <SingleDocumentDialog title={r.name} brief={r?.description} err={err} notice={asked}
+        emptyActions={<>
           <button type="button" onClick={() => setFiling('against')}>
             <FileUp size={13} /> Upload Document
           </button>
@@ -4502,13 +4433,8 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
               <FileSignature size={13} /> Ask the driver to sign
             </button>
           )}
-          <button type="button" onClick={onClose}>Close</button>
-        </>}>
-        <div className="stack">
-          {err && <div className="notice bad">{err}</div>}
-          {asked || <div className="gridempty">No {r.name} On File For This Driver</div>}
-        </div>
-      </Modal>
+        </>}
+        onClose={onClose} />
     )
   }
 
@@ -4520,18 +4446,16 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
     // View - or, with nothing on file, the request to the driver and the upload of a paper copy.
     // Answered or not; there is no history to it.
     const onfile = records.find((x) => x.documentid)
-    const waiting = onfile && (unchecked.has(onfile.documentid) || onfile.needsreading)
+    const waiting = Boolean(onfile) && (unchecked.has(onfile.documentid) || onfile.needsreading)
     return (
       <>
-      <Modal title={r.name} onClose={onClose} brief={r?.description} width={720}
-        footer={onfile ? <>
-          <button type="button" className="primary" onClick={() => setViewing({
-            documentid: onfile.documentid, filename: r.name,
-            check: unchecked.has(onfile.documentid), record: onfile.needsreading ? onfile : null })}>
-            <Eye size={14} /> {waiting ? 'Review' : 'View'}
-          </button>
-          <button type="button" onClick={onClose}>Close</button>
-        </> : <>
+      <SingleDocumentDialog title={r.name} brief={r?.description} err={err}
+        notice={onfile ? null : asked} unread={waiting}
+        row={onfile && { on: onfile.effectiveon || onfile.recordedon,
+                         status: docStanding({ unread: waiting }) }}
+        onView={() => setViewing({ documentid: onfile.documentid, filename: r.name,
+          check: unchecked.has(onfile.documentid), record: onfile.needsreading ? onfile : null })}
+        emptyActions={<>
           <button type="button" onClick={() => setFiling('against')}>
             <FileUp size={13} /> Upload Document
           </button>
@@ -4539,43 +4463,10 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
             onClick={() => askForIt('PREEMP_DA_QUESTIONNAIRE')}>
             <FileSignature size={13} /> Ask the driver to sign
           </button>
-          <button type="button" onClick={onClose}>Close</button>
-        </>}>
-        <div className="stack">
-          {err && <div className="notice bad">{err}</div>}
-          {!onfile && asked}
-          {onfile ? (
-            <table className="residencetable recordtable">
-              <thead><tr><th>Date</th><th>Document</th><th>Status</th></tr></thead>
-              <tbody>
-                <tr>
-                  <td>{date(onfile.effectiveon || onfile.recordedon)}</td>
-                  <td>{r.name}</td>
-                  <td className={waiting ? 'st-ordered' : 'st-active'}>
-                    {waiting ? 'Not Reviewed' : 'Reviewed'}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          ) : !asked && <div className="gridempty">No {r.name} On File For This Driver</div>}
-        </div>
-      </Modal>
-      {viewing && <DocumentViewer id={viewing.documentid} name={viewing.filename}
-        onClose={() => setViewing(null)}
-        action={<>
-          {viewing.check && (
-            <button type="button" className="primary" disabled={busy}
-              onClick={() => { markRead(viewing.documentid); setViewing(null) }}>
-              {busy ? <Loader2 size={15} className="spin" /> : 'Mark As Reviewed'}
-            </button>
-          )}
-          {!viewing.check && viewing.record && (
-            <button type="button" className="primary" disabled={busy}
-              onClick={() => { readRecord(viewing.record); setViewing(null) }}>
-              {busy ? <Loader2 size={15} className="spin" /> : 'Mark As Reviewed'}
-            </button>
-          )}
-        </>} />}
+        </>}
+        onClose={onClose} />
+      <ReadingViewer viewing={viewing} busy={busy} onMarkRead={markRead} onReadRecord={readRecord}
+        onClose={() => setViewing(null)} />
       </>
     )
   }
@@ -5255,55 +5146,41 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
     const found = sphi?.inquiries || []
     return (
       <>
-      <Modal title={r.name} onClose={onClose} brief={r?.description} width={DETAIL}
-        footer={<button type="button" onClick={onClose}>Close</button>}>
-        <div className="stack">
-          {err && <div className="notice bad">{err}</div>}
-          {!found.length && (
-            <div className="muted">
-              No DOT-regulated employers in the last three years are on this driver&rsquo;s
-              application, so there is nobody to ask.
-            </div>
-          )}
-          {found.length > 0 && (
-            <div className="mvrpanels">
-              {/* One panel per employer, laid out as the driving records are: who and when in the
-                  head, where the inquiry stands beneath, and what can be done about it below. */}
-              {found.map((x) => {
-                const last = (x.attempts || [])[0]
-                const unreadReply = x.respondedon && !x.reviewedon
-                const tone = x.state === 'answered' ? 'st-active' : x.state === 'effort' ? 'st-inactive'
-                  : x.state === 'toreview' || x.state === 'waiting' ? 'st-ordered' : 'st-expired'
-                const send = () => {
-                  const channel = x.email ? 'email' : x.fax ? 'fax' : 'mail'
-                  setInq(x)
-                  setAtt({ channel, sentto: SEND_TO[channel](x), senton: '', outcome: '',
-                    note: '', signature: '' })
-                  setFiling('send')
-                }
-                return (
-                  <section key={x.recordid} className="mvrpanel">
-                    <header>
-                      <span className="mvrlicense">{x.employer}</span>
-                      <span className={tone}>{SPHI_STANDING[x.state] || x.state}</span>
-                    </header>
-                    <dl className="mvrfacts">
-                      <div><dt>Employed</dt>
-                        <dd>{[date(x.employedfrom), date(x.employedthrough)].filter(Boolean).join(' - ') || '-'}</dd></div>
-                      <div><dt>Last asked</dt>
-                        <dd className={last ? undefined : 'st-expired'}>
-                          {last ? `${SPHI_CHANNELS[last.channel] || last.channel} ${date(last.senton)}` : 'Not asked'}
-                        </dd></div>
-                      <div><dt>Reply</dt>
-                        <dd className={x.respondedon ? undefined : last ? 'st-ordered' : undefined}>
-                          {x.respondedon ? date(x.respondedon) : last ? 'None yet' : '-'}</dd></div>
-                      <div><dt>Review</dt>
-                        <dd className={unreadReply ? 'st-ordered' : x.reviewedon ? 'st-active' : undefined}>
-                          {unreadReply ? 'Not reviewed' : x.reviewedon ? date(x.reviewedon)
-                            : x.effortclosedon ? `Good faith effort ${date(x.effortclosedon)}` : '-'}
-                        </dd></div>
-                    </dl>
-                    <footer>
+      {/* One panel per employer, laid out as the driving records are: who and when in the head,
+          where the inquiry stands beneath, and what can be done about it below. */}
+      <PanelsDialog title={r.name} brief={r?.description} err={err} width={DETAIL} onClose={onClose}
+        empty={<div className="muted">
+          No DOT-regulated employers in the last three years are on this driver&rsquo;s
+          application, so there is nobody to ask.
+        </div>}>
+        {found.map((x) => {
+          const last = (x.attempts || [])[0]
+          const unreadReply = x.respondedon && !x.reviewedon
+          const tone = x.state === 'answered' ? 'st-active' : x.state === 'effort' ? 'st-inactive'
+            : x.state === 'toreview' || x.state === 'waiting' ? 'st-ordered' : 'st-expired'
+          const send = () => {
+            const channel = x.email ? 'email' : x.fax ? 'fax' : 'mail'
+            setInq(x)
+            setAtt({ channel, sentto: SEND_TO[channel](x), senton: '', outcome: '',
+              note: '', signature: '' })
+            setFiling('send')
+          }
+          return (
+            <ItemPanel key={x.recordid} title={x.employer}
+              status={[SPHI_STANDING[x.state] || x.state, tone]}
+              facts={[
+                { label: 'Employed',
+                  value: [date(x.employedfrom), date(x.employedthrough)].filter(Boolean).join(' - ') || '-' },
+                { label: 'Last asked', tone: last ? undefined : 'st-expired',
+                  value: last ? `${SPHI_CHANNELS[last.channel] || last.channel} ${date(last.senton)}` : 'Not asked' },
+                { label: 'Reply', tone: x.respondedon ? undefined : last ? 'st-ordered' : undefined,
+                  value: x.respondedon ? date(x.respondedon) : last ? 'None yet' : '-' },
+                { label: 'Review',
+                  tone: unreadReply ? 'st-ordered' : x.reviewedon ? 'st-active' : undefined,
+                  value: unreadReply ? 'Not reviewed' : x.reviewedon ? date(x.reviewedon)
+                    : x.effortclosedon ? `Good faith effort ${date(x.effortclosedon)}` : '-' },
+              ]}
+              actions={<>
                       {unreadReply ? (
                         <button type="button" className="primary" onClick={() => {
                           setInq(x); setAtt({ ...att, outcome: '', note: '' }); setFiling('reply')
@@ -5333,14 +5210,10 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
                         onClick={() => setSphiHistory(x)}>
                         <History size={13} /> History
                       </button>
-                    </footer>
-                  </section>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </Modal>
+                    </>} />
+          )
+        })}
+      </PanelsDialog>
       {/* Every time this employer was asked, how, and what came of it. */}
       {sphiHistory && (
         <Modal title={`${sphiHistory.employer} - History`} onClose={() => setSphiHistory(null)}
@@ -5783,72 +5656,54 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
   // Read from a list, the same as the PHI acknowledgement: the latest record only, Reviewed or Not
   // Reviewed, and View / Close. An empty file falls through to the dialog below, which offers the
   // upload and the request to the driver.
-  const latest = source.kind === 'credential' && CREDENTIAL_FROM_A_LIST.has(source.which)
+  const latest = source.kind === 'credential'
     && shown.find((x) => x.documentid)
   if (latest && !filing) {
     const waiting = unchecked.has(latest.documentid) || latest.needsreading
-    const renewed = RENEWED.has(source.which)
+    // One that runs out is replaced, so its expiry, the next one and the ones before it belong in
+    // the dialog - read off the rule's own recurrence, not a list kept by hand.
+    const renewed = Boolean(r.recurrence) && r.recurrence !== 'once'
     const lapsed = renewed && latest.expireson && String(latest.expireson).slice(0, 10) < today
+    const columns = [
+      ...(renewed ? [{ label: 'Expires', cell: latest.expireson ? date(latest.expireson) : '-' }] : []),
+      // Where it came from decides whether it can be relied on, so it can be recorded here when it
+      // was not recorded at filing.
+      ...(credentialtype?.requiresprovenance ? [{
+        label: 'Source',
+        tone: ['fdle', 'ahca'].includes(latest.provenance) ? undefined : 'st-ordered',
+        cell: (
+          <select value={latest.provenance || ''} disabled={busy}
+            onChange={(e) => act(async () => {
+              await api.put(`/credentials/${latest.recordid}/provenance`, { provenance: e.target.value })
+            })}>
+            <option value="" disabled>Not recorded</option>
+            {Object.entries(PROVENANCE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        ),
+      }] : []),
+    ]
     return (
       <>
-        <Modal title={r.name} onClose={onClose} brief={r?.description} width={720}
-          footer={<>
-            <button type="button" className="primary" onClick={() => setViewing({
-              documentid: latest.documentid, filename: r.name,
-              check: unchecked.has(latest.documentid),
-              record: latest.needsreading ? latest : null })}>
-              <Eye size={14} /> {waiting ? 'Review' : 'View'}
+        <SingleDocumentDialog title={r.name} brief={r?.description} err={err}
+          notice={renewed ? asked : null} unread={waiting} columns={columns}
+          row={{ on: latest.effectiveon || latest.recordedon,
+                 status: docStanding({ unread: waiting, lapsed }) }}
+          onView={() => setViewing({ documentid: latest.documentid, filename: r.name,
+            check: unchecked.has(latest.documentid), record: latest.needsreading ? latest : null })}
+          // One that runs out is replaced: the next is uploaded or asked for from here, and the
+          // ones before it are a click away.
+          actions={renewed && <>
+            <button type="button" onClick={() => setFiling(true)}>
+              <FileUp size={13} /> Upload Document
             </button>
-            {renewed && (
-              <>
-                <button type="button" onClick={() => setFiling(true)}>
-                  <FileUp size={13} /> Upload Document
-                </button>
-                <button type="button" disabled={busy} onClick={() => askForIt()}>
-                  <Send size={13} /> Ask the driver for it
-                </button>
-                <button type="button" onClick={() => setCredHistory(true)}>
-                  <History size={13} /> History
-                </button>
-              </>
-            )}
-            <button type="button" onClick={onClose}>Close</button>
-          </>}>
-          <div className="stack">
-            {err && <div className="notice bad">{err}</div>}
-            {renewed && asked}
-            <table className="residencetable recordtable">
-              <thead><tr><th>Date</th><th>Document</th>
-                {renewed ? <th>Expires</th> : null}
-                {credentialtype?.requiresprovenance ? <th>Source</th> : null}<th>Status</th></tr></thead>
-              <tbody>
-                <tr>
-                  <td>{date(latest.effectiveon || latest.recordedon)}</td>
-                  <td>{r.name}</td>
-                  {renewed ? <td>{latest.expireson ? date(latest.expireson) : '-'}</td> : null}
-                  {/* Where it came from decides whether it can be relied on, so it can be
-                      recorded here when it was not recorded at filing. */}
-                  {credentialtype?.requiresprovenance ? (
-                    <td className={['fdle', 'ahca'].includes(latest.provenance) ? undefined : 'st-ordered'}>
-                      <select value={latest.provenance || ''} disabled={busy}
-                        onChange={(e) => act(async () => {
-                          await api.put(`/credentials/${latest.recordid}/provenance`,
-                            { provenance: e.target.value })
-                        })}>
-                        <option value="" disabled>Not recorded</option>
-                        {Object.entries(PROVENANCE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                      </select>
-                    </td>
-                  ) : null}
-                  {/* An expired one is expired whether or not anybody has read it. */}
-                  <td className={lapsed ? 'st-expired' : waiting ? 'st-ordered' : 'st-active'}>
-                    {lapsed ? 'Expired' : waiting ? 'Not Reviewed' : 'Reviewed'}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </Modal>
+            <button type="button" disabled={busy} onClick={() => askForIt()}>
+              <Send size={13} /> Ask the driver for it
+            </button>
+            <button type="button" onClick={() => setCredHistory(true)}>
+              <History size={13} /> History
+            </button>
+          </>}
+          onClose={onClose} />
         {credHistory && (
           <Modal title={`${r.name} - History`} onClose={() => setCredHistory(false)} width={DETAIL}
             footer={<button type="button" onClick={() => setCredHistory(false)}>Close</button>}>
@@ -5882,22 +5737,8 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
             </div>
           </Modal>
         )}
-        {viewing && <DocumentViewer id={viewing.documentid} name={viewing.filename}
-          onClose={() => setViewing(null)}
-          action={<>
-            {viewing.check && (
-              <button type="button" className="primary" disabled={busy}
-                onClick={() => { markRead(viewing.documentid); setViewing(null) }}>
-                {busy ? <Loader2 size={15} className="spin" /> : 'Mark As Reviewed'}
-              </button>
-            )}
-            {!viewing.check && viewing.record && (
-              <button type="button" className="primary" disabled={busy}
-                onClick={() => { readRecord(viewing.record); setViewing(null) }}>
-                {busy ? <Loader2 size={15} className="spin" /> : 'Mark As Reviewed'}
-              </button>
-            )}
-          </>} />}
+        <ReadingViewer viewing={viewing} busy={busy} onMarkRead={markRead} onReadRecord={readRecord}
+          onClose={() => setViewing(null)} />
       </>
     )
   }
@@ -5911,7 +5752,7 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
           actions spell out what they act on - so the description wrapped to six lines and
           "Add passenger assistance and wheelchair securement training" broke across two. */}
       <Modal title={r.name} onClose={onClose} brief={r?.description}
-        width={CREDENTIAL_FROM_A_LIST.has(source.which) && !shown.length ? 720 : DETAIL}
+        width={source.kind === 'credential' && !shown.length ? 720 : DETAIL}
         footer={<>
           {/* Reading comes first, because reading is what most people opened this to do. It
               opens the most recent document on file; an older one is named by its own row. */}
@@ -5949,7 +5790,7 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
           {/* What can be done about it, which depends on what kind of thing would answer it. */}
           {canFile && source.kind !== 'report' && (
             <button type="button" onClick={() => setFiling(true)}>
-              {UPLOAD_ONLY.has(source.which) || CREDENTIAL_FROM_A_LIST.has(source.which)
+              {source.kind === 'credential'
                 ? <><FileUp size={13} /> Upload Document</>
                 : <><Plus size={13} /> Add {r.name}</>}
             </button>
@@ -6067,7 +5908,7 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
             )
           })()}
           {source.kind !== 'report' && !shown.length && (
-            <div className={UPLOAD_ONLY.has(source.which) || CREDENTIAL_FROM_A_LIST.has(source.which)
+            <div className={source.kind === 'credential'
               ? 'gridempty' : 'muted'}>
               No {plural(r.name)} On File For This Driver
             </div>
