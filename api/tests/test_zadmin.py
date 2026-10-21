@@ -256,9 +256,12 @@ def test_each_user_has_a_time_zone(client, admin):
 def test_fee_schedule(client, admin):
     h = admin["h"]
     fees = client.get("/api/admin/fees", headers=h).json()
-    assert [f["code"] for f in fees] == ["MVR", "CDLIS", "PSP", "CLEARINGHOUSE", "BACKGROUND"]
-    assert all(f["price"] is None for f in fees)                          # prices start unset
+    # Background screening is sold in tiers, each its own line.
+    assert [f["code"] for f in fees] == ["MVR", "CDLIS", "PSP", "CLEARINGHOUSE", "BACKGROUND_BASIC",
+                                         "BACKGROUND_STANDARD", "BACKGROUND_COMPLETE",
+                                         "BACKGROUND_PROFESSIONAL"]
     mvr = fees[0]
+    assert mvr["price"] is None                                           # a record's price starts unset
     assert client.put(f"/api/admin/fees/{mvr['recordid']}", json={**mvr, "price": 14.5}, headers=h).status_code == 200
     assert float(client.get("/api/admin/fees", headers=h).json()[0]["price"]) == 14.5
     assert client.put(f"/api/admin/fees/{mvr['recordid']}", json={**mvr, "price": -1}, headers=h).status_code == 400

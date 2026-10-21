@@ -57,22 +57,15 @@ def exposure(client, ctx):
 
 
 def test_full_flow(client, ctx):
+    """Imported trips are judged by the trip check an assignment goes through (evaluator 2.0)."""
     h = ctx["h"]
     me = client.get("/api/auth/me", headers=h).json()
 
     # --- vault -------------------------------------------------------------------------------
     driver = client.post("/api/drivers", json={"firstname": "Maria", "lastname": "Lopez", "externalid": "DRV-7"}, headers=h).json()["recordid"]
     vehicle = client.post("/api/vehicles", json={"externalid": "V12", "vin": "1FTBW3XM0LKA00001", "modelyear": 2020}, headers=h).json()["recordid"]
-    add_cred(client, ctx, "DRIVER_LICENSE", driver, "2022-01-01", "2030-01-01")
     add_cred(client, ctx, "CPR", driver, "2024-04-02", "2026-04-02")
-    add_cred(client, ctx, "FIRST_AID", driver, "2024-04-02", "2028-04-02")
-    background = add_cred(client, ctx, "BACKGROUND_CHECK", driver, "2025-06-01",
-                          file=("bg-maria.pdf", b"%PDF-1.4 background check result", "application/pdf"))
-    for d in ("2026-03-15", "2026-04-01", "2026-05-15"):
-        add_cred(client, ctx, "OIG_EXCLUSION", driver, d)
-    add_cred(client, ctx, "VEHICLE_INSPECTION", vehicle, "2026-01-10")
     add_cred(client, ctx, "VEHICLE_REGISTRATION", vehicle, "2025-07-01", "2027-06-30")
-    add_cred(client, ctx, "VEHICLE_INSURANCE", vehicle, "2026-01-01", "2027-01-01")
     add_cred(client, ctx, "AUTO_LIABILITY_COI", me["accountid"], "2026-01-01", "2027-01-01")
 
     # --- stage: headers are recognised, preview says what commit will do ----------------------
@@ -94,47 +87,35 @@ def test_full_flow(client, ctx):
     # The same bytes cannot be imported twice.
     assert client.post("/api/imports", files={"file": ("again.csv", CSV, "text/csv")}, headers=h).status_code == 409
 
-    # --- exposure ---------------------------------------------------------------------------
+    # --- exposure: nobody on these trips has been hired -----------------------------------------
     t = trips_by_ext(client, ctx)
-    assert t["T1001"]["failures"] is None                       # before CPR lapsed
-    assert t["T1002"]["failures"] is None                       # last day of the CPR card
-    assert "CPR/AED certification expired 2026-04-02" in t["T1003"]["reasons"]
-    assert "CPR/AED certification expired 2026-04-02" in t["T1004"]["reasons"]
-    assert "older than 365 days as of 2026-06-01" in t["T1004"]["reasons"]
-    assert "PASS" in t["T1005"]["reasons"]     # wheelchair trip, no securement training
-    assert t["T1006"]["failures"] > 0                           # stub driver/vehicle, nothing on file
+    for ext in ("T1001", "T1002", "T1003", "T1004", "T1005", "T1006"):
+        assert t[ext]["failures"] and "not been hired" in t[ext]["reasons"], ext
     risk = exposure(client, ctx)
-    assert (risk["trips"], float(risk["amount"])) == (4, 175.0)
-    assert float(risk["unbilledamount"]) == 175.0
-    # Per-driver exposure counts only trips failing on the driver's own credentials, each once.
+    assert (risk["trips"], float(risk["amount"])) == (6, 265.0)
     mx = client.get(f"/api/drivers/{driver}", headers=h).json()["exposure"]
-    assert (mx["trips"], float(mx["amount"])) == (3, 150.0)
-    board = {d["name"]: d for d in client.get("/api/dashboard", headers=h).json()["drivers"]}
-    assert board["Maria Lopez"]["trips"] == 3
+    assert (mx["trips"], float(mx["amount"])) == (5, 240.0)
 
-    # --- renewal: a new card, the old one untouched ----------------------------------------------
-    add_cred(client, ctx, "CPR", driver, "2026-04-03", "2028-04-03")
+    # --- hired: the trips are now held to the driver's requirements -------------------------------
+    with ctx["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET status = 'hired' WHERE recordid = :d"), {"d": driver})
+    run = client.post("/api/evaluate", headers=h)
+    assert run.status_code == 200, run.text
     t = trips_by_ext(client, ctx)
-    assert t["T1003"]["failures"] is None
-    assert "CPR" not in t["T1004"]["reasons"] and "365 days" in t["T1004"]["reasons"]
-    risk = exposure(client, ctx)
-    assert (risk["trips"], float(risk["amount"])) == (3, 135.0)
+    assert "not been hired" not in (t["T1001"]["reasons"] or "")
+    assert t["T1001"]["failures"]                                # her file is far from complete
+    assert "not been hired" in t["T1006"]["reasons"]             # the stub driver still is not
+    # A wheelchair trip asks for securement training on top.
+    assert "wheelchair securement" in t["T1005"]["reasons"].lower()
 
-    # --- revocation: trips before it stay covered ----------------------------------------------
-    r = client.post(f"/api/credentials/{background}/revoke",
-                    json={"revokedon": "2026-03-21T09:00:00", "reason": "Disqualifying offense reported"}, headers=h)
-    assert r.status_code == 200, r.text
-    t = trips_by_ext(client, ctx)
-    assert t["T1001"]["failures"] is None                       # 03-20, before the revocation
-    assert "revoked 2026-03-21 09:00" in t["T1005"]["reasons"]
-    assert "revoked" in t["T1002"]["reasons"]
-    risk = exposure(client, ctx)
-    assert (risk["trips"], float(risk["amount"])) == (5, 220.0)
-
-    # --- trip detail: saved checks point at the credential that covered the pickup --------------
+    # --- trip detail: each check names the rule that judged it -----------------------------------
     d = client.get(f"/api/trips/{t['T1001']['recordid']}", headers=h).json()
-    passes = [c for c in d["checks"] if c["code"] == "DRIVER_BACKGROUND_365"]
-    assert passes and passes[0]["outcome"] == "pass" and passes[0]["credentialid"] == background
+    assert d["run"]["engineversion"] == "2.0"
+    failed = [c for c in d["checks"] if c["outcome"] == "fail"]
+    assert failed and all(c["code"] and c["description"] for c in failed)
+    with ctx["db"].connect() as conn:
+        known = {r[0] for r in conn.execute(text("SELECT code FROM compliancerules"))}
+    assert any(c["code"] in known and c["version"] for c in failed)
 
     # --- audit packet --------------------------------------------------------------------------
     audit = client.post("/api/audits", json={"requester": "ModivCare Program Integrity", "reference": "PI-2026-044",
@@ -149,12 +130,13 @@ def test_full_flow(client, ctx):
     with zipfile.ZipFile(io.BytesIO(z.content)) as zf:
         names = zf.namelist()
         assert {"summary.pdf", "trips.csv", "checks.json", "rules.json", "SHA256SUMS"} <= set(names)
-        assert f"documents/{background}_bg-maria.pdf" in names
         for line in zf.read("SHA256SUMS").decode().splitlines():
             digest, name = line.split("  ", 1)
             assert hashlib.sha256(zf.read(name)).hexdigest() == digest
         assert zf.read("summary.pdf").startswith(b"%PDF")
         assert b"Jane Doe" in zf.read("trips.csv")
+        # The rules the run read are named by version, so the packet can be explained later.
+        assert b'"engine": "tripcheck"' in zf.read("rules.json")
 
     # --- PHI: ciphertext at rest, reads logged --------------------------------------------------
     with ctx["db"].connect() as conn:

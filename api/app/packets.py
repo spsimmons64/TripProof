@@ -6,7 +6,7 @@
 #                    coverage window) or the reason nothing did
 #   trips.csv        one row per trip, the same facts in machine-readable form
 #   checks.json      every saved check behind the PDF, verbatim from legchecks
-#   rules.json       the requirement rows the run used (evaluationruns.rulesnapshot)
+#   rules.json       the version of every rule in force for the run (evaluationruns.rulesnapshot)
 #   documents/       the source file of every credential cited
 #   SHA256SUMS       a digest of every file above
 #
@@ -103,16 +103,16 @@ def build(conn: Connection, user: dict, externalids: list[str], auditrequestid: 
         ORDER BY l.tripid, l.legnumber
     """, a=acct, **tp)
     checks = rows(conn, f"""
-        SELECT c.*, q.code AS requirementcode, q.description AS requirement, r.family, r.version, r.verified,
+        SELECT c.*, c.rulecode AS requirementcode, c.rulename AS requirement,
+               CONCAT('v', COALESCE(c.ruleversion, '-')) AS family, c.ruleversion AS version,
+               COALESCE(c.approved, 1) AS verified,
                cr.number, cr.issuer, cr.issuedon, cr.expireson, cr.revokedon, cr.documentid,
                doc.filename, doc.storagekey, doc.sha256 AS docsha256
         FROM legchecks c
-        JOIN requirements q ON q.recordid = c.requirementid
-        JOIN rulesets r ON r.recordid = q.rulesetid
         LEFT JOIN credentials cr ON cr.recordid = c.credentialid
         LEFT JOIN documents doc ON doc.recordid = cr.documentid
         WHERE c.runid = :run AND c.tripid IN ({tph})
-        ORDER BY c.tripid, c.legid, r.family, q.code
+        ORDER BY c.tripid, c.legid, c.rulecode
     """, run=runid, **tp)
     members = phi.get_many(conn, acct, "trip", tripids)
     legphi = phi.get_many(conn, acct, "leg", [l["recordid"] for l in legs])
@@ -148,10 +148,10 @@ def build(conn: Connection, user: dict, externalids: list[str], auditrequestid: 
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 7, f"Result: {len(trips) - len(failed_trips)} of {len(trips)} trips fully credentialed at pickup",
              new_x="LMARGIN", new_y="NEXT")
-    unverified = sorted({f"{c['family']} v{c['version']}" for c in checks if not c["verified"]})
+    unverified = sorted({f"{c['requirementcode']} {c['family']}" for c in checks if not c["verified"]})
     if unverified:
         pdf.set_font("Helvetica", "I", 9)
-        pdf.multi_cell(0, 5, _latin1("Rule sets not yet verified against their source contract: " + ", ".join(unverified)),
+        pdf.multi_cell(0, 5, _latin1("Rules not yet approved by a reviewer: " + ", ".join(unverified)),
                        new_x="LMARGIN", new_y="NEXT")
 
     for t in trips:

@@ -44,8 +44,11 @@ DRIVER_KINDS = {
     # Answered by the dedicated pages rather than by a requirement dialog.
     "dutyhours", "prohibition", "accidentregister",
     # Both license rules are answered on the one Licenses Held screen - whether the license is
-    # valid for the work, and whether a copy of it is in the file.
-    "license",
+    # valid for the work, and whether a copy of it is in the file - and so is driving experience,
+    # read off the licenses' issue and original issue dates.
+    "license", "drivingexperience",
+    # Georgia: the at-fault count off the driving records, and clearance after a securement failure.
+    "atfaultcount", "securementclear",
     # 49 CFR 382.305 pool membership, answered from the requirement rather than from a date
     # field in the middle of Driver Information.
     "poolmember",

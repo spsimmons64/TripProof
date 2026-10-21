@@ -120,8 +120,8 @@ def test_application_end_to_end(client, appl):
                         json={"typedname": "Dana Reed", "fontkey": "signature", "dob": DOB, "ssn": "123-45-6789"})
     assert wrong.status_code == 403
     sig = client.post("/api/driverapply/session/signature", headers=h(token),
-                      json={"typedname": "Dana Reed", "fontkey": "formal", "dob": DOB, "ssn": SSN})
-    assert sig.status_code == 200 and sig.json()["fontkey"] == "formal"
+                      json={"typedname": "Dana Reed", "fontkey": "fine", "dob": DOB, "ssn": SSN})
+    assert sig.status_code == 200 and sig.json()["fontkey"] == "fine"
     # Signing again reuses the signature already on file rather than making a second one.
     again = client.post("/api/driverapply/session/signature", headers=h(token), json={"dob": DOB, "ssn": SSN})
     assert again.status_code == 200 and again.json()["recordid"] == sig.json()["recordid"]
@@ -136,9 +136,11 @@ def test_application_end_to_end(client, appl):
 
     # Submitting before everything is signed is refused, and says what is missing.
     early = client.post("/api/driverapply/session/submit", headers=h(token))
-    assert early.status_code == 400 and "I9" in early.json()["detail"]
+    assert early.status_code == 400 and "PHI_ACK" in early.json()["detail"]
 
-    for doctype in ("I9", "W4", "FCRA_SUMMARY", "FCRA_AUTH", "WORKPLACE_POLICY", "DRUG_POLICY", "CLEARINGHOUSE_CONSENT"):
+    # What the application itself asks to be signed. The I-9 and W-4 are hiring paperwork now,
+    # completed once the driver is taken on rather than with the application.
+    for doctype in ("FCRA_SUMMARY", "FCRA_AUTH", "WORKPLACE_POLICY", "DRUG_POLICY", "PHI_ACK"):
         assert client.post("/api/driverapply/session/sign", headers=h(token), json={"doctype": doctype}).status_code == 200
     with appl["db"].connect() as conn:
         import hashlib
@@ -150,16 +152,17 @@ def test_application_end_to_end(client, appl):
     assert client.post("/api/driverapply/session/submit", headers=h(token)).json()["state"] == "submitted"
     assert client.post("/api/driverapply/session/submit", headers=h(token)).status_code == 409
     with appl["db"].connect() as conn:
-        assert conn.execute(text("SELECT status FROM drivers WHERE lastname = 'Reed'")).scalar() == "pending"
+        # New to the company: the driver's part is done, the office's has not started.
+        assert conn.execute(text("SELECT status FROM drivers WHERE lastname = 'Reed'")).scalar() == "new"
 
     # Coming back once it is in: told where it stands, and handed no session.
     again = client.post(f"/api/driverapply/{n}/start", json={"dob": DOB, "ssn": SSN}).json()
-    assert again["state"] == "pending" and "token" not in again
+    assert again["state"] == "new" and "token" not in again
 
-    # An active driver is told to call the office.
+    # A hired driver is told to call the office.
     with appl["db"].begin() as conn:
-        conn.execute(text("UPDATE drivers SET status = 'active' WHERE lastname = 'Reed'"))
-    assert client.post(f"/api/driverapply/{n}/start", json={"dob": DOB, "ssn": SSN}).json()["state"] == "active"
+        conn.execute(text("UPDATE drivers SET status = 'hired' WHERE lastname = 'Reed'"))
+    assert client.post(f"/api/driverapply/{n}/start", json={"dob": DOB, "ssn": SSN}).json()["state"] == "hired"
 
     # The same person at another company is a stranger: the hash is scoped per account.
     from app import signatures

@@ -182,11 +182,13 @@ export default function TripDetail() {
             <WhatHappened leg={leg} issues={trip.issues.filter((i) => i.legid === leg.recordid)}
               words={trip} />
             <div className="tablewrap"><table>
-              <thead><tr><th>Requirement</th><th>Rule set</th><th>Result</th><th>Evidence</th><th>Covered</th></tr></thead>
+              <thead><tr><th>Requirement</th><th>Version</th><th>Result</th><th>Evidence</th><th>Covered</th></tr></thead>
               <tbody>{checks.map((c) => (
-                <tr key={c.code + c.family}>
+                <tr key={c.code}>
                   <td>{c.description}<div className="small muted">{c.code}</div></td>
-                  <td className="small">{c.family} v{c.version} {!c.verified && <Badge state="unverified" />}</td>
+                  {/* The rule as it stood when this leg was judged; unapproved means no reviewer had
+                      signed it off yet. */}
+                  <td className="small">{c.version ? `v${c.version}` : '-'} {!c.verified && <Badge state="unverified" />}</td>
                   <td><Badge state={c.outcome} /></td>
                   <td className="small">
                     {c.outcome === 'pass' && c.credentialid ? (

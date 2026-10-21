@@ -24,6 +24,20 @@ from app.security import hash_password
 MIGRATIONS = Path(os.environ.get("MIGRATIONS_PATH", Path(__file__).resolve().parents[2] / "db" / "migrations"))
 
 
+def _without_comment(line: str) -> str:
+    """The line up to its first "--" outside single or double quotes."""
+    quote = None
+    for n, ch in enumerate(line):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in ("'", '"'):
+            quote = ch
+        elif line.startswith("--", n) and (n == 0 or line[n - 1].isspace()):
+            return line[:n]
+    return line
+
+
 def split_sql(sql: str) -> list[str]:
     """Split a script into statements, honouring DELIMITER lines and skipping comments."""
     statements, buf, delim = [], [], ";"
@@ -35,11 +49,12 @@ def split_sql(sql: str) -> list[str]:
         if not buf and (not line.strip() or line.strip().startswith("--")):
             continue
         buf.append(line)
-        # A trailing "-- comment" after the delimiter still ends the statement. The comment is cut
-        # only when the line holds no quote at all, so that a "--" inside a string literal is left
-        # alone - and so that an apostrophe or a quotation mark IN the comment cannot silently glue
-        # this statement to the next one, which is exactly what it did once.
-        code = line if ("'" in line or '"' in line) else re.sub(r"\s--.*$", "", line)
+        # A trailing "-- comment" after the delimiter still ends the statement. It is cut at the
+        # first "--" that stands outside a quoted string, so a "--" inside a literal is left alone,
+        # an apostrophe IN the comment cannot glue this statement to the next one, and a line with a
+        # string on it - 'FCRA_FORMS');  -- a note - still ends where the code does. (Cutting only
+        # lines with no quote at all left 024 unrunnable on an empty database.)
+        code = _without_comment(line)
         code = code.rstrip()
         if code.endswith(delim):
             buf[-1] = code

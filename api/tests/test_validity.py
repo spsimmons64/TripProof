@@ -120,34 +120,3 @@ def test_mileage_and_trip_evidence():
     assert vehicle_mileage_verdict(None, 300000).reasoncode == "nomileage"
     assert trip_evidence_verdict(False, "signature").reasoncode == "nosignature"
     assert trip_evidence_verdict(True, "gps").outcome == "pass"
-
-
-def test_complete_broker_list_replaces_the_state_rules():
-    from datetime import date
-    from app.evaluator import applicable
-    base = dict(effectivefrom=date(2024, 1, 1), effectiveto=None, servicelevels=None)
-    reqs = [{**base, "code": "STATE_LICENSE", "brokerid": None, "includesbase": 0},
-            {**base, "code": "MC_LICENSE", "brokerid": "mc", "includesbase": 1},
-            {**base, "code": "MTM_EXTRA", "brokerid": "mtm", "includesbase": 0}]
-    codes = lambda b: sorted(q["code"] for q in applicable(reqs, b, date(2026, 5, 1), None))
-    assert codes("mc") == ["MC_LICENSE"]                       # complete list: the state's rules are already in it
-    assert codes("mtm") == ["MTM_EXTRA", "STATE_LICENSE"]      # older broker list: adds to the state's
-    assert codes(None) == []                                   # no broker: not a Medicaid trip, no program rules
-
-
-def test_law_layers_apply_to_every_trip():
-    from datetime import date
-    from app.evaluator import applicable
-    base = dict(effectivefrom=date(2024, 1, 1), effectiveto=None, servicelevels=None, brokerid=None, includesbase=0)
-    reqs = [{**base, "code": "FED", "level": "federal"},
-            {**base, "code": "STATE", "level": "state"},
-            {**base, "code": "HILLS", "level": "county", "county": "Hillsborough"},
-            {**base, "code": "MIAMI", "level": "county", "county": "Miami-Dade"},
-            {**base, "code": "TAMPA", "level": "city", "city": "Tampa"},
-            {**base, "code": "MEDICAID", "level": "program"},
-            {**base, "code": "MC_LIST", "level": "program", "brokerid": "mc", "includesbase": 1},
-            {**base, "code": "I9", "level": "federal", "kind": "obligation"}]
-    codes = lambda b: sorted(q["code"] for q in applicable(reqs, b, date(2026, 5, 1), None, county="hillsborough", city="Tampa"))
-    assert codes(None) == ["FED", "HILLS", "STATE", "TAMPA"]              # private-pay trip: the law, nothing else
-    assert codes("mtm") == ["FED", "HILLS", "MEDICAID", "STATE", "TAMPA"]  # Medicaid trip: law + Medicaid baseline
-    assert codes("mc") == ["FED", "HILLS", "MC_LIST", "STATE", "TAMPA"]    # broker's complete list replaces the baseline only

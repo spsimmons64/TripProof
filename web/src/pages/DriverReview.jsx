@@ -4623,7 +4623,8 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
     )
   }
 
-  if (source.kind === 'licensecopy' || source.kind === 'license') {
+  // Driving experience is read off the licenses' dates, so it is answered where they are entered.
+  if (source.kind === 'licensecopy' || source.kind === 'license' || source.kind === 'drivingexperience') {
     return (
       <>
       <Modal title="Licenses Held" onClose={onClose} brief={r?.description} width={DETAIL}

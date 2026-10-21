@@ -71,10 +71,34 @@ def contract_for(conn: Connection, accountid: str, payerid: str | None, on) -> d
     """, a=accountid, p=payerid, on=on)
 
 
+def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: str | None,
+                     at: datetime) -> list[dict]:
+    """What stops this vehicle carrying this trip: a lift the service needs and it lacks, and any
+    blocking vehicle requirement failed or expired on the day."""
+    out = []
+    if service:
+        from app.dispatch import SERVICE
+        if (SERVICE.get(service) or {}).get("lift") and not (row(conn, "SELECT lift FROM vehicles "
+                                                                  "WHERE recordid = :v", v=vehicleid)
+                                                              or {}).get("lift"):
+            out.append({"code": "LIFT", "enforceable": True, "vehicle": True,
+                        "reason": f"A {SERVICE[service]['label'].lower()} trip needs a "
+                                  f"lift-equipped vehicle."})
+    vfacts = factset.assemble(conn, accountid, None, vehicleid)["facts"]
+    for v in rules.for_vehicle(conn, accountid, vehicleid, vfacts, today=at.date()):
+        if v["applies"] is True and v.get("blocking") and v["status"] in ("failed", "expired"):
+            out.append({"code": v["code"], "name": v["name"], "status": v["status"],
+                        "reason": v.get("why"), "vehicle": True})
+    return out
+
+
 def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None = None, *,
           legid: str | None = None, program: str | None = None, at: datetime | None = None,
-          userid: str | None = None, shadow: bool = False) -> dict:
-    """Decide, record, and return the decision with its reasons."""
+          userid: str | None = None, shadow: bool = False, record: bool = True) -> dict:
+    """Decide, record, and return the decision with its reasons.
+
+    `record=False` decides without keeping it - dispatch trying candidates for a leg, or the
+    evaluator judging a batch of imported trips. Only an actual assignment is a decision on file."""
     leg = leg_context(conn, accountid, legid) if legid else None
     if leg:
         vehicleid = vehicleid or leg["vehicleid"]
@@ -157,34 +181,23 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
                 warnings.append(said)
             elif i["applies"] is True and i["status"] == "expiring":
                 warnings.append(said)
-    if vehicleid and service:
-        from app.dispatch import SERVICE
-        if (SERVICE.get(service) or {}).get("lift") and not (row(conn, "SELECT lift FROM vehicles "
-                                                                  "WHERE recordid = :v", v=vehicleid)
-                                                              or {}).get("lift"):
-            blockers.append({"code": "LIFT", "enforceable": True, "vehicle": True,
-                             "reason": f"A {SERVICE[service]['label'].lower()} trip needs a "
-                                       f"lift-equipped vehicle."})
     if vehicleid:
-        vfacts = factset.assemble(conn, accountid, None, vehicleid)["facts"]
-        for v in rules.for_vehicle(conn, accountid, vehicleid, vfacts, today=at.date()):
-            if v["applies"] is True and v.get("blocking") and v["status"] in ("failed", "expired"):
-                blockers.append({"code": v["code"], "name": v["name"], "status": v["status"],
-                                 "reason": v.get("why"), "vehicle": True})
+        blockers += vehicle_blockers(conn, accountid, vehicleid, service, at)
 
     undecided = any(w.get("code") == "CONTRACT" or w.get("status") in WAITING
                     or str(w.get("reason") or "").startswith("Applicability undecided")
                     for w in warnings)
     decision = "notqualified" if blockers else "needsreview" if undecided else "eligible"
-    evalid = newid()
-    run(conn, """
-        INSERT INTO tripeligibility (recordid, accountid, driverid, vehicleid, legid, program,
-                                     evaluatedfor, evaluatedon, evaluatedby, decision, blockers,
-                                     warnings, rulesread, shadow)
-        VALUES (:id, :a, :d, :v, :l, :p, :for, :now, :by, :dec, :b, :w, :r, :s)
-    """, id=evalid, a=accountid, d=driverid, v=vehicleid, l=legid, p=program, now=utcnow(),
-        by=userid, dec=decision, b=json.dumps(blockers, default=str),
-        w=json.dumps(warnings, default=str), r=json.dumps(read), s=int(shadow), **{"for": at})
+    evalid = newid() if record else None
+    if record:
+        run(conn, """
+            INSERT INTO tripeligibility (recordid, accountid, driverid, vehicleid, legid, program,
+                                         evaluatedfor, evaluatedon, evaluatedby, decision, blockers,
+                                         warnings, rulesread, shadow)
+            VALUES (:id, :a, :d, :v, :l, :p, :for, :now, :by, :dec, :b, :w, :r, :s)
+        """, id=evalid, a=accountid, d=driverid, v=vehicleid, l=legid, p=program, now=utcnow(),
+            by=userid, dec=decision, b=json.dumps(blockers, default=str),
+            w=json.dumps(warnings, default=str), r=json.dumps(read), s=int(shadow), **{"for": at})
     return {"evaluationid": evalid, "eligible": decision == "eligible", "decision": decision,
             "program": program, "service": service, "evaluatedfor": at, "blockers": blockers,
             "state": pickup_state((leg or {}).get("pickupplace")),

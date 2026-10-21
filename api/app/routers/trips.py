@@ -338,15 +338,17 @@ def get_trip(tripid: str, user: dict = Depends(current_user), conn: Connection =
         FROM triplegs l LEFT JOIN drivers d ON d.recordid = l.driverid LEFT JOIN vehicles v ON v.recordid = l.vehicleid
         WHERE l.tripid = :id ORDER BY l.legnumber
     """, id=tripid)
+    # What judged each leg, as it stood when it did: the rule's code, name and version, and whether
+    # a reviewer had approved it.
     t["checks"] = rows(conn, """
-        SELECT c.legid, c.subject, c.outcome, c.reasoncode, c.reason, c.credentialid, c.windowstart, c.windowend,
-               q.code, q.description, r.family, r.version, r.verified, cr.number, cr.issuedon, cr.expireson, cr.documentid
+        SELECT c.legid, c.subject, c.outcome, c.reasoncode, c.reason, c.credentialid, c.windowstart,
+               c.windowend, c.rulecode AS code, c.rulename AS description, c.ruleversion AS version,
+               COALESCE(c.approved, 1) AS verified, cr.number, cr.issuedon, cr.expireson,
+               cr.documentid
         FROM legchecks c
-        JOIN requirements q ON q.recordid = c.requirementid
-        JOIN rulesets r ON r.recordid = q.rulesetid
         LEFT JOIN credentials cr ON cr.recordid = c.credentialid
         WHERE c.tripid = :id AND c.runid = :run
-        ORDER BY c.outcome = 'pass', r.family, q.code
+        ORDER BY c.outcome = 'pass', c.rulecode
     """, id=tripid, run=t["lastrunid"])
     t["run"] = row(conn, "SELECT recordid, reason, engineversion, finished FROM evaluationruns WHERE recordid = :r",
                    r=t["lastrunid"]) if t["lastrunid"] else None
@@ -502,25 +504,38 @@ def what_it_comes_to(servicelevel: str, on: date, payerid: str | None = None, le
     acct = user["accountid"]
     priced = rateset.quote(conn, acct, payerid=payerid, servicelevel=servicelevel, on=on, legs=legs,
                            state=state)
-    account = row(conn, "SELECT state, county, city FROM accounts WHERE recordid = :id", id=acct)
-    reqs = evaluator_requirements(conn, account, acct)
-    mine = evaluator_applicable(reqs, payerid, on, servicelevel, account)
-    base = evaluator_applicable(reqs, None, on, servicelevel, account)
-    extra = len(mine) - len(base)
-    priced["requirements"] = len(mine)
-    priced["extrarequirements"] = max(0, extra)
+    # What the payer's program asks of a driver on top of what every trip asks: the rules written
+    # for that program that reach this company, counted once per thing they ask for.
+    program = _program_of(conn, acct, payerid, on)
+    priced["program"] = program
+    priced["extrarequirements"] = _program_requirements(conn, acct, program) if program else 0
     return priced
 
 
-def evaluator_requirements(conn: Connection, account: dict, accountid: str):
-    from app.evaluator import load_requirements
-    return load_requirements(conn, account["state"], accountid=accountid)
+def _program_of(conn: Connection, accountid: str, payerid: str | None, on) -> str | None:
+    """The program a trip billed to this payer belongs to: the payer line's contract where it says,
+    otherwise the payer's kind. No payer is the passenger."""
+    if not payerid:
+        return "privatepay"
+    contract = tripcheck.contract_for(conn, accountid, payerid, on)
+    if contract and contract.get("program"):
+        return contract["program"]
+    kind = (row(conn, "SELECT category FROM payers WHERE recordid = :p", p=payerid) or {}).get("category")
+    return tripcheck.PAYER_PROGRAM.get(kind or "private", "privatepay")
 
 
-def evaluator_applicable(reqs, payerid, on, servicelevel, account):
-    from app.evaluator import applicable
-    return applicable(reqs, payerid, on, servicelevel,
-                      county=account["county"], city=account["city"])
+def _program_requirements(conn: Connection, accountid: str, program: str) -> int:
+    from app import facts as factset, rules as ruleset
+    company = factset.assemble(conn, accountid)["facts"]
+    asked = set()
+    for r in rows(conn, """
+        SELECT code, qualificationcode, applieswhen FROM compliancerules
+        WHERE subject = 'driver' AND effectiveto IS NULL AND program = :p
+          AND (accountid IS NULL OR accountid = :a)
+    """, p=program, a=accountid):
+        if ruleset.applies(ruleset.condition(r["applieswhen"]), company) is not False:
+            asked.add(r["qualificationcode"] or r["code"])
+    return len(asked)
 
 
 class OutIn(BaseModel):

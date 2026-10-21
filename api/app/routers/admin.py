@@ -72,6 +72,11 @@ STAFF_STATUSES = ("active", "inactive")
 
 class AccountIn(BaseModel):
     name: str
+    # Every field in profiles.PROFILE_FIELDS has to be here: create_account reads them all, and one
+    # missing (dba, usdot, mcnumber were) crashed every customer created from the admin side.
+    dba: str | None = None
+    usdot: str | None = None
+    mcnumber: str | None = None
     address1: str | None = None
     address2: str | None = None
     city: str | None = None

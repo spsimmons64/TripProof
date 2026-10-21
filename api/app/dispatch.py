@@ -21,7 +21,7 @@ from math import asin, cos, radians, sin, sqrt
 
 from sqlalchemy.engine import Connection
 
-from app import evaluator
+from app import tripcheck
 from app import facts as factset
 from app import hos, rules
 from app.db import row, rows, localnow
@@ -340,9 +340,9 @@ def best(conn: Connection, accountid: str, **terms) -> dict:
 # the vehicle decides which license class is needed, and a requirement that lapsed last week may
 # still have been valid on the pickup date of a trip being covered retrospectively.
 #
-# Nothing is evaluated twice. `evaluator.check` is the same function the nightly run uses to decide
-# whether a trip was compliant; here it is handed a leg that has not happened yet, with a candidate
-# in it. Dispatch gets no second opinion on who may drive, and cannot drift from the engine that
+# Nothing is evaluated twice. `tripcheck.check` is the same function the evaluator uses to decide
+# whether a trip was compliant, and an assignment uses to allow it; here it is handed a leg that has
+# not happened yet, with a candidate in it. Dispatch gets no second opinion on who may drive, and cannot drift from the engine that
 # will later be asked to prove it.
 def zone(conn: Connection, accountid: str) -> str:
     """The company's own wall clock. Pickup times are stored in it, so every question about
@@ -376,29 +376,20 @@ def for_leg(conn: Connection, accountid: str, legid: str) -> dict:
     vehicles = vehicles_for(conn, accountid, when=when, minutes=minutes, service=service,
                             seats=1, exceptleg=legid)
 
-    account = row(conn, "SELECT state, county, city FROM accounts WHERE recordid = :id", id=accountid)
-    reqs = evaluator.applicable(
-        evaluator.load_requirements(conn, account["state"], accountid=accountid),
-        leg["brokerid"], when.date(), service,
-        county=account["county"], city=account["city"])
-    facts = evaluator.Facts(conn, accountid)
-
     def requirement_blocks(subject: str, candidate: str, vehicleid: str | None) -> list[str]:
-        """What this candidate fails on this leg. A failure is a block, not a warning: a trip run
-        by somebody who does not meet its requirements is a trip that cannot be billed, and
-        offering it as a choice with a caution beside it is offering somebody a loss."""
-        hypothetical = {**leg,
-                        "driverid": candidate if subject == "driver" else leg["driverid"],
-                        "vehicleid": vehicleid if subject == "vehicle" else vehicleid,
-                        "pickupat": when}
-        said = []
-        for q in reqs:
-            if q["subject"] != subject:
-                continue
-            _, verdict = evaluator.check(q, hypothetical, facts)
-            if verdict is not None and verdict.outcome != "pass":
-                said.append(verdict.reason)
-        return said
+        """What this candidate fails on this leg, by the trip check an assignment goes through. A
+        failure is a block, not a warning: a trip run by somebody who does not meet its
+        requirements is a trip that cannot be billed, and offering it as a choice with a caution
+        beside it is offering somebody a loss. Decided, not recorded - nobody has assigned anyone."""
+        if subject == "vehicle":
+            return [b.get("reason") or b.get("name") or b["code"]
+                    for b in tripcheck.vehicle_blockers(conn, accountid, candidate, service, when)]
+        said = tripcheck.check(conn, accountid, candidate, None, legid=legid, at=when,
+                               record=False)
+        # The vehicle's own problems are the vehicle's, shown against it rather than every driver;
+        # and whether they are hired is already said by the candidate list itself.
+        return [b.get("reason") or b.get("name") or b["code"] for b in said["blockers"]
+                if not b.get("vehicle") and b["code"] not in ("HIRED", "DRIVER")]
 
     away = _unavailable(conn, accountid, when)
     for d in drivers:

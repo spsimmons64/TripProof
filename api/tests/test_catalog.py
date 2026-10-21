@@ -55,15 +55,19 @@ def loaded(db):
         vehicle = conn.exec_driver_sql(
             "SELECT recordid FROM vehicles WHERE accountid = %s LIMIT 1", (acct,)).scalar()
         # Every fact name the engine can hand a rule. A rule gating on anything else is gating on
-        # something that will never be known.
+        # something that will never be known. A new account has no driver and no vehicle, so the
+        # driver's facts are asked for a driver who is not there - the names come back all the
+        # same, unanswered - and the vehicle's from the parts that do not need one on file.
+        from app.facts import _vehicle_transit
+        nobody = "00000000-0000-0000-0000-000000000000"
         known = set(assemble(conn, acct, None)["facts"])
-        if driver:
-            known |= set(assemble(conn, acct, driver)["facts"])
+        known |= set(assemble(conn, acct, driver or nobody)["facts"])
         if vehicle:
             known |= set(vehicle_facts(conn, acct, vehicle))
         else:
             known |= {"vehicle.cmv_federal", "vehicle.cmv_florida", "vehicle.cdl_required",
                       "vehicle.seats", "vehicle.gvwr", "vehicle.lift", "vehicle.forcompensation"}
+            known |= set(_vehicle_transit(conn, acct, nobody))
         yield catalogcheck.check(conn, known), acct
 
 
