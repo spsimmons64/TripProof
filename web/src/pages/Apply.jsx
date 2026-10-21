@@ -110,9 +110,9 @@ function AccountStep({ state, onDone }) {
       <section>
         <h3 className="formsection">Company</h3>
         <div className="profileform">
-          <label className="field span-6">Company name *<input required value={v.name} onChange={set('name')} autoComplete="organization" /></label>
-          <label className="field span-6">Address line 1 *<input required value={v.address1} onChange={set('address1')} autoComplete="address-line1" /></label>
-          <label className="field span-6">Address line 2<input value={v.address2} onChange={set('address2')} autoComplete="address-line2" /></label>
+          <label className="field span-6">Company Name *<input required value={v.name} onChange={set('name')} autoComplete="organization" /></label>
+          <label className="field span-6">Address Line 1 *<input required value={v.address1} onChange={set('address1')} autoComplete="address-line1" /></label>
+          <label className="field span-6">Address Line 2<input value={v.address2} onChange={set('address2')} autoComplete="address-line2" /></label>
           <label className="field span-3">City *<input required value={v.city} onChange={set('city')} autoComplete="address-level2" /></label>
           <label className="field span-1">State
             <select value={v.state} onChange={set('state')}>{US_STATES.map((s) => <option key={s}>{s}</option>)}</select>
@@ -125,12 +125,12 @@ function AccountStep({ state, onDone }) {
       <section>
         <h3 className="formsection">Your login</h3>
         <div className="profileform">
-          <label className="field span-3">Your name *<input required value={v.adminname} onChange={set('adminname')} autoComplete="name" /></label>
+          <label className="field span-3">Your Name *<input required value={v.adminname} onChange={set('adminname')} autoComplete="name" /></label>
           <label className="field span-3">Email *<input type="email" required value={v.adminemail} onChange={set('adminemail')}
             readOnly={existing} className={existing ? 'readonly' : undefined} autoComplete="email" /></label>
           {!existing && <>
             <label className="field span-3">Password (at least {MIN_PASSWORD} characters) *<input type="password" required value={v.password} onChange={set('password')} autoComplete="new-password" /></label>
-            <label className="field span-3">Confirm password *<input type="password" required value={v.confirm} onChange={set('confirm')} autoComplete="new-password" /></label>
+            <label className="field span-3">Confirm Password *<input type="password" required value={v.confirm} onChange={set('confirm')} autoComplete="new-password" /></label>
           </>}
         </div>
         {/* Honeypot: hidden from people, filled in by bots. */}

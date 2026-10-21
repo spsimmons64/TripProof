@@ -40,8 +40,10 @@ export default function FeeSchedule() {
 
 function FeeForm({ fee, onClose, onSaved }) {
   const f = useForm({ code: fee?.code || '', name: fee?.name || '', price: fee?.price ?? '', sortorder: fee?.sortorder ?? 0,
+    covers: fee?.covers || '', products: fee?.products || '',
     active: fee ? !!fee.active : true }, async (v) => {
     const body = { code: v.code, name: v.name, price: v.price === '' ? null : Number(v.price), sortorder: Number(v.sortorder) || 0,
+      covers: v.covers, products: v.products,
       active: !!v.active }
     if (fee) await api.put(`/admin/fees/${fee.recordid}`, body)
     else await api.post('/admin/fees', body)
@@ -55,7 +57,19 @@ function FeeForm({ fee, onClose, onSaved }) {
         <label className="field span-6">Service *<input required value={v.name} onChange={f.set('name')} /></label>
         <label className="field span-2">Code *<input required disabled={!!fee} value={v.code} onChange={f.set('code')} /></label>
         <label className="field span-2">Price ($)<input type="number" min="0" step="0.01" value={v.price} onChange={f.set('price')} /></label>
-        <label className="field span-2">Sort order<input type="number" value={v.sortorder} onChange={f.set('sortorder')} /></label>
+        <label className="field span-2">Sort Order<input type="number" value={v.sortorder} onChange={f.set('sortorder')} /></label>
+        {/* A background check is sold in tiers, and a tier has to say what it buys - in our
+            words for the customer choosing it, and in the vendor's for the order itself. Shown
+            only on the rows where that is true, because nothing else here is bought in tiers. */}
+        {v.code.startsWith('BACKGROUND') && (
+          <>
+            <label className="field span-6">What It Covers
+              <textarea rows={2} value={v.covers} onChange={f.set('covers')} /></label>
+            <label className="field span-6" data-case="none">Add-Ons
+              <input value={v.products} onChange={f.set('products')} data-case="none"
+                placeholder="mvr_addon, federal_criminal_addon - blank for the base report" /></label>
+          </>
+        )}
         <label className="check span-6"><input type="checkbox" checked={v.active} onChange={f.set('active')} /> Active</label>
       </form>
       {f.error && <div className="error">{f.error}</div>}

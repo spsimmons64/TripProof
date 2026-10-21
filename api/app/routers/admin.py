@@ -540,6 +540,10 @@ class FeeIn(BaseModel):
     code: str
     name: str
     price: float | None = None           # None = not set
+    # What this buys, in our words, for whoever is choosing it; and what the vendor is asked for,
+    # in theirs. Only the screening tiers use either - see migration 287.
+    covers: str | None = None
+    products: str | None = None
     active: bool = True
     sortorder: int = 0
 
@@ -552,12 +556,18 @@ def _check_fee(body: FeeIn) -> dict:
     if body.price is not None and body.price < 0:
         raise HTTPException(400, "Price can't be negative")
     return {"code": code, "name": name, "price": round(body.price, 2) if body.price is not None else None,
+            "covers": (body.covers or "").strip() or None,
+            # Their codes, their case. Upper-casing them would be us deciding how another company
+            # spells its own product names.
+            "products": ", ".join(x.strip() for x in (body.products or "").split(",") if x.strip())
+                        or None,
             "active": 1 if body.active else 0, "sortorder": body.sortorder}
 
 
 @router.get("/fees")
 def list_fees(user: dict = Depends(platform_viewer), conn: Connection = Depends(get_conn)):
-    return rows(conn, "SELECT recordid, code, name, price, active, sortorder, updated FROM feeschedule ORDER BY sortorder, name")
+    return rows(conn, "SELECT recordid, code, name, covers, products, price, active, "
+                      "sortorder, updated FROM feeschedule ORDER BY sortorder, name")
 
 
 @router.post("/fees")
@@ -566,8 +576,10 @@ def create_fee(body: FeeIn, request: Request, user: dict = Depends(platform_admi
     if row(conn, "SELECT 1 AS x FROM feeschedule WHERE code = :code", code=v["code"]):
         raise HTTPException(409, f"A fee with code {v['code']} already exists")
     fid = newid()
-    run(conn, """INSERT INTO feeschedule (recordid, code, name, price, active, sortorder)
-                 VALUES (:id, :code, :name, :price, :active, :sortorder)""", id=fid, **v)
+    run(conn, """INSERT INTO feeschedule (recordid, code, name, covers, products, price, active,
+                                       sortorder)
+                 VALUES (:id, :code, :name, :covers, :products, :price, :active, :sortorder)""",
+        id=fid, **v)
     _audit(conn, user, "admin-create-fee", "fee", fid, v, request)
     return {"recordid": fid}
 
@@ -580,7 +592,8 @@ def update_fee(feeid: str, body: FeeIn, request: Request, user: dict = Depends(p
         raise HTTPException(404, "Fee not found")
     v = _check_fee(body)
     v.pop("code")                        # the code is fixed once created
-    run(conn, """UPDATE feeschedule SET name = :name, price = :price, active = :active, sortorder = :sortorder,
+    run(conn, """UPDATE feeschedule SET name = :name, covers = :covers, products = :products,
+                    price = :price, active = :active, sortorder = :sortorder,
                     updated = UTC_TIMESTAMP() WHERE recordid = :id""", id=feeid, **v)
     _audit(conn, user, "admin-update-fee", "fee", feeid, {"code": old["code"], "oldprice": old["price"], "price": v["price"]}, request)
     return {"ok": True}
@@ -601,6 +614,17 @@ class PayerIn(BaseModel):
     website: str | None = None
     notes: str | None = None
     active: bool = True
+    # Where the broker is. The writer is shared with the company screen and treats a field it is
+    # not given as blank, so leaving these off this model erased them on every save.
+    address1: str | None = None
+    address2: str | None = None
+    city: str | None = None
+    state: str | None = None
+    zip: str | None = None
+    phone: str | None = None
+    fax: str | None = None
+    contactname: str | None = None
+    contactemail: str | None = None
 
 
 @router.get("/brokers")
@@ -620,8 +644,8 @@ def list_payers(user: dict = Depends(platform_viewer), conn: Connection = Depend
                    (SELECT GROUP_CONCAT(DISTINCT r.state ORDER BY r.state)
                       FROM rulesets r WHERE r.brokerid = b.recordid) AS states,
                    (SELECT COUNT(*) FROM trips t WHERE t.brokerid = b.recordid) AS trips,
-                   (SELECT COUNT(*) FROM schedulepayers sp
-                     WHERE sp.payerid = b.recordid) AS schedules
+                   (SELECT COUNT(DISTINCT c.scheduleid) FROM companycontracts c
+                     WHERE c.payerid = b.recordid AND c.scheduleid IS NOT NULL) AS schedules
             FROM payers b WHERE b.accountid IS NULL ORDER BY b.category, b.name
         """),
     }
@@ -819,4 +843,97 @@ def set_gateway(code: str, body: GatewayIn, request: Request,
     gateways.set_offered(conn, code, body.active, body.note)
     _audit(conn, user, "gateway-offered" if body.active else "gateway-withdrawn",
            "platform", None, {"gateway": code}, request)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------------------------------------
+# Legal review of the rules. A rule is a draft until somebody qualified signs it off as a correct
+# statement of what the law, program or contract requires - and only an approved rule may ever be
+# enforced against a trip. Each decision is stamped and kept as a new version of the rule.
+# ------------------------------------------------------------------------------------------------
+REVIEW_STATES = ("draft", "reviewed", "approved", "retired")
+
+
+RULE_SORTS = {
+    "code": "r.qualificationcode", "qualification": "q.name", "state": "r.jurisdiction", "category": "r.authoritycategory",
+    "source": "CONCAT_WS(' ', r.authority, r.citation)", "version": "version",
+    "reviewed": "r.legalreviewedon", "status": "FIELD(r.legalreview, 'draft', 'reviewed', 'approved', 'retired')",
+}
+CATEGORIES = ("FEDERAL_GENERAL", "STATE_GENERAL", "FEDERAL_MEDICAID", "STATE_MEDICAID",
+              "CONTRACT_COMPANY")
+
+
+@router.get("/rules")
+def rules_for_review(q: str | None = None, status: str | None = None, category: str | None = None,
+                     state: str | None = None, sort: str = "code", dir: str = "asc", page: int = 1,
+                     pagesize: int = 25, user: dict = Depends(platform_viewer),
+                     conn: Connection = Depends(get_conn)):
+    """One page of the platform's driver rules, filtered and sorted, with the count in each review
+    state across all of them. Search reads the qualification, its code, the authority and the
+    citation."""
+    pagesize = max(1, min(pagesize, 1000))
+    page = max(page, 1)
+    direction = "DESC" if dir.lower() == "desc" else "ASC"
+    order_by = f"{RULE_SORTS.get(sort, 'r.qualificationcode')} {direction}, q.sortorder, r.code"
+    base = "r.subject = 'driver' AND r.accountid IS NULL AND r.effectiveto IS NULL"
+    where = [base, "(:q IS NULL OR CONCAT_WS(' ', q.name, r.qualificationcode, r.authority, "
+                   "r.citation, r.code) LIKE CONCAT('%', :q, '%'))"]
+    params = {"q": q or None}
+    if status in REVIEW_STATES:
+        where.append("r.legalreview = :status"); params["status"] = status
+    if category in CATEGORIES:
+        where.append("r.authoritycategory = :category"); params["category"] = category
+    if state:
+        where.append("r.jurisdiction = :state"); params["state"] = state.upper()[:2]
+    clause = " AND ".join(where)
+    joins = "FROM compliancerules r LEFT JOIN qualificationcatalog q ON q.code = r.qualificationcode"
+    total = row(conn, f"SELECT COUNT(*) AS n {joins} WHERE {clause}", **params)["n"]
+    items = rows(conn, f"""
+        SELECT r.code, r.qualificationcode, q.name AS qualification, r.authoritycategory,
+               r.authority, r.citation, r.sourceurl, r.jurisdiction, r.enforcement, r.legalreview,
+               r.legalreviewedon,
+               u.name AS legalreviewedby,
+               (SELECT MAX(v.version) FROM compliancerulesversions v
+                WHERE v.rulecode = r.code AND v.accountid IS NULL) AS version
+        {joins} LEFT JOIN users u ON u.recordid = r.legalreviewedby
+        WHERE {clause}
+        ORDER BY {order_by}
+        LIMIT :lim OFFSET :off
+    """, lim=pagesize, off=(page - 1) * pagesize, **params)
+    from app import citations
+    for r in items:
+        # Each part of the citation with the page it can be read on, so a reviewer checks the
+        # rule against the text it cites without hunting for it.
+        r["links"] = citations.links(r["citation"], r["sourceurl"])
+    counts = {r["legalreview"]: r["n"] for r in rows(conn, f"""
+        SELECT r.legalreview, COUNT(*) AS n FROM compliancerules r WHERE {base} GROUP BY r.legalreview
+    """)}
+    jurisdictions = [r["jurisdiction"] for r in rows(conn, f"""
+        SELECT DISTINCT r.jurisdiction FROM compliancerules r
+        WHERE {base} AND r.jurisdiction IS NOT NULL ORDER BY r.jurisdiction
+    """)]
+    return {"total": total, "page": page, "pagesize": pagesize, "items": items,
+            "counts": counts, "states": list(REVIEW_STATES), "jurisdictions": jurisdictions}
+
+
+class RuleReviewIn(BaseModel):
+    legalreview: str
+
+
+@router.put("/rules/{code}/review")
+def review_rule(code: str, body: RuleReviewIn, request: Request,
+                user: dict = Depends(platform_admin), conn: Connection = Depends(get_conn)):
+    if body.legalreview not in REVIEW_STATES:
+        raise HTTPException(400, "Unknown review state")
+    n = run(conn, """
+        UPDATE compliancerules SET legalreview = :s, legalreviewedby = :u, legalreviewedon = :now
+        WHERE code = :c AND subject = 'driver' AND accountid IS NULL AND effectiveto IS NULL
+    """, s=body.legalreview, u=user["recordid"], now=utcnow(), c=code).rowcount
+    if not n:
+        raise HTTPException(404, "No such rule")
+    from app import ruleversions
+    ruleversions.capture(conn, userid=user["recordid"], reason=f"review: {body.legalreview}")
+    log(conn, user, "rule-review", "compliancerule", code, {"legalreview": body.legalreview},
+        ip=client_ip(request))
+    conn.commit()
     return {"ok": True}

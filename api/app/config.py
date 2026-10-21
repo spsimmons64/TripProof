@@ -53,8 +53,31 @@ class Settings(BaseSettings):
     # Signing secret of the webhook endpoint (whsec_…) - from the Stripe dashboard's endpoint, or
     # printed by `stripe listen` in development. Without it the webhook refuses every event.
     stripe_webhook_secret: str = ""
-    # Certn, for background screening. Absent, the ordering is simply off and the
+    # backgroundchecks.com, for background screening. Absent, the ordering is simply off and the
     # requirement falls back to a report filed by hand.
+    # The base url is the SANDBOX by default: an installation that has not been told which world it
+    # is in must not be ordering real reports against a real invoice.
+    backgroundchecks_api_token: str = ""
+    backgroundchecks_base_url: str = "https://sandbox.backgroundchecks.com/api"
+    # What a webhook from them has to present before it is believed. Absent, webhooks are refused
+    # outright - an open endpoint that files background screenings is not a thing to leave ajar.
+    backgroundchecks_webhook_key: str = ""
+    # The platform credentials, for the Connect widgets. The source token identifies this product
+    # to their registration widget; the private key is what turns the token that widget hands back
+    # into one company's own API key. Absent, the widgets are simply not offered.
+    backgroundchecks_source_token: str = ""
+    backgroundchecks_private_key: str = ""
+    # MapTiler. Two keys, deliberately:
+    #   maptiler_key          goes to the BROWSER for tiles, so it is readable by anyone who
+    #                         views the page - which is why it is locked to our own origin in
+    #                         the MapTiler account, and must stay locked.
+    #   maptiler_server_key   is used only from here, for geocoding. A server sends no Referer,
+    #                         so an origin-locked key is refused 403; this one carries no origin
+    #                         restriction and therefore must never reach a browser.
+    # Absent, geocoding falls back to the browser key and then to OpenStreetMap.
+    maptiler_server_key: str = ""
+    # Certn, the screening vendor before them. Kept so orders placed through Certn can still be
+    # read and still land; nothing new is ordered there.
     certn_api_key: str = ""
     certn_base_url: str = "https://api.certn.co"
     certn_webhook_secret: str = ""

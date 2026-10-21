@@ -27,16 +27,12 @@ export default function MerchantConnect() {
       <div className="pagehead">
         <div>
           <h1>Merchant Connect</h1>
-          <div className="muted">
-            The merchant services company a private-pay passenger&rsquo;s card is charged
-            through.
-          </div>
         </div>
       </div>
 
       <div className="card">
         <div className="profileform">
-          <label className="field span-3">Merchant services company
+          <label className="field span-3">Merchant Services Company
             <select value={code} onChange={(e) => setPicked(e.target.value)}>
               <option value="">Not set</option>
               {data.available.map((g) => (
@@ -110,7 +106,9 @@ function GatewayForm({ gateway, held, modes, onDone }) {
           return (
             <label className="field span-3" key={x.name}>
               {x.label}{x.optional ? '' : ' *'}
-              <input value={f.values[x.name]} onChange={set(x.name)}
+              {/* A gateway's credentials are compared character for character at the other
+                  end, so they are the one place the house rule about upper case does not reach. */}
+              <input value={f.values[x.name]} onChange={set(x.name)} data-case="none"
                 type={x.secret ? 'password' : 'text'} autoComplete="off" spellCheck="false"
                 placeholder={on?.set ? `On file ${on.hint} - leave blank to keep it` : ''} />
               {x.hint && <span className="muted small">{x.hint}</span>}

@@ -8,7 +8,7 @@ import Credentials from '../components/Credentials.jsx'
 import { APPLYING, DriverForm } from './Drivers.jsx'
 import DriverReview, { Requirements } from './DriverReview.jsx'
 import { VehicleForm } from './Vehicles.jsx'
-import { VehicleInspections, VehicleMaintenance, VehicleRequirements } from './VehicleCompliance.jsx'
+import { VehicleRequirements } from './VehicleCompliance.jsx'
 import { properName } from '../lib/names.js'
 
 // What the office can do with an application in front of it. Each is a decision with consequences,
@@ -210,7 +210,10 @@ export default function SubjectDetail({ kind }) {
   const { id } = useParams()
   const path = kind === 'driver' ? 'drivers' : 'vehicles'
   const [s, error, reload] = useLoad(() => api.get(`/${path}/${id}`), [id])
-  const [editing, setEditing] = useState(false)
+  // A vehicle is a short list of measurements that are read and corrected in the same breath, so
+  // its page is simply open: opening one from the list puts you in it, with no button in between.
+  const [editing, setEditing] = useState(kind === 'vehicle')
+
   // A driver who came through the online application: their application is the page, not a dialog,
   // and there is no editor for them at all - what the record says is what they signed.
   const applied = kind === 'driver' && s && APPLYING.includes(s.status)
@@ -241,13 +244,24 @@ export default function SubjectDetail({ kind }) {
           <h1 className="row">{title} {s.stub ? <Badge state="stub">Incomplete - seen only in trips</Badge> : null}</h1>
           {/* Nothing is said when there is nothing to say. */}
           {details && <div className="muted">{details}</div>}
+          {/* Which license this one needs follows from what it is, not from the program it runs
+              under - so it is read off the measurements on the line above, not out of a banner
+              further down the page. */}
+          {kind === 'vehicle' && s.license && (
+            <div className={`licenseread ${s.license.known ? (s.license.cdl ? 'warn' : 'good') : 'info'}`}>
+              <div>{s.license.summary}</div>
+              {s.license.endorsement === 'P' && <div>Its driver must hold that endorsement.</div>}
+            </div>
+          )}
         </div>
         <div className="row headactions">
           <Link className="btn back" to={`/${path}`}>
             <ChevronLeft size={14} /> Back to {kind === 'driver' ? 'drivers' : 'vehicles'} list
           </Link>
         </div>
-        {!applied && !reviewing && (
+        {/* A vehicle's page is its own record and the file it owes - what its credentials cost in
+            trips is the trips screen's question, asked there. */}
+        {!applied && !reviewing && kind !== 'vehicle' && (
           <div className="row">
             <Link className="btn" to={`/trips?status=fail&${kind}id=${id}`}>{count(s.exposure.trips)} trips at risk from these credentials · {money(s.exposure.amount)}</Link>
             <button onClick={() => setEditing(true)}><Pencil size={14} /> Edit</button>
@@ -265,27 +279,27 @@ export default function SubjectDetail({ kind }) {
       )}
       {!applied && !reviewing && editing && (kind === 'driver'
         ? <DriverForm id={id} initial={s} onDone={() => { setEditing(false); reload() }} />
-        : <VehicleForm id={id} initial={s} onDone={() => { setEditing(false); reload() }} />)}
+        : <VehicleForm id={id} initial={s} onDone={reload} />)}
       {!applied && !reviewing && kind === 'vehicle' && !s.modelyear && <div className="notice warn">Model year is missing, so the vehicle-age rule fails every trip for this unit.</div>}
       {/* What the measurements add up to. Shown rather than stored, with the reason attached, so
           a wrong answer is argued with rather than believed. */}
-      {kind === 'vehicle' && s.facts && <VehicleFacts facts={s.facts} />}
-      {/* Which licence this one needs follows from what it is, not from the program it runs under. */}
-      {kind === 'vehicle' && s.licence && (
-        <div className={`notice ${s.licence.known ? (s.licence.cdl ? 'warn' : 'good') : 'info'}`}>
-          <b>{s.licence.summary}</b>{s.licence.why ? ` - ${s.licence.why}` : ''}
-          {s.licence.endorsement === 'P' && ' Its driver must hold that endorsement.'}
-        </div>
-      )}
       {/* A hired driver's file does not stop mattering the day they are hired - the annual review,
           the Clearinghouse query and the medical certificate all fall due while they drive. */}
       {!applied && !reviewing && kind === 'driver' && <Requirements id={id} />}
       {/* A vehicle has a file of its own, and until now it did not: the inspection it owes, the
           reports its drivers made on it, and what has been done to it. 49 CFR Part 396. */}
-      {!applied && !reviewing && kind === 'vehicle' && <VehicleRequirements id={id} />}
-      {!applied && !reviewing && kind === 'vehicle' && <VehicleInspections id={id} onChanged={reload} />}
-      {!applied && !reviewing && kind === 'vehicle' && <VehicleMaintenance id={id} onChanged={reload} />}
-      {!applied && !reviewing && <Credentials subject={kind} subjectid={id} credentials={s.credentials} onChange={reload} />}
+      {!applied && !reviewing && kind === 'vehicle' && (
+        <VehicleRequirements id={id} credentials={s.credentials || []} onChanged={reload} />
+      )}
+      
+      
+      {/* Not for a vehicle. Its requirements list is where a document is filed now, so a
+          panel called Credentials at the foot of the page was the same job under a name
+          nobody recognised, a screen away from the question it answers. */}
+      {!applied && !reviewing && kind !== 'vehicle' && (
+        <Credentials subject={kind} subjectid={id} credentials={s.credentials}
+          onChange={reload} />
+      )}
     </div>
   )
 }
@@ -304,30 +318,5 @@ export default function SubjectDetail({ kind }) {
 // A plain Yes or No, in one weight, with the reason beside it. No badge and no colour: whether a
 // vehicle is a commercial motor vehicle is a fact about the vehicle, not good news or bad, and
 // dressing it as a warning made three neutral facts look like three problems.
-const FACTS = [
-  ['cmv_federal', 'Commercial motor vehicle, federally', '49 CFR 390.5'],
-  ['cmv_florida', 'Commercial motor vehicle, Florida', 'F.S. 316.003(14)'],
-  ['cdl_required', 'CDL required', '49 CFR 383.91'],
-]
 
-const said = (v) => (v === null || v === undefined ? 'Not enough recorded' : v ? 'Yes' : 'No')
 
-function VehicleFacts({ facts }) {
-  return (
-    <div className="card factpanel">
-      <h3>What this vehicle is</h3>
-      {FACTS.map(([key, label, citation]) => (
-        <div key={key} className="factrow">
-          <div className="factwhat">
-            {label}
-            <span className="factcite">{citation}</span>
-          </div>
-          <div className={`factanswer${facts[key] === null || facts[key] === undefined ? ' unknown' : ''}`}>
-            {said(facts[key])}
-          </div>
-          <div className="factwhy">{facts.why?.[key] || ''}</div>
-        </div>
-      ))}
-    </div>
-  )
-}

@@ -30,7 +30,7 @@ export default function Pager({ total, page, pagesize, onPage, onPageSize, noun 
       <div className="row">
         {onPageSize && (
           <label className="small muted row" style={{ gap: 6 }}>
-            Rows per page
+            Rows Per Page
             <select value={pagesize} onChange={(e) => onPageSize(Number(e.target.value))}>
               {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>

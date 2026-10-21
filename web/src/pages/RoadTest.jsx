@@ -157,7 +157,7 @@ export default function RoadTest() {
         <label className="field span-2">Ended
           <input type="time" value={v.endedat} onChange={(e) => set('endedat', e.target.value)} />
         </label>
-        <label className="field span-2">Approximate miles
+        <label className="field span-2">Approximate Miles
           <input type="number" min="0" value={v.miles}
             onChange={(e) => set('miles', e.target.value)} />
         </label>
@@ -200,7 +200,7 @@ export default function RoadTest() {
           <input type="number" min="0" value={v.gvwr}
             onChange={(e) => set('gvwr', e.target.value)} />
         </label>
-        <label className="field span-2">Passenger capacity
+        <label className="field span-2">Passenger Capacity
           <input type="number" min="0" value={v.seats}
             onChange={(e) => set('seats', e.target.value)} />
         </label>
@@ -243,7 +243,7 @@ export default function RoadTest() {
         </span>
       </div>
       <div className="profileform">
-        <label className="field span-6">Examiner comments
+        <label className="field span-6">Examiner Comments
           <textarea rows={3} value={v.comments}
             onChange={(e) => set('comments', e.target.value)} />
         </label>

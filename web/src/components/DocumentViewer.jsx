@@ -1,11 +1,13 @@
+import { Printer } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { auth } from '../lib/api.js'
 import { Modal } from '../admin/common.jsx'
+import { printFile } from '../lib/printing.js'
 import { useUser } from '../App.jsx'
 
 // Any stored file, read on screen rather than thrown into a browser tab.
 //
-// A document out of a tab is anonymous: nothing on it says whose file it is, and a licence
+// A document out of a tab is anonymous: nothing on it says whose file it is, and a license
 // photograph looks the same for every company in the country. So every document is read here, under
 // a header naming the account it belongs to and the file it came from.
 //
@@ -43,7 +45,12 @@ export function DocumentPane({ id, name, className = 'docview' }) {
     : <img className={className} src={file.url} alt={file.name} />
 }
 
-export default function DocumentViewer({ id, name, action, panel, onClose, brief }) {
+// `id` reads a stored document. `path` reads anything else the API will hand back as a
+// file - a signed document drawn to PDF on request, which has no stored copy because it
+// is rebuilt from the record every time it is read. Everything after the fetch is the
+// same either way, which is the point: one viewer, one set of furniture, one print
+// button, whatever is being read.
+export default function DocumentViewer({ id, path, name, action, panel, onClose, brief }) {
   const user = useUser()
   const [file, setFile] = useState(null)
   const [err, setErr] = useState(null)
@@ -51,7 +58,8 @@ export default function DocumentViewer({ id, name, action, panel, onClose, brief
   useEffect(() => {
     let url = null
     let live = true
-    fetch(`/api/documents/${id}`, { headers: { Authorization: `Bearer ${auth.get()}` } })
+    fetch(path ? `/api${path}` : `/api/documents/${id}`,
+          { headers: { Authorization: `Bearer ${auth.get()}` } })
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail || 'That file could not be opened')
         const blob = await r.blob()
@@ -61,7 +69,7 @@ export default function DocumentViewer({ id, name, action, panel, onClose, brief
       })
       .catch((e) => live && setErr(e.message))
     return () => { live = false; if (url) URL.revokeObjectURL(url) }
-  }, [id, name])
+  }, [id, path, name])
 
   // A dialog whose whole job is to read one document gives the document the room: no padding
   // around it, no border, no box inside a box. Where a panel is asked for - a rating to give while
@@ -70,6 +78,12 @@ export default function DocumentViewer({ id, name, action, panel, onClose, brief
     <Modal title={[user?.accountname, file?.name || name].filter(Boolean).join(' · ')}
       onClose={onClose} width={1120} tall flush
       footer={<>
+        {/* The file itself goes to the printer, not the page around it. */}
+        {file && (
+          <button type="button" onClick={() => printFile(file.url, file.name)}>
+            <Printer size={14} /> Print
+          </button>
+        )}
         {action}
         <button type="button" onClick={onClose}>Close</button>
       </>}>

@@ -294,7 +294,7 @@ def employer_history_requested(*, employer: str, accountname: str, driver: str, 
 def document_requested(*, name: str, accountname: str, document: str, link: str,
                        days: int) -> tuple[str, str, str]:
     """To the driver, when the office needs a document only they hold: what it is, and where to put
-    it. Nothing here says why it is wanted - the reason is often the driver's own licence history,
+    it. Nothing here says why it is wanted - the reason is often the driver's own license history,
     and an email subject line is read by whoever is standing behind them."""
     first = (name or "").split(" ")[0].title() or "there"
     company = escape(accountname)
@@ -323,6 +323,52 @@ def document_requested(*, name: str, accountname: str, document: str, link: str,
         "A clear photograph is fine. If you do not have the document, tell the company rather than "
         "uploading something else.", "",
         "If you were not expecting this, you can ignore it - nothing is added unless you add it.",
+    ])
+    return subject, html, text
+
+
+def screening_invited(*, name: str, accountname: str, tier: str,
+                      link: str) -> tuple[str, str, str]:
+    """To the driver, when a background check has been ordered and is waiting on them.
+
+    The screening vendor sends its own version of this. We send ours anyway, and for a plain
+    reason: a driver who gets nothing has no way of knowing where to go, and "it will arrive from
+    a company you have never heard of" is not a thing an office can tell somebody. This email
+    comes from the company the driver actually works for, through the same post as every other
+    thing TripProof asks a driver for.
+
+    The link goes to the vendor, which is where the details belong - the driver gives their Social
+    Security number and their authorisation to the screening company, not to us, and not to their
+    employer."""
+    first = (name or "").split(" ")[0].title() or "there"
+    company = escape(accountname)
+    subject = f"{accountname} needs you to finish a background check"
+    body = (
+        p(f"Hi {escape(first)},")
+        + p(f"<strong>{company}</strong> has started a background check for you "
+            f"({escape(tier)}). Nothing can be run until you fill in your own details and sign "
+            "the disclosures.")
+        + button("Finish it now", link)
+        + p("The form is on backgroundchecks.com, the company doing the check. You will be asked "
+            "for your date of birth and Social Security number, and to sign the notices the law "
+            "requires. That information goes to them and not to your employer.", small=True)
+        + p("Have a photograph of your driving licence to hand - it may be asked for.", small=True)
+        + p(f"If you were not expecting this, speak to {company} before filling anything in.",
+            small=True, muted=True)
+    )
+    html = layout(preheader=f"{accountname} has started a background check and it is waiting on you.",
+                  heading="One form to fill in", body=body,
+                  footer_note=f"Questions? Contact {company} directly.")
+    text = "\n".join([
+        f"Hi {first},", "",
+        f"{accountname} has started a background check for you ({tier}). Nothing can be run until "
+        "you fill in your own details and sign the disclosures.", "",
+        f"Finish it here: {link}", "",
+        "The form is on backgroundchecks.com, the company doing the check. You will be asked for "
+        "your date of birth and Social Security number, and to sign the notices the law requires. "
+        "That information goes to them and not to your employer.", "",
+        "Have a photograph of your driving licence to hand - it may be asked for.", "",
+        f"If you were not expecting this, speak to {accountname} before filling anything in.",
     ])
     return subject, html, text
 
@@ -358,41 +404,6 @@ def signature_requested(*, name: str, accountname: str, document: str, link: str
     return subject, html, text
 
 
-def supervisor_appointed(name: str, accountname: str, link: str) -> tuple[str, str, str]:
-    """To a user of the account who has just been made a reasonable suspicion supervisor.
-
-    Not a document request. They already have a login here, so the link only takes them to the
-    page - what makes it theirs to sign is signing in, not holding the URL."""
-    first = (name or "").split(" ")[0].title() or "there"
-    company = escape(accountname)
-    subject = f"You are now a reasonable suspicion supervisor at {accountname}"
-    body = (
-        p(f"Hi {escape(first)},")
-        + p(f"<strong>{company}</strong> has appointed you as a reasonable suspicion supervisor. "
-            "That means you may be the person who decides whether a driver is sent for a drug "
-            "or alcohol test on reasonable suspicion.")
-        + p("49 CFR 382.603 asks that you have had at least sixty minutes of training on alcohol "
-            "misuse and sixty on controlled substances, and that the record says so. Your "
-            "training record is waiting for your signature.")
-        + button("Read and sign your training record", link)
-        + p("Sign in as usual and it is on the page. Nobody else can sign it for you - a record "
-            "somebody else fills in about you is not you saying you were trained.", small=True)
-    )
-    html = layout(preheader=f"{accountname} has appointed you a reasonable suspicion supervisor.",
-                  heading="Your training record needs your signature", body=body,
-                  footer_note=f"Questions? Contact {company} directly.")
-    text = "\n".join([
-        f"Hi {first},", "",
-        f"{accountname} has appointed you as a reasonable suspicion supervisor. You may be the "
-        "person who decides whether a driver is sent for a drug or alcohol test on reasonable "
-        "suspicion.", "",
-        "49 CFR 382.603 asks that you have had at least sixty minutes of training on alcohol "
-        "misuse and sixty on controlled substances, and that the record says so. Your training "
-        "record is waiting for your signature.", "",
-        f"Read and sign it here: {link}", "",
-        "Sign in as usual and it is on the page. Nobody else can sign it for you.",
-    ])
-    return subject, html, text
 
 
 def welcome_aboard(*, name: str, accountname: str, link: str, days: int) -> tuple[str, str, str]:

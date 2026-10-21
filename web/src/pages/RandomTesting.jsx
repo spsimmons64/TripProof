@@ -225,20 +225,22 @@ export default function RandomTesting() {
           sub={owing.length ? 'drivers drawn and not yet tested' : 'everybody drawn has been tested'} />
       </div>
 
-      <div className="card">
-        <h3>Spread Through {data.year}</h3>
+      <div className="card qualcard">
+        <div className="infotabs"><h3>Spread Through {data.year}</h3></div>
+        <div className="panelbody">
         {/* 382.305(k). Six draws in December and none before is a finding, and it is a finding
             about shape - which a list of six rows will not show anybody. */}
         <DrawsChart year={data.year} selections={data.selections} types={data.types} />
+        </div>
       </div>
 
-      <div className="card">
-        <h3 className="withact">
-          <span>Drawn</span>
+      <div className="card qualcard">
+        <div className="infotabs"><h3>Drawn</h3>
           <span className="muted small">
             Every name that has come out, and what happened to them
           </span>
-        </h3>
+        </div>
+        <div className="panelbody">
         {!data.selections.length ? (
           <div className="gridempty">No draws recorded yet</div>
         ) : (
@@ -285,15 +287,16 @@ export default function RandomTesting() {
             </tbody>
           </table>
         )}
+        </div>
       </div>
 
-      <div className="card">
-        <h3 className="withact">
-          <span>The Pool</span>
+      <div className="card qualcard">
+        <div className="infotabs"><h3>The Pool</h3>
           <span className="muted small">
             Drivers go in and out from their own Requirements - Random testing pool membership
           </span>
-        </h3>
+        </div>
+        <div className="panelbody">
         {!(pool?.drivers || []).length ? (
           <div className="gridempty">Nobody is in the pool</div>
         ) : (
@@ -313,6 +316,7 @@ export default function RandomTesting() {
             </tbody>
           </table>
         )}
+        </div>
       </div>
 
       {adding && (
@@ -329,7 +333,7 @@ export default function RandomTesting() {
           <div className="stack">
             {err && <div className="notice bad">{err}</div>}
             <div className="profileform">
-              <label className="field span-2">Drawn on
+              <label className="field span-2">Drawn On
                 <input type="date" value={now.drawnon} min="1900-01-01" max="2100-12-31"
                   onChange={(e) => setF({ ...now, drawnon: e.target.value })} />
               </label>
@@ -341,16 +345,16 @@ export default function RandomTesting() {
                   ))}
                 </select>
               </label>
-              <label className="field span-2">Drawn by
+              <label className="field span-2">Drawn By
                 <input value={now.performedby} className="upper"
                   onChange={(e) => setF({ ...now, performedby: e.target.value.toUpperCase() })} />
               </label>
-              <label className="field span-3">The list of names it produced
+              <label className="field span-3">The List Of Names It Produced
                 <input type="file"
                   onChange={(e) => setF({ ...now, file: e.target.files[0] || null })} />
               </label>
               <label className="field span-3">Note
-                <input value={now.note} className="upper"
+                <textarea value={now.note} className="upper"
                   onChange={(e) => setF({ ...now, note: e.target.value.toUpperCase() })} />
               </label>
             </div>

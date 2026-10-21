@@ -153,7 +153,7 @@ export function AddUser({ accountid, platform, onClose, onCreated }) {
         <label className="field">Email *<input type="email" required value={f.values.email} onChange={f.set('email')} /></label>
         <label className="field">Name *<input required value={f.values.name} onChange={f.set('name')} /></label>
         {platform ? (
-          <label className="field">Admin role<select value={f.values.platformrole} onChange={f.set('platformrole')}>
+          <label className="field">Admin Role<select value={f.values.platformrole} onChange={f.set('platformrole')}>
             <option value="support">Support (read-only)</option><option value="superadmin">Super admin</option></select></label>
         ) : (
           <label className="field">Role<select value={f.values.role} onChange={f.set('role')}>

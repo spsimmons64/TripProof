@@ -27,7 +27,7 @@ from app.db import row, rows
 # unusable. Nothing we accept from the application is close: the limit there is 15 MB.
 MAX_EMBED = 12 * 1024 * 1024
 
-# A photograph of a licence comes off a phone at several megapixels, and every byte of it is
+# A photograph of a license comes off a phone at several megapixels, and every byte of it is
 # base64 in the page. An exhibit is shown, and printed, about seven inches wide; this is more than
 # that needs at print resolution, and turns six megabytes of camera JPEG into a few hundred
 # kilobytes. The stored file is untouched - only the copy carried in the page is resized.
@@ -176,7 +176,7 @@ def _fit(blob: bytes, mime: str, sha: str | None = None) -> tuple[bytes, str]:
         if image.width > EXHIBIT_PX:
             image = image.resize((EXHIBIT_PX, round(image.height * EXHIBIT_PX / image.width)),
                                  Image.LANCZOS)
-        # Photographs of a licence have no transparency to keep, and JPEG is a third of the size.
+        # Photographs of a license have no transparency to keep, and JPEG is a third of the size.
         out = io.BytesIO()
         image.convert("RGB").save(out, format="JPEG", quality=82, optimize=True, progressive=True)
         small = out.getvalue()
@@ -432,7 +432,7 @@ def build(conn: Connection, accountid: str, company: str, driver: dict, app_: di
                       + _note("Reason given", why) + "</div>")
     employment = _section("Employment History", "".join(blocks))
 
-    licences = _section("Driver's Licenses Held", _rows(
+    licenses = _section("Driver's Licenses Held", _rows(
         [("License number", 26), ("State", 10), ("Class", 10), ("Issued", 14), ("Expires", 14), ("Endorsements", 26)],
         [[l.get("number"), l.get("state"), l.get("classification"), l.get("issued"), l.get("expires"),
           ", ".join(l.get("endorsements") or [])] for l in (two.get("licenses") or [])], least=2))
@@ -458,13 +458,13 @@ def build(conn: Connection, accountid: str, company: str, driver: dict, app_: di
         + (_signature_block(sig, "Signature of applicant") if sig else "")
         + "</div>")
 
-    sheet = (f'<div class="sheet">{head}{applicant}{commercial}{residences}{employment}{licences}'
+    sheet = (f'<div class="sheet">{head}{applicant}{commercial}{residences}{employment}{licenses}'
              f'{accidents}{violations}{action}{certification}</div>')
 
     # Every document they signed, each one shown as they saw it with their signature beneath it.
-    licences_held = two.get("licenses") or []
-    cdl = next((l for l in licences_held if l.get("classification") in ("A", "B", "C")), None) or \
-        (licences_held[0] if licences_held else {})
+    licenses_held = two.get("licenses") or []
+    cdl = next((l for l in licenses_held if l.get("classification") in ("A", "B", "C")), None) or \
+        (licenses_held[0] if licenses_held else {})
     blanks = {"company": company.upper(),
               "fullname": f"{driver['firstname']} {driver['lastname']}".strip().upper(),
               "cdlstate": (cdl.get("state") or "").upper(), "cdlnumber": (cdl.get("number") or "").upper(),
@@ -632,11 +632,33 @@ PRINT_CSS = """
 
 
 def to_pdf(view: dict, fonts: str = "") -> bytes:
-    """The sheets as a PDF, drawn from the same HTML and stylesheet the portal shows."""
+    """The sheets as a PDF, drawn from the same HTML and stylesheet the portal shows.
+
+    Where the view carries exhibits, a PDF exhibit cannot be drawn inside the page - the renderer
+    has no PDF reader - so its heading page is drawn and the document's own pages follow it."""
     from weasyprint import CSS, HTML             # imported here: only printing needs it
-    page = (f'<!doctype html><html><head><meta charset="utf-8"><title>Driver application</title>'
-            f'</head><body class="appview">{view["html"]}</body></html>')
-    return HTML(string=page).write_pdf(stylesheets=[CSS(string=fonts + view["css"] + PRINT_CSS)])
+    css = [CSS(string=fonts + view["css"] + PRINT_CSS)]
+
+    def draw(body: str) -> bytes:
+        page = (f'<!doctype html><html><head><meta charset="utf-8"><title>Driver application</title>'
+                f'</head><body class="appview">{body}</body></html>')
+        return HTML(string=page).write_pdf(stylesheets=css)
+
+    if not view.get("exhibits"):
+        return draw(view["html"])
+    from pypdf import PdfReader, PdfWriter
+    out = PdfWriter()
+    out.append(PdfReader(io.BytesIO(draw(view["main"]))))
+    for e in view["exhibits"]:
+        out.append(PdfReader(io.BytesIO(draw(e["page"]))))
+        if e.get("pdf"):
+            try:
+                out.append(PdfReader(io.BytesIO(e["pdf"])))
+            except Exception:                    # noqa: BLE001 - a damaged file still gets its heading
+                pass
+    buf = io.BytesIO()
+    out.write(buf)
+    return buf.getvalue()
 
 
 def signature_css() -> str:
@@ -685,9 +707,9 @@ def signed_document(conn: Connection, accountid: str, driverid: str, doctype: st
     """, id=driverid, a=accountid)
     data = json.loads(app_["data"] or "{}") if app_ else {}
     company = row(conn, "SELECT name FROM accounts WHERE recordid = :a", a=accountid)["name"]
-    licences = ((data.get("steps") or {}).get("2") or {}).get("licenses") or []
-    cdl = next((l for l in licences if (l.get("classification") or "").upper() in ("A", "B", "C")), None) \
-        or (licences[0] if licences else {})
+    licenses = ((data.get("steps") or {}).get("2") or {}).get("licenses") or []
+    cdl = next((l for l in licenses if (l.get("classification") or "").upper() in ("A", "B", "C")), None) \
+        or (licenses[0] if licenses else {})
     blanks = {"company": company, "fullname": _fullname_of(driver),
               "cdlstate": cdl.get("state", ""), "cdlnumber": cdl.get("number", ""),
               "dob": driver["dob"].strftime("%m/%d/%Y") if driver.get("dob") else ""}

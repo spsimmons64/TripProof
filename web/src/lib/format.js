@@ -22,6 +22,16 @@ export const datetime = (v) => {
   const h = Number(hh)
   return `${date(dpart)} ${((h + 11) % 12) + 1}:${mm} ${h < 12 ? 'AM' : 'PM'}`
 }
+// The clock part on its own, for a board where every row is the same day and repeating the date
+// in every cell says nothing. A business time like the rest of these, so it is read off the stored
+// wall clock and never shifted into a time zone.
+export const time = (v) => {
+  if (!v) return '-'
+  const [hh, mm] = String(v).replace('T', ' ').split(' ')[1]?.split(':') || []
+  if (hh === undefined) return '-'
+  const h = Number(hh)
+  return `${((h + 11) % 12) + 1}:${mm} ${h < 12 ? 'AM' : 'PM'}`
+}
 // Coverage windows are half-open [start, end). An end at midnight means "good through the day
 // before", which is how people read an expiry - show that, not the exclusive instant.
 export const through = (v) => {

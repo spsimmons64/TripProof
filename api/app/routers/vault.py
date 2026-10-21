@@ -19,14 +19,17 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
-from app import (accidents, annualreview, applicationview, billing, certn, documents, drivers,
+from app import (accidents, annualreview, applicationview, backgroundchecks, billing,
+                 invitations,
+                 certn, documents, drivers,
                  eligibility, emails, exposure,
                  employers, events, gfeview, hos, i9, misreport, pdfform, randompool,
                  roadtest, roadtestview,
                  mvr as mvrs,
-                 facts as factset, formats, images, mailer, phi, rules, signatures, storage,
+                 facts as factset, formats, images, mailer, phi, qualification, rules,
+                 screening, screeningaccount, signatures, storage, tripcheck,
                  rates as rateset, vehicleclass, wheremap)
-from app import gateways
+from app import dispatch, gateways, payerlines
 from app.routers import signing, uploading
 from app.activity import log
 from app.config import settings
@@ -148,7 +151,7 @@ def _came_in(conn: Connection, acct: str, driverid: str, code: str, what: str,
     driver = row(conn, "SELECT firstname, lastname FROM drivers WHERE recordid = :d AND accountid = :a",
                  d=driverid, a=acct) or {}
     who = f'{driver.get("firstname") or ""} {driver.get("lastname") or ""}'.strip().title()
-    # A record that is written over has to lose its reading with it. A licence row whose copy is
+    # A record that is written over has to lose its reading with it. A license row whose copy is
     # replaced, or an inquiry answered a second time, is new evidence wearing an old record's id,
     # and leaving the old reading in place would let it go green on something nobody has seen.
     if sourcetable and sourceid:
@@ -192,7 +195,26 @@ def _reevaluate_subject(conn: Connection, user: dict, subject: str, subjectid: s
         col = "driverid" if subject == "driver" else "vehicleid"
         tripids = [r["tripid"] for r in rows(conn, f"SELECT DISTINCT tripid FROM triplegs WHERE accountid = :a AND {col} = :s",
                                              a=acct, s=subjectid)]
+        _recheck_upcoming(conn, acct, col, subjectid, user["recordid"])
     return evaluate(conn, acct, tripids, user["recordid"], "credential-change")
+
+
+def _recheck_upcoming(conn: Connection, acct: str, col: str, subjectid: str, userid: str) -> None:
+    """Something on this driver's or vehicle's file just changed - a license revoked, a screening
+    filed, a record lapsed - so every trip they are assigned in the coming week is checked again
+    now, not at tomorrow's sweep. The bell reads the newest check per trip. Never a reason for the
+    change itself to fail."""
+    try:
+        for leg in rows(conn, f"""
+            SELECT l.recordid, l.driverid, l.vehicleid FROM triplegs l
+            JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL AND t.cancelledon IS NULL
+            WHERE l.accountid = :a AND l.{col} = :s AND l.driverid IS NOT NULL
+              AND l.pickupat BETWEEN UTC_TIMESTAMP() AND UTC_TIMESTAMP() + INTERVAL 7 DAY
+        """, a=acct, s=subjectid):
+            tripcheck.check(conn, acct, leg["driverid"], leg["vehicleid"], legid=leg["recordid"],
+                            userid=userid, shadow=True)
+    except Exception:                       # noqa: BLE001 - see above
+        pass
 
 
 # ------------------------------------------------------------------------------------------------
@@ -219,17 +241,6 @@ class AccountUserPatch(BaseModel):
     name: str | None = None
     role: str | None = None
     disabled: bool | None = None
-
-
-def _theirs_to_manage(user: dict) -> None:
-    """TripProof staff in a customer's portal can read this page and change nothing on it.
-
-    Who may sign in at a company is the company's own decision, and a launched session is us
-    standing in their office - not us being them. Without this, one wrong click from support closes
-    the customer's owner and locks them out of their own account."""
-    if user.get("platformrole"):
-        raise HTTPException(403, "TripProof staff cannot change who signs in at a customer - "
-                                 "the company manages its own users")
 
 
 def _their_user(conn: Connection, accountid: str, userid: str) -> dict:
@@ -262,18 +273,31 @@ def account_users(user: dict = Depends(account_admin), conn: Connection = Depend
                (SELECT d.signedon FROM documentsignatures d
                  WHERE d.accountid = u.accountid AND d.ownertype = 'user'
                    AND d.ownerid = u.recordid
-                   AND d.doctype = 'SUPERVISOR_TRAINING_RECORD') AS trainingsignedon
+                   AND d.doctype = 'SUPERVISOR_TRAINING_RECORD') AS trainingsignedon,
+               -- The company appointments this person currently holds, each with the id of
+               -- the appointment itself: ending one is done by its row, because who held a
+               -- role and when is what an audit asks and a deleted row cannot answer it.
+               (SELECT GROUP_CONCAT(CONCAT(r.role, ':', r.recordid))
+                  FROM companyroles r
+                 WHERE r.accountid = u.accountid AND r.userid = u.recordid
+                   AND r.until IS NULL) AS heldroles
         FROM users u
         WHERE u.accountid = :a AND u.platformrole IS NULL
         ORDER BY u.deleted IS NOT NULL, u.name
-    """, a=user["accountid"]), "me": user["recordid"]}
+    """, a=user["accountid"]),
+        "me": user["recordid"],
+        # The appointments a person can hold. One list, the same one the Company
+        # Requirements screen appoints from.
+        "companyroles": COMPANY_ROLES}
 
 
 @router.post("/account/users")
 def add_account_user(body: AccountUserIn, request: Request, tasks: BackgroundTasks,
                      user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
-    """Add a login and send its invitation. The login cannot be used until the invitation is."""
-    _theirs_to_manage(user)
+    """Add a login and send its invitation. The login cannot be used until the invitation is.
+
+    Open to TripProof staff working in the portal: adding someone cannot lock anybody out, which
+    is what keeps them away from changing or closing the logins already there."""
     if body.role not in ACCOUNT_ROLES:
         raise HTTPException(400, "Unknown role")
     made = admin._create_user(conn, user["accountid"], body.email, body.name.strip(), body.role,
@@ -290,9 +314,9 @@ def change_account_user(userid: str, body: AccountUserPatch, request: Request,
                         user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
     """Rename them, change what they may do, or close the login.
 
-    Nobody can close their own login or take away their own access: an account that locks out its
-    last owner is an account that has to ring us."""
-    _theirs_to_manage(user)
+    Nobody can close their own login or take away their own access, and the last owner can be
+    neither demoted nor closed - by the company or by TripProof staff working in its portal. An
+    account that locks out its last owner is an account that has to ring us."""
     held = _their_user(conn, user["accountid"], userid)
     if userid == user["recordid"] and (body.disabled or (body.role and body.role != held["role"])):
         raise HTTPException(400, "You cannot change your own access")
@@ -323,18 +347,166 @@ def change_account_user(userid: str, body: AccountUserPatch, request: Request,
     return {"ok": True}
 
 
+@router.get("/account/users/{userid}/documents")
+def account_user_documents(userid: str, user: dict = Depends(account_admin),
+                           conn: Connection = Depends(get_conn)):
+    """What this person has put their own name to.
+
+    Signatures BY a user, filed against them - at present the reasonable suspicion supervisor
+    training record, which only they can sign. Read from the one place signatures live, so a
+    document added later appears here without this endpoint being touched.
+    """
+    _their_user(conn, user["accountid"], userid)
+    return {
+        "labels": signatures.DOC_TYPES,
+        "items": rows(conn, """
+            SELECT d.recordid, d.doctype, d.signedon, s.signername, s.typedname
+            FROM documentsignatures d JOIN signatures s ON s.recordid = d.signatureid
+            WHERE d.accountid = :a AND d.ownertype = 'user' AND d.ownerid = :u
+            ORDER BY d.signedon DESC
+        """, a=user["accountid"], u=userid),
+    }
+
+
 @router.post("/account/users/{userid}/invite")
 def invite_account_user(userid: str, request: Request, tasks: BackgroundTasks,
                         user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
-    """Send the invitation again - a link nobody used, or a password nobody remembers."""
-    _theirs_to_manage(user)
+    """Email a link to set a password - a link nobody used, or a password nobody remembers.
+
+    A login that has never set one gets an invitation; one that has gets a reset, which is a
+    shorter-lived link and says the right thing in the mail. The same choice the admin side
+    makes, because it is the same question. The current password keeps working until the
+    link is used.
+    """
     held = _their_user(conn, user["accountid"], userid)
     if held["deleted"]:
         raise HTTPException(400, "That login is closed")
-    invited = admin._invite(conn, tasks, userid, "invite", user)
-    log(conn, user, "account-invite-user", "user", userid, ip=client_ip(request))
+    used = row(conn, """
+        SELECT 1 AS x FROM activitylog
+        WHERE userid = :u AND action IN ('password-set', 'login') LIMIT 1
+    """, u=userid)
+    purpose = "reset" if used else "invite"
+    invited = admin._invite(conn, tasks, userid, purpose, user)
+    log(conn, user, "account-invite-user", "user", userid, {"purpose": purpose},
+        ip=client_ip(request))
     saved(conn)
-    return invited
+    return {**invited, "purpose": purpose}
+
+
+class ShiftIn(BaseModel):
+    weekday: int
+    startsat: str
+    endsat: str
+
+
+class ShiftsIn(BaseModel):
+    shifts: list[ShiftIn] = []
+
+
+@router.get("/drivers/{driverid}/shifts")
+def driver_shifts(driverid: str, user: dict = Depends(current_user),
+                  conn: Connection = Depends(get_conn)):
+    """When this driver normally works."""
+    acct = user["accountid"]
+    if not row(conn, "SELECT 1 AS x FROM drivers WHERE recordid = :d AND accountid = :a "
+                     "AND deleted IS NULL", d=driverid, a=acct):
+        raise HTTPException(404, "No such driver")
+    return {
+        "days": dispatch.WEEKDAYS,
+        "shifts": rows(conn, """
+            SELECT recordid, weekday, startsat, endsat FROM drivershifts
+            WHERE accountid = :a AND driverid = :d ORDER BY weekday, startsat
+        """, a=acct, d=driverid),
+    }
+
+
+@router.put("/drivers/{driverid}/shifts")
+def set_driver_shifts(driverid: str, body: ShiftsIn, request: Request,
+                      user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """Replace the week.
+
+    Written whole rather than row by row: a working week is one thing a person decides, and
+    patching days one at a time leaves a half-saved week if the second request never arrives."""
+    acct = user["accountid"]
+    if not row(conn, "SELECT 1 AS x FROM drivers WHERE recordid = :d AND accountid = :a "
+                     "AND deleted IS NULL", d=driverid, a=acct):
+        raise HTTPException(404, "No such driver")
+    for s in body.shifts:
+        if not 0 <= s.weekday <= 6:
+            raise HTTPException(400, "That is not a day of the week")
+        if not s.startsat or not s.endsat:
+            raise HTTPException(400, "A shift needs a start and an end")
+        if s.startsat == s.endsat:
+            raise HTTPException(400, "A shift that starts and ends at the same moment is not one")
+    run(conn, "DELETE FROM drivershifts WHERE accountid = :a AND driverid = :d", a=acct, d=driverid)
+    for s in body.shifts:
+        run(conn, """
+            INSERT INTO drivershifts (recordid, accountid, driverid, weekday, startsat, endsat,
+                                      added, addedby)
+            VALUES (:id, :a, :d, :w, :s, :e, :now, :by)
+        """, id=newid(), a=acct, d=driverid, w=s.weekday, s=s.startsat, e=s.endsat,
+            now=utcnow(), by=user["recordid"])
+    log(conn, user, "driver-shifts", "driver", driverid, {"days": len(body.shifts)},
+        ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+@router.post("/drivers/{driverid}/appaccess")
+def invite_driver_to_the_app(driverid: str, request: Request, tasks: BackgroundTasks,
+                             user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """Email this driver a link to set a password for the driver app.
+
+    An invitation the first time, a reset after that - the same distinction the office logins
+    make, because it is the same question and the mail has to say the right thing. The link goes
+    to the app, not to the office sign-in."""
+    acct = user["accountid"]
+    held = row(conn, """
+        SELECT recordid, firstname, lastname, email, passwordhash, appaccess
+        FROM drivers WHERE recordid = :d AND accountid = :a AND deleted IS NULL
+    """, d=driverid, a=acct)
+    if not held:
+        raise HTTPException(404, "No such driver")
+    if not (held["email"] or "").strip():
+        raise HTTPException(409, "This driver has no email address on file. Record one first.")
+    # The address has to reach one person. Two driver records sharing it means neither can sign
+    # in, so it is refused here rather than at the sign-in screen where nobody can fix it.
+    shared = row(conn, """
+        SELECT COUNT(*) AS n FROM drivers
+        WHERE accountid = :a AND deleted IS NULL AND LOWER(email) = LOWER(:e)
+    """, a=acct, e=held["email"])
+    if int(shared["n"]) > 1:
+        raise HTTPException(409, "That email address is on more than one driver record. Give this "
+                                 "driver an address of their own first.")
+    purpose = "reset" if held["passwordhash"] else "invite"
+    link = invitations.issue_for_driver(conn, driverid, purpose, user["recordid"])
+    emailed = invitations.email_configured()
+    if emailed:
+        tasks.add_task(invitations.deliver, purpose=purpose,
+                       name=f'{held["firstname"]} {held["lastname"]}'.strip(),
+                       email=held["email"], link=link, expires=invitations.expiry(purpose),
+                       accountname=user["accountname"], staff=False, role=None,
+                       invitedby=user["name"], tz=user.get("usertimezone"))
+    log(conn, user, "driver-app-invite", "driver", driverid, {"purpose": purpose},
+        ip=client_ip(request))
+    saved(conn)
+    # With no mail configured the link comes back to be passed on by hand, as everywhere else.
+    return {"ok": True, "purpose": purpose, "emailed": emailed,
+            "link": None if emailed else link}
+
+
+@router.post("/drivers/{driverid}/appaccess/close")
+def close_driver_app_access(driverid: str, request: Request, user: dict = Depends(editor),
+                            conn: Connection = Depends(get_conn)):
+    """Stop this driver signing in, without touching whether they may drive. Two questions."""
+    acct = user["accountid"]
+    r = run(conn, "UPDATE drivers SET appaccess = 0 WHERE recordid = :d AND accountid = :a "
+                  "AND deleted IS NULL", d=driverid, a=acct)
+    if not r.rowcount:
+        raise HTTPException(404, "No such driver")
+    log(conn, user, "driver-app-closed", "driver", driverid, {}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------------------------------------
@@ -495,6 +667,10 @@ def get_driver(driverid: str, user: dict = Depends(current_user), conn: Connecti
     d = row(conn, "SELECT * FROM drivers WHERE recordid = :id AND accountid = :a AND deleted IS NULL", id=driverid, a=acct)
     if not d:
         raise HTTPException(404, "Driver not found")
+    # This row is read with SELECT *, so a column added to `drivers` reaches the browser unless
+    # somebody stops it. A password hash has no business leaving the server at all - what the
+    # office needs to know is whether there IS one, and when they last used it.
+    d["hasapppassword"] = bool(d.pop("passwordhash", None))
     today = localnow(user["timezone"])
     d["credentials"] = _mark_replaced([_status_today(c, today) for c in _credentials(conn, acct, "driver", driverid)])
     d["exposure"] = _exposure_by(conn, acct, "driver").get(driverid, {"trips": 0, "amount": 0})
@@ -527,21 +703,24 @@ class LicenseIn(BaseModel):
     classification: str | None = None
     endorsements: str | None = None
     issued: date | None = None
+    # The original issue date, where the card prints one - the start of the driver's driving, which
+    # the issue date (usually the latest renewal) is not.
+    originalissued: date | None = None
     expires: date | None = None
     active: bool = False
     note: str | None = None
 
 
-def _licences(conn: Connection, accountid: str, driverid: str) -> list[dict]:
-    """The licences on file, each saying whether this office still has to read its copy.
+def _licenses(conn: Connection, accountid: str, driverid: str) -> list[dict]:
+    """The licenses on file, each saying whether this office still has to read its copy.
 
     The reading is asked of the engine with the same function the status is worked out from. This
     table is its own screen and does not go through the generic requirement list, so without this
-    it had no idea a copy was waiting - the licence read "Review" on the requirements page and
+    it had no idea a copy was waiting - the license read "Review" on the requirements page and
     "View" with nothing behind it here."""
     held = rows(conn, """
-        SELECT recordid, number, state, classification, endorsements, issued, expires, active, note,
-               copydocumentid
+        SELECT recordid, number, state, classification, endorsements, issued, originalissued,
+               expires, active, note, copydocumentid
         FROM driverlicenses WHERE accountid = :a AND driverid = :d
         ORDER BY active DESC, COALESCE(issued, '1900-01-01') DESC
     """, a=accountid, d=driverid)
@@ -557,15 +736,15 @@ def _licences(conn: Connection, accountid: str, driverid: str) -> list[dict]:
             for l in held]
 
 
-def _make_active(conn: Connection, accountid: str, driverid: str, licenceid: str) -> None:
-    """One licence is the one they drive on, and every check reads it from the driver row - so the
+def _make_active(conn: Connection, accountid: str, driverid: str, licenseid: str) -> None:
+    """One license is the one they drive on, and every check reads it from the driver row - so the
     driver row is kept in step with whichever is marked."""
     run(conn, "UPDATE driverlicenses SET active = 0 WHERE accountid = :a AND driverid = :d",
         a=accountid, d=driverid)
     run(conn, "UPDATE driverlicenses SET active = 1, updated = :now WHERE recordid = :id AND accountid = :a",
-        now=utcnow(), id=licenceid, a=accountid)
+        now=utcnow(), id=licenseid, a=accountid)
     held = row(conn, "SELECT number, state, classification, endorsements FROM driverlicenses WHERE recordid = :id",
-               id=licenceid)
+               id=licenseid)
     if held:
         run(conn, """
             UPDATE drivers SET licensenumber = :n, licensestate = :s, licenseclass = :c,
@@ -576,16 +755,16 @@ def _make_active(conn: Connection, accountid: str, driverid: str, licenceid: str
 
 
 @router.get("/drivers/{driverid}/licenses")
-def driver_licences(driverid: str, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+def driver_licenses(driverid: str, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
     _applicant(conn, user["accountid"], driverid)
-    return {"licenses": _licences(conn, user["accountid"], driverid)}
+    return {"licenses": _licenses(conn, user["accountid"], driverid)}
 
 
-LICENCE_COPY_NAME = "Copy Of Driver's License.pdf"
+LICENSE_COPY_NAME = "Copy Of Driver's License.pdf"
 
 
 @router.post("/drivers/{driverid}/licenses/{licenseid}/copy")
-async def file_licence_copy(
+async def file_license_copy(
     driverid: str,
     licenseid: str,
     request: Request,
@@ -594,7 +773,7 @@ async def file_licence_copy(
     user: dict = Depends(editor),
     conn: Connection = Depends(get_conn),
 ):
-    """The licence as one document: the front, then the back, bound into a single PDF.
+    """The license as one document: the front, then the back, bound into a single PDF.
 
     Photographs become pages on the way in - see app/images.py - so what the file ends up holding
     is the card, not two snapshots that have to be read together."""
@@ -604,7 +783,7 @@ async def file_licence_copy(
         SELECT recordid FROM driverlicenses WHERE recordid = :l AND accountid = :a AND driverid = :d
     """, l=licenseid, a=acct, d=driverid)
     if not lic:
-        raise HTTPException(404, "That licence is not on this driver")
+        raise HTTPException(404, "That license is not on this driver")
     pages = []
     for side in (front, back):
         if side is None or not side.filename:
@@ -618,18 +797,18 @@ async def file_licence_copy(
         pages.append(page)
     if not pages:
         raise HTTPException(400, "Choose at least one side to file")
-    documentid = storage.keep(conn, acct, "documents", images.bind(pages), LICENCE_COPY_NAME,
+    documentid = storage.keep(conn, acct, "documents", images.bind(pages), LICENSE_COPY_NAME,
                               "application/pdf", user["recordid"], origin=storage.OFFICE)
     run(conn, "UPDATE driverlicenses SET copydocumentid = :doc, updated = :now WHERE recordid = :l",
         doc=documentid, now=utcnow(), l=licenseid)
     _filed_here(conn, acct, driverid, "driverlicenses", licenseid, user["recordid"])
-    log(conn, user, "licencecopy", "driver", driverid, {"pages": len(pages)}, ip=client_ip(request))
+    log(conn, user, "licensecopy", "driver", driverid, {"pages": len(pages)}, ip=client_ip(request))
     saved(conn)
     return {"ok": True, "documentid": documentid}
 
 
 @router.post("/drivers/{driverid}/licenses")
-def add_driver_licence(driverid: str, body: LicenseIn, request: Request,
+def add_driver_license(driverid: str, body: LicenseIn, request: Request,
                        user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
@@ -643,33 +822,34 @@ def add_driver_licence(driverid: str, body: LicenseIn, request: Request,
     lid = held["recordid"] if held else newid()
     if held:
         run(conn, """
-            UPDATE driverlicenses SET classification = :c, endorsements = :e, issued = :i, expires = :x,
-                   note = :note, updated = :now WHERE recordid = :id
-        """, c=body.classification, e=body.endorsements, i=body.issued, x=body.expires,
-            note=body.note, now=utcnow(), id=lid)
+            UPDATE driverlicenses SET classification = :c, endorsements = :e, issued = :i,
+                   originalissued = :oi, expires = :x, note = :note, updated = :now WHERE recordid = :id
+        """, c=body.classification, e=body.endorsements, i=body.issued, oi=body.originalissued,
+            x=body.expires, note=body.note, now=utcnow(), id=lid)
     else:
         run(conn, """
             INSERT INTO driverlicenses (recordid, accountid, driverid, number, state, classification,
-                                        endorsements, issued, expires, note)
-            VALUES (:id, :a, :d, :n, :s, :c, :e, :i, :x, :note)
+                                        endorsements, issued, originalissued, expires, note)
+            VALUES (:id, :a, :d, :n, :s, :c, :e, :i, :oi, :x, :note)
         """, id=lid, a=acct, d=driverid, n=number, s=state, c=body.classification,
-            e=body.endorsements, i=body.issued, x=body.expires, note=body.note)
-    # The first licence on file is the one they drive on until someone says otherwise.
+            e=body.endorsements, i=body.issued, oi=body.originalissued, x=body.expires,
+            note=body.note)
+    # The first license on file is the one they drive on until someone says otherwise.
     if body.active or not row(conn, "SELECT 1 AS x FROM driverlicenses WHERE accountid = :a AND driverid = :d AND active = 1",
                               a=acct, d=driverid):
         _make_active(conn, acct, driverid, lid)
     log(conn, user, "create", "driverlicense", driverid, {"state": state, "number": number}, ip=client_ip(request))
-    out = _licences(conn, acct, driverid)
+    out = _licenses(conn, acct, driverid)
     saved(conn)
-    # The id comes back as well as the list: a copy of the licence is filed against the licence it
+    # The id comes back as well as the list: a copy of the license is filed against the license it
     # belongs to, and the caller has just created it and has nothing else to identify it by.
     return {"recordid": lid, "licenses": out}
 
 
 @router.post("/drivers/{driverid}/licenses/{licenseid}/active")
-def activate_driver_licence(driverid: str, licenseid: str, request: Request,
+def activate_driver_license(driverid: str, licenseid: str, request: Request,
                             user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
-    """Which licence this driver drives on. Every trip check reads the class and endorsements from
+    """Which license this driver drives on. Every trip check reads the class and endorsements from
     the driver record, so marking one here is what moves them."""
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
@@ -678,13 +858,13 @@ def activate_driver_licence(driverid: str, licenseid: str, request: Request,
         raise HTTPException(404, "That license is not on this driver")
     _make_active(conn, acct, driverid, licenseid)
     log(conn, user, "update", "driverlicense", driverid, {"active": licenseid}, ip=client_ip(request))
-    out = _licences(conn, acct, driverid)
+    out = _licenses(conn, acct, driverid)
     saved(conn)
     return {"licenses": out}
 
 
 @router.delete("/drivers/{driverid}/licenses/{licenseid}")
-def remove_driver_licence(driverid: str, licenseid: str, request: Request,
+def remove_driver_license(driverid: str, licenseid: str, request: Request,
                           user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
@@ -699,7 +879,7 @@ def remove_driver_licence(driverid: str, licenseid: str, request: Request,
     run(conn, "DELETE FROM driverlicenses WHERE recordid = :id", id=licenseid)
     log(conn, user, "delete", "driverlicense", driverid,
         {"state": held["state"], "number": held["number"]}, ip=client_ip(request))
-    out = _licences(conn, acct, driverid)
+    out = _licenses(conn, acct, driverid)
     saved(conn)
     return {"licenses": out}
 
@@ -896,10 +1076,145 @@ def add_accident(driverid: str, request: Request, body: dict,
         injurytreatedaway=body.get("injurytreatedaway"), towaway=body.get("towaway"),
         cited=body.get("cited"), citedon=(body.get("citedon") or None),
         nottested=(body.get("nottested") or None), note=(body.get("note") or None),
-        enteredby=user["recordid"])
+        enteredby=user["recordid"], atfault=body.get("atfault"))
     log(conn, user, "accident", "driver", driverid, {"occurredon": when}, ip=client_ip(request))
     saved(conn)
     return {"recordid": rid}
+
+
+class MovingViolationIn(BaseModel):
+    occurredon: date
+    violation: str
+    convictedon: date | None = None
+    atfault: bool | None = None
+    onnemt: bool = True
+    note: str | None = None
+
+
+@router.get("/drivers/{driverid}/moving-violations")
+def moving_violations(driverid: str, user: dict = Depends(current_user),
+                      conn: Connection = Depends(get_conn)):
+    """Moving violations recorded against this driver, and the at-fault accidents beside them -
+    the two things DCH 914.2.5 counts together."""
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    return {
+        "violations": rows(conn, """
+            SELECT recordid, occurredon, violation, convictedon, atfault, onnemt, note
+            FROM drivermovingviolations WHERE accountid = :a AND driverid = :d AND withdrawn IS NULL
+            ORDER BY occurredon DESC
+        """, a=acct, d=driverid),
+        "accidents": rows(conn, """
+            SELECT recordid, occurredon, location, atfault FROM driveraccidents
+            WHERE accountid = :a AND driverid = :d AND withdrawn IS NULL ORDER BY occurredon DESC
+        """, a=acct, d=driverid)}
+
+
+@router.post("/drivers/{driverid}/moving-violations")
+def add_moving_violation(driverid: str, body: MovingViolationIn, request: Request,
+                         user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    if not body.violation.strip():
+        raise HTTPException(400, "Say what the violation was")
+    rid = newid()
+    run(conn, """
+        INSERT INTO drivermovingviolations (recordid, accountid, driverid, occurredon, violation,
+                                            convictedon, atfault, onnemt, note, enteredby, createdon)
+        VALUES (:id, :a, :d, :on, :v, :c, :af, :nemt, :n, :u, :now)
+    """, id=rid, a=acct, d=driverid, on=body.occurredon, v=body.violation.strip().upper()[:160],
+        c=body.convictedon, af=None if body.atfault is None else int(body.atfault),
+        nemt=int(body.onnemt), n=(body.note or "").strip().upper()[:512] or None,
+        u=user["recordid"], now=utcnow())
+    log(conn, user, "moving-violation", "driver", driverid, {"occurredon": str(body.occurredon)},
+        ip=client_ip(request))
+    _reevaluate_subject(conn, user, "driver", driverid)
+    saved(conn)
+    return {"recordid": rid}
+
+
+@router.post("/drivers/{driverid}/moving-violations/{recordid}/withdraw")
+def withdraw_moving_violation(driverid: str, recordid: str, request: Request,
+                              user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """Recorded against the wrong driver, or never convicted. Withdrawn, never deleted."""
+    n = run(conn, "UPDATE drivermovingviolations SET withdrawn = :now WHERE recordid = :r "
+                  "AND driverid = :d AND accountid = :a AND withdrawn IS NULL",
+            now=utcnow(), r=recordid, d=driverid, a=user["accountid"]).rowcount
+    if not n:
+        raise HTTPException(404, "No such violation")
+    log(conn, user, "moving-violation-withdrawn", "driver", driverid, {"recordid": recordid},
+        ip=client_ip(request))
+    _reevaluate_subject(conn, user, "driver", driverid)
+    saved(conn)
+    return {"ok": True}
+
+
+class SecurementIncidentIn(BaseModel):
+    occurredon: date
+    confirmed: bool = False
+    note: str | None = None
+
+
+@router.get("/drivers/{driverid}/securement-incidents")
+def securement_incidents(driverid: str, user: dict = Depends(current_user),
+                         conn: Connection = Depends(get_conn)):
+    """Wheelchair securement failures recorded against this driver - DCH 907.16."""
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    return {"incidents": rows(conn, """
+        SELECT recordid, occurredon, confirmed, note FROM driversecurementincidents
+        WHERE accountid = :a AND driverid = :d AND withdrawn IS NULL ORDER BY occurredon DESC
+    """, a=acct, d=driverid)}
+
+
+@router.post("/drivers/{driverid}/securement-incidents")
+def add_securement_incident(driverid: str, body: SecurementIncidentIn, request: Request,
+                            user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    rid = newid()
+    run(conn, """
+        INSERT INTO driversecurementincidents (recordid, accountid, driverid, occurredon, confirmed,
+                                               note, enteredby, createdon)
+        VALUES (:id, :a, :d, :on, :c, :n, :u, :now)
+    """, id=rid, a=acct, d=driverid, on=body.occurredon, c=int(body.confirmed),
+        n=(body.note or "").strip().upper()[:512] or None, u=user["recordid"], now=utcnow())
+    log(conn, user, "securement-incident", "driver", driverid,
+        {"occurredon": str(body.occurredon), "confirmed": body.confirmed}, ip=client_ip(request))
+    _reevaluate_subject(conn, user, "driver", driverid)
+    saved(conn)
+    return {"recordid": rid}
+
+
+@router.post("/drivers/{driverid}/securement-incidents/{recordid}/confirm")
+def confirm_securement_incident(driverid: str, recordid: str, request: Request,
+                                user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """A reported failure, now confirmed. Only a confirmed one removes the driver."""
+    n = run(conn, "UPDATE driversecurementincidents SET confirmed = 1 WHERE recordid = :r "
+                  "AND driverid = :d AND accountid = :a AND withdrawn IS NULL",
+            r=recordid, d=driverid, a=user["accountid"]).rowcount
+    if not n:
+        raise HTTPException(404, "No such incident")
+    log(conn, user, "securement-confirmed", "driver", driverid, {"recordid": recordid},
+        ip=client_ip(request))
+    _reevaluate_subject(conn, user, "driver", driverid)
+    saved(conn)
+    return {"ok": True}
+
+
+@router.post("/drivers/{driverid}/securement-incidents/{recordid}/withdraw")
+def withdraw_securement_incident(driverid: str, recordid: str, request: Request,
+                                 user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    n = run(conn, "UPDATE driversecurementincidents SET withdrawn = :now WHERE recordid = :r "
+                  "AND driverid = :d AND accountid = :a AND withdrawn IS NULL",
+            now=utcnow(), r=recordid, d=driverid, a=user["accountid"]).rowcount
+    if not n:
+        raise HTTPException(404, "No such incident")
+    log(conn, user, "securement-withdrawn", "driver", driverid, {"recordid": recordid},
+        ip=client_ip(request))
+    _reevaluate_subject(conn, user, "driver", driverid)
+    saved(conn)
+    return {"ok": True}
 
 
 @router.post("/drivers/{driverid}/accidents/{recordid}")
@@ -1093,9 +1408,9 @@ async def update_prohibition(driverid: str, request: Request,
 # ------------------------------------------------------------------------------------------------
 # The other reports the office sends away for
 #
-# A PSP report and a CDLIS check are each one report about one driver, not one per licence: the
+# A PSP report and a CDLIS check are each one report about one driver, not one per license: the
 # FMCSA holds a single crash and inspection history, and CDLIS answers a single question about
-# licences held anywhere. They are ordered, received and read the same way a driving record is, so
+# licenses held anywhere. They are ordered, received and read the same way a driving record is, so
 # they are worked the same way - and the screening on the driver's list reads whichever is current.
 # ------------------------------------------------------------------------------------------------
 
@@ -1111,14 +1426,6 @@ REPORTS = {
 # The tier is recorded on the order: a Core search that came back clear is not evidence that a
 # Complete one would have, and "what did you actually run on this driver" is a question an auditor
 # asks.
-SCREENING_TIERS = {
-    "core": {"name": "Core Background Check", "price": 2399,
-             "covers": "National criminal database and sex offender registry searches."},
-    "complete": {"name": "Complete Background Check", "price": 5999,
-                 "covers": "Everything in Core, plus county and federal criminal searches and "
-                           "identity verification."},
-}
-
 # What a report can come back saying. Most of these are a reader's judgement - somebody read the
 # crash history and decided it needed a second look - so the words are deliberately vague.
 #
@@ -1190,7 +1497,7 @@ def driver_reports(driverid: str, code: str, user: dict = Depends(current_user),
                           if span and r["issuedon"] else None)
     # Only what stands now, as with a driving record: the earlier ones are kept and read in the
     # driver's file, but they are not what the office is waiting on.
-    # The whole history, the way a licence shows every driving record pulled on it. The earlier
+    # The whole history, the way a license shows every driving record pulled on it. The earlier
     # ones are not what the office is waiting on, but they are part of the file.
     return {"code": code, "name": REPORTS[code], "reports": held, "outcomes": _outcomes(code)}
 
@@ -1387,15 +1694,15 @@ def cancel_report_order(driverid: str, code: str, reportid: str, request: Reques
 
 
 # ------------------------------------------------------------------------------------------------
-# Driving records, by licence
+# Driving records, by license
 #
-# A driving record is a state's account of one licence. A driver holding licences in two states has
+# A driving record is a state's account of one license. A driver holding licenses in two states has
 # two histories, and pulling one is not pulling the other - so records are ordered, filed and read
-# against the licence they belong to.
+# against the license they belong to.
 # ------------------------------------------------------------------------------------------------
 
 def _unfinished_mvr(conn: Connection, accountid: str, licenseid: str) -> dict | None:
-    """A request on this licence that has not come back yet.
+    """A request on this license that has not come back yet.
 
     Only one thing genuinely cannot be allowed twice: two requests out to the same authority at
     once, because nothing afterwards says which answer belongs to which request.
@@ -1405,7 +1712,7 @@ def _unfinished_mvr(conn: Connection, accountid: str, licenseid: str) -> dict | 
     make monitoring impossible. This used to also block on a record nobody had read and on an annual
     review that was not complete, the second of which stopped working entirely when the annual review
     stopped belonging to a single record: the join found nothing, `r.finding IS NULL` was true of
-    everything, and every licence was blocked from ever being asked about again."""
+    everything, and every license was blocked from ever being asked about again."""
     return row(conn, """
         SELECT recordid, issuedon, receivedon, reviewstate
         FROM drivermvrs
@@ -1425,11 +1732,11 @@ def _mvr_type(conn: Connection) -> str:
 
 @router.get("/drivers/{driverid}/mvrs")
 def driver_mvrs(driverid: str, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
-    """Every licence this driver holds, and the driving records pulled on each - newest first, with
-    anything still outstanding at the top of its licence."""
+    """Every license this driver holds, and the driving records pulled on each - newest first, with
+    anything still outstanding at the top of its license."""
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
-    licences = _licences(conn, acct, driverid)
+    licenses = _licenses(conn, acct, driverid)
     held = rows(conn, """
         SELECT m.recordid, m.licenseid, m.orderedon, m.issuedon, m.receivedon, m.documentid, m.note,
                m.reviewstate, m.reviewedon, m.selfcert, m.medcertstatus, m.medcertexpires,
@@ -1445,24 +1752,24 @@ def driver_mvrs(driverid: str, user: dict = Depends(current_user), conn: Connect
         FROM annualreviews WHERE accountid = :a AND driverid = :d AND mvrid IS NOT NULL
         ORDER BY reviewedon, createdon
     """, a=acct, d=driverid)}
-    by_licence: dict[str, list] = {}
+    by_license: dict[str, list] = {}
     for m in held:
         m["review"] = reviews.get(m["recordid"])
         m["state"] = _mvr_stage(m)
-        by_licence.setdefault(m["licenseid"], []).append(m)
+        by_license.setdefault(m["licenseid"], []).append(m)
     # Nothing says how long a driving record stands any more - that was a catalog answer, and the
     # catalog is gone until the requirements engine replaces it.
     maxdays = None
-    for lic in licences:
-        held = by_licence.get(lic["recordid"], [])
-        lic["standing"] = _licence_standing(held, maxdays)
+    for lic in licenses:
+        held = by_license.get(lic["recordid"], [])
+        lic["standing"] = _license_standing(held, maxdays)
         # Only what stands now. A record received replaces the one before it: the earlier ones are
-        # kept, and are read in the driver's file, but they are not what this licence is waiting on.
+        # kept, and are read in the driver's file, but they are not what this license is waiting on.
         lic["mvrs"] = held[:1]
         # One record at a time: while one is unresolved, another cannot be sent for or filed.
         waiting = _unfinished_mvr(conn, acct, lic["recordid"])
         lic["waiting"] = _blocked_by(waiting) if waiting else None
-    return {"licenses": licences, "maxdays": maxdays,
+    return {"licenses": licenses, "maxdays": maxdays,
             # Named here so the screen does not keep its own copy of either list.
             "selfcerts": SELF_CERT, "medcertstatuses": MED_CERT_STATUS}
 
@@ -1491,8 +1798,8 @@ STANDING = {
 }
 
 
-def _licence_standing(mvrs: list[dict], maxdays: int | None) -> dict:
-    """Where one licence stands. A licence is compliant only at the end of the chain - a current
+def _license_standing(mvrs: list[dict], maxdays: int | None) -> dict:
+    """Where one license stands. A license is compliant only at the end of the chain - a current
     record, read, reviewed, and the review finding the driver qualified."""
     filed = [m for m in mvrs if m["receivedon"]]
     if not filed:
@@ -1697,15 +2004,15 @@ async def file_transit_medical(
 @router.post("/drivers/{driverid}/mvrs/order")
 def order_mvr(driverid: str, body: MvrOrderIn, request: Request,
               user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
-    """Send for a driving record on one licence. TripProof does not pull it - the office does, at
-    the state - so this records which licence was asked about, by whom, and when."""
+    """Send for a driving record on one license. TripProof does not pull it - the office does, at
+    the state - so this records which license was asked about, by whom, and when."""
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
     lic = row(conn, """
         SELECT recordid FROM driverlicenses WHERE recordid = :l AND accountid = :a AND driverid = :d
     """, l=body.licenseid, a=acct, d=driverid)
     if not lic:
-        raise HTTPException(404, "That licence is not on this driver")
+        raise HTTPException(404, "That license is not on this driver")
     waiting = _unfinished_mvr(conn, acct, body.licenseid)
     if waiting:
         raise HTTPException(409, _blocked_by(waiting))
@@ -1727,7 +2034,7 @@ def cancel_mvr_order(driverid: str, mvrid: str, request: Request,
 
     The request is marked withdrawn rather than removed. Somebody asked a licensing authority a
     question on a date, usually for money, and that happened whether or not it should have. What
-    changes is that the licence is no longer blocked: another request can be placed, or a record
+    changes is that the license is no longer blocked: another request can be placed, or a record
     filed by hand.
 
     A request that has already been answered cannot be withdrawn - the answer is on file, and
@@ -1777,7 +2084,7 @@ async def file_mvr(
     user: dict = Depends(editor),
     conn: Connection = Depends(get_conn),
 ):
-    """File a driving record against the licence it was pulled on, with the record itself. It also
+    """File a driving record against the license it was pulled on, with the record itself. It also
     becomes a credential, so the trip checks and the annual review read it exactly as they always
     have - and the annual review has something to read."""
     acct = user["accountid"]
@@ -1788,7 +2095,7 @@ async def file_mvr(
         SELECT recordid FROM driverlicenses WHERE recordid = :l AND accountid = :a AND driverid = :d
     """, l=licenseid, a=acct, d=driverid)
     if not lic:
-        raise HTTPException(404, "That licence is not on this driver")
+        raise HTTPException(404, "That license is not on this driver")
     # An upload fills an order only when it SAYS which order - the record coming back names the
     # request it answers. Matching `:m IS NULL` to any outstanding request meant a fresh upload
     # silently closed one, so a record pulled for another reason was filed as the answer to a
@@ -1801,7 +2108,7 @@ async def file_mvr(
         raise HTTPException(404, "That request is not outstanding on this license")
     if not outstanding:
         # Not filling an order: this would be a new record, and nothing new can be filed on a
-        # licence with a request still out - the answer on its way would have nothing to attach to.
+        # license with a request still out - the answer on its way would have nothing to attach to.
         waiting = _unfinished_mvr(conn, acct, licenseid)
         if waiting:
             raise HTTPException(409, _blocked_by(waiting))
@@ -1913,7 +2220,8 @@ def _open_review(conn: Connection, accountid: str, driverid: str, reviewid: str)
     """The open review a completion is finishing. A review is opened by its driving record arriving,
     so completing one means finishing work already on the books rather than inventing it here."""
     review = row(conn, """
-        SELECT r.recordid, r.licenseid, r.mvrid, r.mvron, r.finding, r.snapshot, m.reviewstate
+        SELECT r.recordid, r.licenseid, r.mvrid, r.mvron, r.finding, r.snapshot, r.periodstart,
+               m.reviewstate
         FROM annualreviews r LEFT JOIN drivermvrs m ON m.recordid = r.mvrid
         WHERE r.recordid = :r AND r.accountid = :a AND r.driverid = :d
     """, r=reviewid, a=accountid, d=driverid)
@@ -1941,7 +2249,7 @@ def _review_credential(conn: Connection, accountid: str, driverid: str, user: di
 @router.get("/drivers/{driverid}/annual-reviews")
 def driver_annual_reviews(driverid: str, user: dict = Depends(current_user),
                           conn: Connection = Depends(get_conn)):
-    """Every review on file, and what a new one would be filled in with: the driver and the licence
+    """Every review on file, and what a new one would be filled in with: the driver and the license
     as they read now, and the date of the driving record waiting to be reviewed."""
     acct = user["accountid"]
     driver = row(conn, """
@@ -1955,13 +2263,18 @@ def driver_annual_reviews(driverid: str, user: dict = Depends(current_user),
         WHERE c.accountid = :a AND c.subject = 'driver' AND c.subjectid = :d AND c.deleted IS NULL
           AND t.code = 'MVR' ORDER BY c.issuedon DESC LIMIT 1
     """, a=acct, d=driverid)
+    # An open review reads the latest record on the active license, which may have arrived - or the
+    # active license changed - since it was opened.
+    held = annualreview.open_period(conn, acct, driverid)
+    if held:
+        annualreview.attach(conn, acct, driverid, held["recordid"], held["periodstart"])
     reviews = annualreview.listing(conn, acct, driverid)
     owed = annualreview.due(conn, acct, driverid)
-    # Reviews belong to the licence their record was pulled on, so they are read that way: every
-    # licence the driver holds, with the reviews opened against it.
-    licences = _licences(conn, acct, driverid)
-    for lic in licences:
-        # The current review only - the one belonging to the record the licence stands on.
+    # Reviews belong to the license their record was pulled on, so they are read that way: every
+    # license the driver holds, with the reviews opened against it.
+    licenses = _licenses(conn, acct, driverid)
+    for lic in licenses:
+        # The current review only - the one belonging to the record the license stands on.
         lic["reviews"] = [r for r in reviews if r["licenseid"] == lic["recordid"]][:1]
     return {"due": owed,
             "driver": annualreview.snapshot(conn, acct, driver),
@@ -1974,7 +2287,7 @@ def driver_annual_reviews(driverid: str, user: dict = Depends(current_user),
             "needsreason": list(annualreview.NEEDS_REASON),
             "goodfaith": (annualreview.GOOD_FAITH_CMV if driver["operatescmv"]
                           else annualreview.GOOD_FAITH_OTHER),
-            "licenses": licences,
+            "licenses": licenses,
             "reviews": reviews}
 
 
@@ -1993,6 +2306,12 @@ def start_annual_review(driverid: str, request: Request, user: dict = Depends(ed
     """, id=driverid, a=acct)
     if not driver:
         raise HTTPException(404, "No such driver")
+    # Started only on a new driving record or a disqualifying last review, and never beside one
+    # already open.
+    owed = annualreview.due(conn, acct, driverid)
+    if not owed["open"] and not owed["startable"]:
+        raise HTTPException(409, "An annual review is started when a new driving record comes in "
+                                 "or the last review found the driver disqualified.")
     reviewid = annualreview.start(conn, acct, driver)
     log(conn, user, "open", "annualreview", driverid, {"reviewid": reviewid}, ip=client_ip(request))
     saved(conn)
@@ -2028,17 +2347,18 @@ async def file_annual_review(
     # with nothing said is the same as saying nothing.
     if finding in annualreview.NEEDS_REASON and not (note or "").strip():
         raise HTTPException(400, "Say what was found and what is being done about it")
-    # 49 CFR 391.25(a) asks for the record of each State the driver was licensed in. A
-    # determination signed while an authority is still silent is a determination made without the
-    # evidence, so it is refused here and not merely discouraged on the screen - the screen is
-    # not the thing that has to be right.
+    # The review is made against the active license, and is refused here - not merely discouraged
+    # on the screen - where that license has no current driving record.
     ready = annualreview.readiness(conn, acct, driverid)
     if not ready.get("complete"):
-        missing = ", ".join(ready.get("missing") or []) or "another licensing authority"
+        missing = ", ".join(ready.get("missing") or []) or "the active license"
         raise HTTPException(
-            409, f"No current driving record on file from {missing}. "
-                 "The review cannot be completed until every licensing authority has answered.")
+            409, f"No current driving record on file for {missing}. "
+                 "The review cannot be completed until there is one.")
     review = _open_review(conn, acct, driverid, reviewid)
+    annualreview.attach(conn, acct, driverid, review["recordid"], review["periodstart"])
+    # The form names the license it was made against: the active one, as it reads today.
+    review["licenseid"], review["snapshot"] = ready["required"][0]["licenseid"], None
     # The signature is the one they proved was theirs a moment ago, not a name typed into a box.
     sig = signatures.current(conn, acct, "user", user["recordid"])
     if not sig or sig["recordid"] != signatureid:
@@ -2209,7 +2529,7 @@ def driver_files(driverid: str, user: dict = Depends(current_user), conn: Connec
               for s in lot]
 
     # Everything else that holds a document. The folder used to show credentials and nothing
-    # else, so the licence copies the office scanned, the driving records, the annual reviews,
+    # else, so the license copies the office scanned, the driving records, the annual reviews,
     # the road test certificate, the transit medical and the previous employer's reply were all
     # in the store, attached to the right records, and absent from the one screen called Files.
     other = []
@@ -2283,7 +2603,7 @@ WITHDRAWABLE = "office"
 # The folder used to be grouped by where each document came from - uploaded with the
 # application, filed by the office, signed by the driver. That is the right question when you
 # are asking whether a file may be withdrawn and the wrong one when you are asking whether the
-# medical certificate is on hand: it puts a licence copy the driver sent and a licence copy the
+# medical certificate is on hand: it puts a license copy the driver sent and a license copy the
 # office scanned in two different places, pages apart.
 #
 # So the grouping is the category and the origin moved onto the row, where it decides the
@@ -2293,10 +2613,10 @@ WITHDRAWABLE = "office"
 # that information may be released to, and a section that names itself is one somebody can
 # think twice about before forwarding.
 # Taken from every driver rule that can take a file, not from the credential types alone -
-# which is what the first cut did, so the licence, the driving record, the road test, the
+# which is what the first cut did, so the license, the driving record, the road test, the
 # transit medical and the previous employer's reply had nowhere to be grouped under.
 FILE_CATEGORIES = [
-    "Driver's license",            # the licence, its copies, any action against it
+    "Driver's license",            # the license, its copies, any action against it
     "Medical",                     # the DOT card, the FDOT transit examination, an SPE
     "Driving record",              # MVRs and the annual review of them
     "Screening",                   # background, exclusion lists, Clearinghouse, fingerprints
@@ -2383,21 +2703,21 @@ def file_kinds(driverid: str, user: dict = Depends(current_user),
         })
     # The rest of what a driver's folder can hold. Every one of these takes a file, and none of
     # them is a credential - so offering only the credential types, as the first cut did, left
-    # the licence, the driving record, the road test and the transit medical with no way in from
+    # the license, the driving record, the road test and the transit medical with no way in from
     # here at all.
     #
     # They are not rebuilt here. Each already has a screen that asks what it needs - which
-    # licence a driving record was pulled on, what the examiner found, whether the driver was
+    # license a driving record was pulled on, what the examiner found, whether the driver was
     # certified - and a second form asking the same questions is a second form to get wrong. So
     # the picker names them and sends you to the one that exists.
     kinds += [
-        {"kind": "licence", "code": "LICENCE", "name": "Driver's license",
+        {"kind": "license", "code": "LICENSE", "name": "Driver's license",
          "group": "Driver's license",
-         "hint": "The licence itself and a copy of each side, so the class and expiry are "
+         "hint": "The license itself and a copy of each side, so the class and expiry are "
                  "checked against the work this driver is assigned."},
         {"kind": "requirement", "code": "MVR_PREEMPLOYMENT", "name": "Motor vehicle record",
          "group": "Driving record", "goto": "requirements",
-         "hint": "Recorded against the licence it was pulled on, with the date it was issued."},
+         "hint": "Recorded against the license it was pulled on, with the date it was issued."},
         {"kind": "requirement", "code": "MVR_ANNUAL",
          "name": "Annual review of the driving record", "group": "Driving record",
          "goto": "requirements",
@@ -2423,7 +2743,7 @@ def file_kinds(driverid: str, user: dict = Depends(current_user),
     # rather than two that happen to share words.
     kinds.sort(key=lambda k: (FILE_CATEGORIES.index(k["group"])
                               if k["group"] in FILE_CATEGORIES else len(FILE_CATEGORIES),
-                              k["kind"] != "licence", k["name"]))
+                              k["kind"] != "license", k["name"]))
     return {"kinds": kinds}
 
 
@@ -2473,7 +2793,7 @@ def withdraw_file(driverid: str, documentid: str, body: WithdrawFileIn, request:
         WHERE accountid = :a AND driverid = :d AND copydocumentid = :i
     """, a=acct, d=driverid, i=documentid).rowcount
     if n_lic:
-        undone.append("The licence it was filed as a copy of no longer has one")
+        undone.append("The license it was filed as a copy of no longer has one")
 
     run(conn, "UPDATE documents SET deleted = :now WHERE recordid = :i AND accountid = :a",
         i=documentid, a=acct, now=utcnow())
@@ -2499,6 +2819,20 @@ class SignRequestIn(BaseModel):
     doctype: str
 
 
+def _i9_on_file(conn: Connection, acct: str, driverid: str) -> bool:
+    """Whether this driver's Form I-9 is already on file - signed here, or a copy filed against the
+    rule that asks for it. It is completed once per hire."""
+    return bool(row(conn, """
+        SELECT 1 AS x FROM documentsignatures
+        WHERE accountid = :a AND ownertype = 'driver' AND ownerid = :d AND doctype = 'I9'
+        UNION ALL
+        SELECT 1 FROM complianceevidence e JOIN compliancerules r ON r.recordid = e.ruleid
+        WHERE e.accountid = :a AND e.subject = 'driver' AND e.subjectid = :d
+          AND r.evidencesource = 'signature:I9'
+        LIMIT 1
+    """, a=acct, d=driverid))
+
+
 @router.post("/drivers/{driverid}/signing-requests")
 def ask_for_a_signature(driverid: str, body: SignRequestIn, request: Request,
                         tasks: BackgroundTasks, user: dict = Depends(editor),
@@ -2512,6 +2846,8 @@ def ask_for_a_signature(driverid: str, body: SignRequestIn, request: Request,
     """, id=driverid, a=acct)
     if not driver:
         raise HTTPException(404, "No such driver")
+    if body.doctype == "I9" and _i9_on_file(conn, acct, driverid):
+        raise HTTPException(409, "This driver's Form I-9 is already on file. It is completed once.")
     made = signing.create(conn, acct, driverid, body.doctype, user["recordid"])
     company = row(conn, "SELECT name FROM accounts WHERE recordid = :a", a=acct)["name"]
     if driver["email"]:
@@ -3117,9 +3453,11 @@ def certify_i9(driverid: str, body: CertifyI9, request: Request,
     name = block["employee"].lower().replace(" ", "-")
     documentid = storage.keep(conn, acct, "documents", certified, f"i9-{name}-certified.pdf",
                               "application/pdf", user["recordid"], origin=storage.OFFICE)
-    # The certifier's own signature, against the file they certified. Hashed on the FILE, as the
+    # The certifier's own signature, against the file they certified. Filed against the DRIVER,
+    # whose document it is - ownertype/ownerid say whose record a signature belongs to, not who
+    # put their name to it, and that is on the signature itself. Hashed on the FILE, as the
     # employee's was: there is no text behind an official form to hash.
-    signatures.sign(conn, acct, sig["recordid"], "I9", driverid, "", ownertype="user",
+    signatures.sign(conn, acct, sig["recordid"], "I9_SECTION2", driverid, "", ownertype="driver",
                     version=documents.DRIVER_DOC_VERSION,
                     contenthash=hashlib.sha256(certified).hexdigest(), recordid=recordid,
                     ip=client_ip(request), useragent=request.headers.get("user-agent"))
@@ -3347,6 +3685,50 @@ def download_driver_file(driverid: str, request: Request, user: dict = Depends(c
         "Content-Disposition": f'attachment; filename="{_safe(who)} - driver file {stamp}.zip"'})
 
 
+@router.get("/drivers/{driverid}/signed/{doctype}/pdf")
+def driver_signed_document_pdf(driverid: str, doctype: str, request: Request,
+                               user: dict = Depends(current_user),
+                               conn: Connection = Depends(get_conn)):
+    """The same signed document, drawn as a PDF.
+
+    Rendered here rather than shown as a page of HTML, for two reasons that are really one. A
+    document read on screen and the same document printed have to be the same document - a sheet
+    that reflows to the window is not what anybody will put in front of an auditor - and the PDF
+    is already how this file leaves the building, in the audit packet and in the driver's own
+    copy. Reading it as a PDF means reading the thing that will be sent.
+
+    Nothing new is drawn: `to_pdf` lays out the very HTML and stylesheet the portal shows, with
+    the signing faces carried in as data so the renderer needs nothing from the web."""
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    if doctype.startswith("ANNUAL_REVIEW:"):
+        view = annualreview.sheet(conn, acct, driverid, doctype.split(":", 1)[1])
+    else:
+        view = applicationview.signed_document(conn, acct, driverid, doctype)
+    if not view:
+        raise HTTPException(404, "This driver has not signed that")
+    # A form signed on the government's own paper is a stored file after all, and the stored file
+    # is the evidence. Rebuilding our own version of it would be drawing a picture of the record.
+    if view.get("documentid"):
+        doc = row(conn, "SELECT filename, mimetype, storagekey FROM documents "
+                        "WHERE recordid = :id AND accountid = :a", id=view["documentid"], a=acct)
+        if doc:
+            try:
+                blob = storage.get(doc["storagekey"])
+            except storage.Missing:
+                raise HTTPException(404, "That file is missing from storage") from None
+            return Response(content=blob, media_type=doc["mimetype"] or "application/pdf",
+                            headers={"Content-Disposition":
+                                     f'inline; filename="{doc["filename"]}"'})
+    pdf = applicationview.to_pdf(view, applicationview.signature_css())
+    log(conn, user, "view", "signeddocument", driverid, {"doctype": doctype, "as": "pdf"},
+        ip=client_ip(request))
+    saved(conn)
+    name = f"{doctype.lower().replace(':', '-')}.pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{name}"'})
+
+
 @router.get("/drivers/{driverid}/signed/{doctype}")
 def driver_signed_document(driverid: str, doctype: str, request: Request,
                            user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
@@ -3417,6 +3799,9 @@ ACTIVITY_WORDS = {
     "signature-requested": ("{what} was sent to the driver to sign by {by}|A document was sent to "
                             "the driver to sign by {by}", "office"),
     "signature-adopted": ("A signature was adopted by {by}", "office"),
+    "licensecopy": ("A copy of the driver's license was filed by {by}", "office"),
+    # The log is append-only, so acts recorded before the spelling was put right keep the name
+    # they were written under. The same sentence reads them.
     "licencecopy": ("A copy of the driver's license was filed by {by}", "office"),
     "requirement-document": ("{what} was filed against a requirement by {by}|A document was filed "
                              "against a requirement by {by}", "office"),
@@ -3588,7 +3973,7 @@ ENTITY_WORDS = {
     "annualreview": "The annual review",
     "employerinquiry": "The previous employer inquiry",
     # `create`, `update`, `delete`, `view` and `open` are used across several kinds of record, so
-    # without these the line says what the FIRST caller happened to be about. A licence added to a
+    # without these the line says what the FIRST caller happened to be about. A license added to a
     # file printed as "The driver record was created", which is not vague - it is untrue.
     "driver": "The driver record",
     "driverlicense": "The driver's license",
@@ -3817,6 +4202,14 @@ def decide_application(driverid: str, body: DecisionIn, request: Request, tasks:
     })
     run(conn, "UPDATE drivers SET status = :s, updated = :now WHERE recordid = :id",
         s=driverstatus, now=utcnow(), id=driverid)
+    # Into pending means screened against OIG and SAM.gov, there and then. Inside the same save:
+    # where a list cannot be had, the move does not happen, so nobody reaches pending unscreened.
+    if driverstatus == "pending" and driver["status"] != "pending":
+        try:
+            screening.screen_now(conn, driverid)
+        except Exception as e:
+            raise HTTPException(503, "The exclusion screening could not be run, so this driver "
+                                     f"was not moved to Pending. Try again shortly. ({e})") from None
     run(conn, """
         UPDATE driverapplications SET status = :s, data = :d, reviewedby = :u, reviewedon = :now,
                                       submittedon = CASE WHEN :s = 'started' THEN NULL ELSE submittedon END
@@ -3948,6 +4341,23 @@ async def record_exclusion_check(
     return {"ok": True}
 
 
+@router.get("/drivers/{driverid}/exclusion-checks/{checkid}/record")
+def exclusion_check_record(driverid: str, checkid: str, request: Request,
+                           user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """The search audit record for one screening, drawn as a PDF."""
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    sheet = screening.audit_sheet(conn, acct, driverid, checkid)
+    if not sheet:
+        raise HTTPException(404, "No such screening on this driver")
+    pdf = applicationview.to_pdf(sheet)
+    log(conn, user, "view", "exclusioncheck", driverid, {"check": checkid, "as": "pdf"},
+        ip=client_ip(request))
+    saved(conn)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="search-audit-record.pdf"'})
+
+
 @router.post("/drivers/{driverid}/exclusion-checks/{checkid}/settle")
 async def settle_exclusion_check(
     driverid: str,
@@ -4077,11 +4487,13 @@ async def file_against_requirement(
     case for one."""
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
-    rule = row(conn, "SELECT recordid, name, reviewrequired FROM compliancerules "
+    rule = row(conn, "SELECT recordid, name, reviewrequired, evidencesource FROM compliancerules "
                      "WHERE code = :c AND subject = 'driver' AND effectiveto IS NULL "
                      "AND (accountid IS NULL OR accountid = :a) LIMIT 1", c=code, a=acct)
     if not rule:
         raise HTTPException(404, "No such requirement")
+    if rule["evidencesource"] == "signature:I9" and _i9_on_file(conn, acct, driverid):
+        raise HTTPException(409, "This driver's Form I-9 is already on file. It is completed once.")
     if not file.filename:
         raise HTTPException(400, "Choose a file")
     data = await file.read()
@@ -4098,7 +4510,12 @@ async def file_against_requirement(
                                         sourceid, effectiveon, determination, note)
         VALUES (:id, :a, :r, 'driver', :d, 'documents', :doc, :on, :det, :n)
     """, id=newid(), a=acct, r=rule["recordid"], d=driverid, doc=documentid, on=effectiveon,
-        det=("reviewed" if rule["reviewrequired"] else None),
+        # Always read, never only sometimes. `reviewrequired` says whether the RULE insists a
+        # human reads what arrives; it does not describe this act. Somebody here has the document
+        # in their hand and is putting it on the file - that is a reading whatever the rule asks
+        # for - and recording it as unread left documents sitting as "Not Reviewed" with nobody
+        # left to review them, because the person who would have is the one who filed it.
+        det="reviewed",
         n=(note or "").strip()[:512] or None)
     log(conn, user, "requirement-document", "driver", driverid, {"code": code}, ip=client_ip(request))
     saved(conn)
@@ -4158,7 +4575,7 @@ def _with_readings(conn: Connection, acct: str, driverid: str, rule: dict,
 
     Asked of the engine rather than worked out again here, so the eye on the requirements list and
     the button inside the dialog are answering the same question. Without this the screen offered a
-    reading only where the document arrived down an upload link, and a licence photographed on the
+    reading only where the document arrived down an upload link, and a license photographed on the
     application sat in review with nowhere to review it."""
     read = rules.already_read(conn, acct, driverid)
     readdocs = rules.read_documents(conn, acct, driverid)
@@ -4176,7 +4593,7 @@ def mark_evidence_read(driverid: str, body: ReadIn, request: Request,
     """Somebody in this office has read one record and says so.
 
     One act, one place. A reading is the same thing whether what was read is a laboratory result, a
-    medical certificate, a licence copy or a federal database answer - and a flag per kind of
+    medical certificate, a license copy or a federal database answer - and a flag per kind of
     record is how one kind ends up without one."""
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
@@ -4612,7 +5029,74 @@ def driver_trips(driverid: str, user: dict = Depends(current_user),
 # ------------------------------------------------------------------------------------------------
 
 class ScreeningIn(BaseModel):
-    tier: str
+    reportsku: str
+    addons: list[str] = []
+
+
+# The add-ons an order can switch on, in the vendor's own words, with the SKU whose price applies
+# when it is. Drug testing is deliberately absent: TripProof runs its own D&A programme with its
+# own pools, records and rules, and buying a panel through a background check would put the same
+# test in two places with two sets of paperwork.
+SCREENING_ADDONS = {
+    "mvr": ("The driving record", "mvr_with_surcharge"),
+    "federal_criminal": ("Federal criminal search", "fedcrim"),
+    "employment": ("Employment verification", "emp"),
+    "education": ("Education verification", "edu"),
+    "blj": ("Bankruptcies, liens and judgments", "blj"),
+}
+
+
+def _what_they_can_order(conn: Connection, accountid: str) -> dict:
+    """The reports and add-ons on THIS company's account, at the prices they pay.
+
+    Read from the vendor rather than from anything here. TripProof no longer sells screenings, so
+    there is no price of ours to show - and a copy of theirs kept locally is a copy that goes
+    stale the first time they change a price."""
+    token = screeningaccount.token_for(conn, accountid)
+    if not token:
+        return {"reports": [], "addons": [], "problem": None}
+    try:
+        got = backgroundchecks.skus(token)
+    except backgroundchecks.ScreeningError as e:
+        return {"reports": [], "addons": [], "problem": str(e)}
+    priced = {a["sku"]: a.get("price") for a in got.get("addons", [])}
+    return {
+        "reports": [{"sku": r["sku"], "name": r.get("title") or r["sku"],
+                     "covers": r.get("description"), "price": r.get("price")}
+                    for r in got.get("reports", [])],
+        "addons": [{"flag": flag, "name": name, "price": priced.get(sku)}
+                   for flag, (name, sku) in SCREENING_ADDONS.items() if sku in priced],
+        "problem": None,
+    }
+
+
+# TripProof no longer sells background checks, so there is no price list of ours to read. What a
+# company may order comes from ITS OWN account with the vendor - see _what_they_can_order - and
+# the fee schedule rows that used to live here were retired in migration 303.
+
+
+# Which module speaks to which vendor. An order records the vendor it went to, so a report placed
+# at Certn before the change still refreshes and still lands at Certn.
+def _vendor(name: str | None):
+    return certn if name == "certn" else backgroundchecks
+
+
+def _vendor_error(name: str | None):
+    return certn.CertnError if name == "certn" else backgroundchecks.ScreeningError
+
+
+def _vendor_token(conn: Connection, accountid: str, vendor: str | None) -> dict:
+    """The credential a call about one order has to be made with, as a kwargs dict.
+
+    A report placed at backgroundchecks.com belongs to THE COMPANY'S account there, so asking
+    about it has to use the company's own key. Reaching for this installation's instead - which is
+    what happens when nothing is passed - asks a different account about a report it has never
+    heard of, and gets told the token is not valid for it.
+
+    Certn predates all this and has one key for everybody, so it takes none."""
+    if vendor == "certn":
+        return {}
+    return {"token": screeningaccount.token_for(conn, accountid)}
 
 
 @router.get("/drivers/{driverid}/background")
@@ -4621,40 +5105,97 @@ def background_screening(driverid: str, user: dict = Depends(current_user),
     """What has been ordered for this driver, and what can be."""
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
+    catalogue = _what_they_can_order(conn, acct)
     return {
-        "available": certn.configured(),
-        "tiers": [{"code": k, **{x: v[x] for x in ("name", "price", "covers")}}
-                  for k, v in certn.TIERS.items()],
+        # Whether THIS COMPANY can order, which means whether it holds an account of its own with
+        # the vendor. Not whether this installation has credentials: ordering on our account would
+        # make us the end user of a consumer report about somebody else's job applicant, which is
+        # the one thing the whole arrangement exists to avoid.
+        "available": screeningaccount.connected(conn, acct),
+        # Which of the vendor's two worlds this installation talks to is a server fact. The
+        # browser is told which script to load rather than working it out, so there is no second
+        # place that can be pointed at production while the server is still on sandbox.
+        "widgetscript": backgroundchecks.applicant_widget_script(),
+        # The findings this requirement accepts, from the one place that decides what the server
+        # will take - so a word the screen offers is never a word the server refuses.
+        "outcomes": _outcomes("BACKGROUND_SCREENING"),
+        # What this company may buy, from their own account. Not a price list of ours: TripProof
+        # does not sell these and has nothing to quote.
+        "reports": catalogue["reports"],
+        "addons": catalogue["addons"],
+        "skuproblem": catalogue["problem"],
         "orders": rows(conn, """
-            SELECT r.recordid, r.tier, r.vendor, r.vendorstatus, r.chargecents, r.orderedon,
+            SELECT r.recordid, r.tier, r.vendor, r.vendorstatus, r.inviteurl, r.vendorref,
+                   r.chargecents, r.orderedon,
                    r.receivedon, r.issuedon, r.outcome, r.reviewstate, r.documentid, r.note,
                    u.name AS orderedbyname
             FROM driverreports r LEFT JOIN users u ON u.recordid = r.orderedby
             WHERE r.accountid = :a AND r.driverid = :d AND r.code = 'BACKGROUND_SCREENING'
             ORDER BY r.createdon DESC
         """, a=acct, d=driverid),
+        # Where an open order has actually got to, inside itself. Asked live rather than stored,
+        # because it changes at the vendor and a copy here would only ever be yesterday's answer.
+        "progress": _screening_progress(conn, acct, driverid),
     }
+
+
+def _screening_progress(conn: Connection, accountid: str, driverid: str) -> list[dict]:
+    """What is finished inside the open order, and what is not."""
+    held = row(conn, """
+        SELECT vendorref FROM driverreports
+        WHERE accountid = :a AND driverid = :d AND code = 'BACKGROUND_SCREENING'
+          AND vendor = 'backgroundchecks' AND vendorref IS NOT NULL AND receivedon IS NULL
+        ORDER BY createdon DESC LIMIT 1
+    """, a=accountid, d=driverid)
+    if not held:
+        return []
+    token = screeningaccount.token_for(conn, accountid)
+    if not token:
+        return []
+    try:
+        return backgroundchecks.progress(backgroundchecks.fetch(held["vendorref"], token)["raw"])
+    except backgroundchecks.ScreeningError:
+        # Not worth failing the page over: the order is still there and still says it is running.
+        return []
 
 
 @router.post("/drivers/{driverid}/background/order")
 def order_background_screening(driverid: str, body: ScreeningIn, request: Request,
-                               user: dict = Depends(editor),
+                               tasks: BackgroundTasks, user: dict = Depends(editor),
                                conn: Connection = Depends(get_conn)):
-    """Order one screening from Certn and put its cost on this account's next invoice.
+    """Order one screening on THIS COMPANY'S account with backgroundchecks.com.
 
-    The order goes to Certn FIRST and nothing is written here until they hand back a reference. An
-    order we cannot name is an order whose result can never be matched to a driver, and a row
-    written before the call would be exactly that if the call then failed.
+    The order goes to the vendor first and nothing is written here until they hand back a
+    reference: an order we cannot name is an order whose result can never be matched to a driver,
+    and a row written before the call would be exactly that if the call then failed.
 
-    TripProof pays Certn now and recovers it later, so no card is touched: the charge is a line on
-    the next monthly invoice. If recording the charge fails the screening still stands - a driver's
-    file is not held up by our billing."""
+    No money moves through TripProof. The company holds the account, the vendor bills them, and
+    the price recorded here is theirs - kept so the driver's file can say what was bought, not so
+    that anybody can be charged for it."""
     acct = user["accountid"]
     driver = _applicant(conn, acct, driverid)
-    if body.tier not in certn.TIERS:
-        raise HTTPException(400, "Choose a Core or a Complete background check")
-    if not driver.get("dob"):
-        raise HTTPException(409, "Certn needs this driver's date of birth. Record it first.")
+    token = screeningaccount.token_for(conn, acct)
+    if not token:
+        raise HTTPException(409, "This company has no account with backgroundchecks.com yet. Set "
+                                 "one up under Company > Background Checks.")
+    # Checked against what their account actually carries, not against a list we hold. A SKU this
+    # company cannot buy is a 400 from them and a confusing afternoon for somebody here.
+    catalogue = _what_they_can_order(conn, acct)
+    report = next((r for r in catalogue["reports"] if r["sku"] == body.reportsku), None)
+    if not report:
+        raise HTTPException(400, "Choose one of the reports on this account")
+    wanted = [a for a in body.addons if a in SCREENING_ADDONS]
+    tier = {"name": report["name"], "reportsku": report["sku"],
+            "products": ",".join(wanted)}
+    # What the vendor will bill them, for the record on the driver's file.
+    cost = (report.get("price") or 0) + sum(
+        (a.get("price") or 0) for a in catalogue["addons"] if a["flag"] in wanted)
+    # Not the date of birth. This vendor is never told it: they email the applicant a link and
+    # the applicant enters their own details, their own SSN and their own authorisation, which is
+    # whose they are to give. What the order does need is somewhere to send that email.
+    if not (driver.get("email") or "").strip():
+        raise HTTPException(409, "A background check is sent to the driver to fill in, so this "
+                                 "driver needs an email address. Record it first.")
     open_already = row(conn, """
         SELECT recordid FROM driverreports
         WHERE accountid = :a AND driverid = :d AND code = 'BACKGROUND_SCREENING'
@@ -4667,39 +5208,59 @@ def order_background_screening(driverid: str, body: ScreeningIn, request: Reques
     if open_already:
         raise HTTPException(409, "A screening is already running for this driver")
 
-    tier = certn.TIERS[body.tier]
     try:
-        placed = certn.order(body.tier, driver, driver.get("email"))
-    except certn.CertnError as e:
+        placed = backgroundchecks.order(tier, driver, driver.get("email"), token)
+    except backgroundchecks.ScreeningError as e:
         raise HTTPException(502, str(e)) from e
 
     reportid = newid()
-    run(conn, """
-        INSERT INTO driverreports (recordid, accountid, driverid, code, tier, vendor, vendorref,
-                                   vendorstatus, chargecents, orderedon, orderedby, lastsyncedon)
-        VALUES (:id, :a, :d, 'BACKGROUND_SCREENING', :t, 'certn', :ref, :st, :cents,
-                :now, :by, :now)
-    """, id=reportid, a=acct, d=driverid, t=body.tier, ref=placed["ref"],
-        st=placed["status"], cents=tier["price"], now=utcnow(), by=user["recordid"])
-
-    # The charge, on the next invoice rather than on a card. A failure here is logged and does not
-    # undo the screening: the driver's file matters more than the line item, and an order already
-    # placed at Certn cannot be unplaced.
-    customer = (row(conn, "SELECT stripecustomerid FROM accounts WHERE recordid = :a", a=acct)
-                or {}).get("stripecustomerid")
+    # The order is already placed and already billable. If writing it down fails now, the worst
+    # possible outcome is a quiet 500: the report exists at the vendor, the driver will be emailed
+    # by them, and this office has no record that any of it happened. So the key goes into the
+    # error itself, where somebody can read it and recover the order by hand.
     try:
-        billing.charge_next_invoice(
-            customer, tier["price"],
-            f'{tier["name"]} - {driver["firstname"]} {driver["lastname"]}'.strip(), acct)
-    except Exception as e:                                        # noqa: BLE001 - never fatal here
-        log_render = logging.getLogger("tripproof.vault")
-        log_render.warning("screening ordered but not billed for %s: %s", acct, e)
+        run(conn, """
+            INSERT INTO driverreports (recordid, accountid, driverid, code, tier, vendor,
+                                       vendorref, inviteurl, vendorstatus, chargecents,
+                                       orderedon, orderedby, lastsyncedon)
+            VALUES (:id, :a, :d, 'BACKGROUND_SCREENING', :t, 'backgroundchecks', :ref, :invite,
+                    :st, :cents, :now, :by, :now)
+        """, id=reportid, a=acct, d=driverid, t=body.reportsku, ref=placed["ref"],
+            invite=(placed.get("invite") or None), st=placed["status"], cents=cost,
+            now=utcnow(), by=user["recordid"])
+    except Exception as e:                                            # noqa: BLE001 - see above
+        logging.getLogger("tripproof.vault").error(
+            "screening ORDERED BUT NOT RECORDED driver=%s ref=%s invite=%s: %s",
+            driverid, placed["ref"], placed.get("invite"), e)
+        raise HTTPException(500,
+            f"The screening was ordered at backgroundchecks.com - their reference is "
+            f"{placed['ref']} - but it could not be written to this driver's file, so nothing "
+            f"here knows about it. Quote that reference to support; do not order it again.") from e
+
+    # Tell the driver where to go, ourselves.
+    #
+    # The vendor emails them too, and in production that usually arrives. But a screening that
+    # depends entirely on a stranger's email is a screening that stalls silently: the driver gets
+    # nothing, the office sees "waiting on the driver" for a week, and nobody can say whether the
+    # email was sent, binned or never addressed. TripProof already asks drivers for documents and
+    # signatures in its own post - this goes the same way, from the company they actually work
+    # for, and the link is returned so the office can read it out to somebody with no email.
+    invite = placed.get("invite")
+    sentto = None
+    if invite and (driver.get("email") or "").strip():
+        company = (row(conn, "SELECT name FROM accounts WHERE recordid = :a", a=acct)
+                   or {}).get("name") or "Your employer"
+        subject, html, text = emails.screening_invited(
+            name=f'{driver["firstname"]} {driver["lastname"]}'.strip(), accountname=company,
+            tier=report["name"], link=invite)
+        sentto = driver["email"]
+        tasks.add_task(mailer.send, sentto, subject, html, text)
 
     log(conn, user, "order", "driverreport", driverid,
-        {"code": "BACKGROUND_SCREENING", "tier": body.tier, "cents": tier["price"]},
-        ip=client_ip(request))
+        {"code": "BACKGROUND_SCREENING", "reportsku": body.reportsku, "addons": wanted,
+         "cents": cost, "invited": sentto}, ip=client_ip(request))
     saved(conn)
-    return {"ok": True, "recordid": reportid}
+    return {"ok": True, "recordid": reportid, "link": invite, "sentto": sentto}
 
 
 def _has_cancelled() -> bool:
@@ -4711,23 +5272,26 @@ def _has_cancelled() -> bool:
 def refresh_background_screening(driverid: str, recordid: str, request: Request,
                                  user: dict = Depends(editor),
                                  conn: Connection = Depends(get_conn)):
-    """Ask Certn where an order has got to, for an office that does not want to wait for a webhook.
+    """Ask the vendor where an order has got to, rather than waiting to be told.
 
-    The webhook is how a result normally arrives. This exists because a webhook can be missed, and
-    an office with a driver waiting should never be stuck because of it."""
+    backgroundchecks.com publishes no webhook, so for those this is the ONLY way a result arrives.
+    For a vendor that does post one, this is the answer to a webhook that went missing: an office
+    with a driver waiting should never be stuck because a callback was lost."""
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
     held = row(conn, """
-        SELECT recordid, vendorref, vendorstatus FROM driverreports
+        SELECT recordid, vendor, vendorref, vendorstatus FROM driverreports
         WHERE recordid = :id AND accountid = :a AND driverid = :d
     """, id=recordid, a=acct, d=driverid)
     if not held or not held["vendorref"]:
         raise HTTPException(404, "No such order")
+    with_ = _vendor(held["vendor"])
     try:
-        got = certn.fetch(held["vendorref"])
-    except certn.CertnError as e:
+        got = with_.fetch(held["vendorref"], **_vendor_token(conn, acct, held["vendor"]))
+    except _vendor_error(held["vendor"]) as e:
         raise HTTPException(502, str(e)) from e
-    _land_screening(conn, acct, driverid, held["recordid"], held["vendorref"], got["status"])
+    _land_screening(conn, acct, driverid, held["recordid"], held["vendorref"], got["status"],
+                    held["vendor"])
     log(conn, user, "order", "driverreport", driverid,
         {"code": "BACKGROUND_SCREENING", "checked": got["status"]}, ip=client_ip(request))
     saved(conn)
@@ -4735,23 +5299,28 @@ def refresh_background_screening(driverid: str, recordid: str, request: Request,
 
 
 def _land_screening(conn: Connection, acct: str, driverid: str, recordid: str, ref: str,
-                    status: str) -> None:
+                    status: str, vendor: str | None = None) -> None:
     """Bring one finished screening onto the driver's file.
 
-    The result is NOT a determination. Certn says what it found; whether that disqualifies anybody
+    The result is NOT a determination. The vendor says what it found; whether that disqualifies anybody
     is the company's judgement, so this files the report and leaves it needing to be read - the
     same as every other thing that arrives from outside."""
-    if status == "running":
-        run(conn, "UPDATE driverreports SET vendorstatus = 'running', lastsyncedon = :now "
-                  "WHERE recordid = :id", now=utcnow(), id=recordid)
+    # Every state that is NOT an ending. "waiting" is one of them: the vendor is holding the
+    # order until the applicant enters their own details, and nothing has been searched yet.
+    # Listing only "running" here meant a status this code had never been taught about fell
+    # through to the finishing path below - so an order still waiting on a driver was stamped
+    # as received, with no report behind it and nothing to read.
+    if status in ("running", "waiting"):
+        run(conn, "UPDATE driverreports SET vendorstatus = :s, lastsyncedon = :now "
+                  "WHERE recordid = :id", s=status, now=utcnow(), id=recordid)
         return
     documentid = None
     if status == "finished":
         try:
-            pdf = certn.report_pdf(ref)
+            pdf = _vendor(vendor).report_pdf(ref, **_vendor_token(conn, acct, vendor))
             documentid = storage.keep(conn, acct, "documents", pdf,
                                       f"background-screening-{ref}.pdf", "application/pdf", None, origin=storage.SERVICE)
-        except (certn.CertnError, Exception) as e:                # noqa: BLE001
+        except Exception as e:                                    # noqa: BLE001
             logging.getLogger("tripproof.vault").warning("report not stored for %s: %s", ref, e)
     run(conn, """
         UPDATE driverreports
@@ -4917,10 +5486,7 @@ def needs_attention(user: dict = Depends(current_user), conn: Connection = Depen
             "recordid": d["recordid"], "name": who, "link": f'/drivers/{d["recordid"]}',
             "hired": bool(d["hiredon"]),
             "eligible": bool(d["hiredon"]) and not barred,
-            "why": ("Not hired yet" if not d["hiredon"]
-                    else barred[0]["name"] if len(barred) == 1
-                    else f"{len(barred)} requirements outstanding" if barred
-                    else "Clear to drive"),
+            "why": ("Not hired yet" if not d["hiredon"] else _blocking(barred, "Clear to drive")),
         })
 
     for v in rows(conn, """
@@ -4938,9 +5504,7 @@ def needs_attention(user: dict = Depends(current_user), conn: Connection = Depen
         units.append({
             "recordid": v["recordid"], "name": who, "link": f'/vehicles/{v["recordid"]}',
             "eligible": not barred,
-            "why": (barred[0]["name"] if len(barred) == 1
-                    else f"{len(barred)} requirements outstanding" if barred
-                    else "Ready to dispatch"),
+            "why": _blocking(barred, "Ready to dispatch"),
         })
 
     # Soonest first, because that is the order somebody works them in.
@@ -5568,10 +6132,8 @@ class ScheduleIn(BaseModel):
     # given an end date the day before this one starts - and only here, as the replacement
     # is written, so a supersede that is cancelled leaves the live schedule alone.
     supersedes: str | None = None
-    # Who this schedule applies to - exactly one of the three.
-    privatepay: bool = False
-    payerkinds: list[str] = []
-    payerids: list[str] = []
+    # 'private', or one payer category. A payer is offered only schedules of its own type.
+    payertype: str | None = None
     contractref: str | None = None
     effectivefrom: date | None = None
     effectiveto: date | None = None
@@ -5593,8 +6155,9 @@ def fee_schedules(user: dict = Depends(current_user), conn: Connection = Depends
         # The shared catalogue plus this company's own - a facility it contracts with is
         # nobody else's payer and is not in the platform list.
         "payers": rows(conn, """
-            SELECT recordid, name, category FROM payers
-            WHERE active = 1 AND (accountid IS NULL OR accountid = :a)
+            SELECT p.recordid, p.name, p.category FROM payers p
+            LEFT JOIN accountpayers ap ON ap.payerid = p.recordid AND ap.accountid = :a
+            WHERE COALESCE(ap.active, p.active) = 1 AND (p.accountid IS NULL OR p.accountid = :a)
             ORDER BY category, name
         """, a=user["accountid"]),
     }
@@ -5651,8 +6214,101 @@ def _own_payer(conn: Connection, accountid: str, payerrecordid: str) -> None:
 
 @router.get("/company/payers")
 def list_payers(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    # The service levels come back with them. A screen that books a trip has to offer exactly what
+    # the fee schedule can price it at, and `rates.SERVICES` is read off `dispatch.SERVICE` - one
+    # list, so a level added for pricing is bookable the same day.
+    # With them, the company's lines - who it carries for, in which state, under which program
+    # and contract - and what a line's dialog offers.
+    from app.routers import operating
     return {"categories": rateset.CATEGORIES,
-            "payers": rateset.payers(conn, user["accountid"])}
+            "services": rateset.SERVICES,
+            "payers": rateset.payers(conn, user["accountid"]),
+            "lines": operating.lines(conn, user["accountid"]),
+            "programs": operating.PROGRAMS,
+            "categoryprograms": operating.CATEGORY_PROGRAMS,
+            # What a payer, or one of its state lines, can be paid under - with its payer type,
+            # so each is offered only its own.
+            "schedules": [{**x, "kind": rateset.kind_of(x)} for x in rows(conn, """
+                SELECT recordid, name, privatepay, payerkinds, effectivefrom, effectiveto
+                FROM payerschedules WHERE accountid = :a AND active = 1 ORDER BY name
+            """, a=user["accountid"])],
+            "privatepayschedule": (row(conn, """
+                SELECT scheduleid FROM accountpayers WHERE accountid = :a AND payerid = :p
+            """, a=user["accountid"], p=rateset.PRIVATE) or {}).get("scheduleid"),
+            "contractservices": list(operating.SERVICES),
+            "catalog": rows(conn, "SELECT code, name FROM qualificationcatalog "
+                                  "WHERE subject = 'driver' AND retiredon IS NULL ORDER BY sortorder")}
+
+
+class PayerScheduleIn(BaseModel):
+    scheduleid: str | None = None
+
+
+@router.put("/company/payers/{payerrecordid}/schedule")
+def payer_schedule(payerrecordid: str, body: PayerScheduleIn, request: Request,
+                   user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
+    """The fee schedule this company is paid under by a payer, or by the passenger
+    ('privatepay'). Kept as the company's own, a shared payer included."""
+    acct = user["accountid"]
+    if not body.scheduleid:
+        raise HTTPException(400, "Choose the fee schedule")
+    if payerrecordid == rateset.PRIVATE:
+        kind = "private"
+    else:
+        held = row(conn, "SELECT category FROM payers WHERE recordid = :i "
+                         "AND (accountid IS NULL OR accountid = :a)", i=payerrecordid, a=acct)
+        if not held:
+            raise HTTPException(404, "No such payer")
+        kind = held["category"]
+    try:
+        rateset.set_payer_schedule(conn, acct, payerrecordid, kind, body.scheduleid,
+                                   user["recordid"])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    log(conn, user, "payer-schedule", "company", acct,
+        {"payer": payerrecordid, "schedule": body.scheduleid}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+class PayerStatusIn(BaseModel):
+    active: bool
+    # Who the company deals with there - its own, even at a shared payer.
+    contactname: str | None = None
+    contactemail: str | None = None
+
+
+@router.put("/company/payers/{payerrecordid}/status")
+def payer_status(payerrecordid: str, body: PayerStatusIn, request: Request,
+                 user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
+    """Whether this company still works with a payer, and who it deals with there. For a shared one
+    that is this company's own say, kept beside the payer; the payer itself, everybody's, is not
+    touched."""
+    acct = user["accountid"]
+    held = row(conn, "SELECT accountid FROM payers WHERE recordid = :i "
+                     "AND (accountid IS NULL OR accountid = :a)", i=payerrecordid, a=acct)
+    if not held:
+        raise HTTPException(404, "No such payer")
+    who = {"cn": (body.contactname or "").strip().upper()[:128] or None,
+           "ce": (body.contactemail or "").strip().lower()[:128] or None}
+    if held["accountid"]:
+        run(conn, """
+            UPDATE payers SET active = :v, contactname = :cn, contactemail = :ce
+            WHERE recordid = :i AND accountid = :a
+        """, v=int(body.active), i=payerrecordid, a=acct, **who)
+    else:
+        run(conn, """
+            INSERT INTO accountpayers (accountid, payerid, active, contactname, contactemail,
+                                       updated, updatedby)
+            VALUES (:a, :i, :v, :cn, :ce, :now, :u)
+            ON DUPLICATE KEY UPDATE active = :v, contactname = :cn, contactemail = :ce,
+                                    updated = :now, updatedby = :u
+        """, a=acct, i=payerrecordid, v=int(body.active), now=utcnow(), u=user["recordid"],
+            **who)
+    log(conn, user, "payer-status", "company", acct,
+        {"payer": payerrecordid, "active": body.active}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
 
 
 @router.post("/company/payers")
@@ -5690,7 +6346,7 @@ def remove_payer(payerrecordid: str, request: Request, user: dict = Depends(acco
     # a price nobody can explain afterwards.
     using = rateset.payer_in_use(conn, user["accountid"], payerrecordid)
     if using:
-        raise HTTPException(409, f"{using} schedule(s) or trip(s) still name this payer. "
+        raise HTTPException(409, f"{using} schedule(s), trip(s) or state line(s) still name this payer. "
                                  "Make it inactive instead.")
     rateset.remove_payer(conn, user["accountid"], payerrecordid)
     log(conn, user, "payer-removed", "company", user["accountid"], {"payer": payerrecordid},
@@ -5774,11 +6430,17 @@ def _end_the_one_it_replaces(conn: Connection, accountid: str, body) -> None:
     if not body.supersedes:
         return
     old = row(conn, """
-        SELECT recordid, name, effectivefrom, effectiveto FROM payerschedules
+        SELECT recordid, name, effectivefrom, effectiveto, active FROM payerschedules
         WHERE recordid = :i AND accountid = :a
     """, i=body.supersedes, a=accountid)
     if not old:
         raise HTTPException(404, "No such fee schedule to replace")
+    # A retired schedule governs nothing, so there is nothing to hand over. Ending it again
+    # would stamp a date on something already out of use and leave the replacement looking
+    # like the second half of a handover that never happened.
+    if not old["active"]:
+        raise HTTPException(409, f"{old['name']} is retired. Reinstate it to replace it, or "
+                                 "copy it instead.")
     start = body.effectivefrom or date.today()
     if start <= old["effectivefrom"]:
         raise HTTPException(400, f"{old['name']} starts on "
@@ -5802,34 +6464,9 @@ def _end_the_one_it_replaces(conn: Connection, accountid: str, body) -> None:
     """, end=start - timedelta(days=1), now=utcnow(), i=old["recordid"])
 
 
-def _one_price_at_a_time(conn: Connection, accountid: str, body,
-                         scheduleid: str | None = None) -> None:
-    """Refuse a second live price list for the same payer over the same days.
-
-    Refused at the moment it is written, not warned about once a trip has been priced from
-    the wrong one. Two live schedules for one payer is not a preference - it is a question
-    the pricing has no way to answer, and it would be settled silently by whichever started
-    later.
-    """
-    if not body.active:
-        return                      # a retired list competes with nothing
-    if not body.privatepay and not body.payerkinds and not body.payerids:
-        raise HTTPException(400, "Say who this schedule applies to")
-    bad = [k for k in body.payerkinds if k not in rateset.CATEGORIES]
-    if bad:
-        raise HTTPException(400, f"Unknown payer kind {bad[0]}")
-    other = rateset.clashes(conn, accountid, privatepay=body.privatepay,
-                            payerkinds=body.payerkinds, payerids=body.payerids,
-                            effectivefrom=body.effectivefrom or date.today(),
-                            effectiveto=body.effectiveto, scheduleid=scheduleid)
-    if not other:
-        return
-    ran = other["effectivefrom"].strftime("%m/%d/%Y")
-    until = other["effectiveto"].strftime("%m/%d/%Y") if other["effectiveto"] else None
-    raise HTTPException(409,
-        f"{other['name']} already covers {other['over']} from {ran}"
-        + (f" to {until}" if until else " onwards")
-        + ". Give that one an end date, or start this one after it finishes.")
+def _payer_type(body) -> None:
+    if body.payertype != "private" and body.payertype not in rateset.CATEGORIES:
+        raise HTTPException(400, "Choose the payer type")
 
 
 @router.post("/company/rates")
@@ -5843,7 +6480,7 @@ def add_fee_schedule(body: ScheduleIn, request: Request, user: dict = Depends(ac
     # unstated, there is no way to tell a Medicaid schedule from the private-pay prices.
     if body.effectiveto and body.effectivefrom and body.effectiveto < body.effectivefrom:
         raise HTTPException(400, "That schedule ends before it starts")
-    _one_price_at_a_time(conn, acct, body)
+    _payer_type(body)
     scheduleid = rateset.save_schedule(conn, acct, user["recordid"], body.model_dump())
     rateset.save_rates(conn, acct, scheduleid, [r.model_dump() for r in body.rates])
     log(conn, user, "rates-added", "company", acct,
@@ -5861,7 +6498,7 @@ def edit_fee_schedule(scheduleid: str, body: ScheduleIn, request: Request,
         raise HTTPException(404, "No such fee schedule")
     if body.effectiveto and body.effectivefrom and body.effectiveto < body.effectivefrom:
         raise HTTPException(400, "That schedule ends before it starts")
-    _one_price_at_a_time(conn, acct, body, scheduleid)
+    _payer_type(body)
     rateset.save_schedule(conn, acct, user["recordid"], body.model_dump(), scheduleid)
     rateset.save_rates(conn, acct, scheduleid, [r.model_dump() for r in body.rates])
     log(conn, user, "rates-changed", "company", acct, {"schedule": scheduleid},
@@ -5880,25 +6517,13 @@ def set_schedule_active(scheduleid: str, body: StandingIn, request: Request,
                         conn: Connection = Depends(get_conn)):
     """Retire a schedule, or put it back.
 
-    Both directions through one endpoint, because it is one flag. Reinstating is gated the
-    same way a save is: a schedule brought back must not collide with whatever has been
-    covering its payers since it went.
+    Both directions through one endpoint, because it is one flag. Which payers it prices is said
+    on their lines, so bringing one back competes with nothing.
     """
     acct = user["accountid"]
     held = rateset.schedule(conn, acct, scheduleid)
     if not held:
         raise HTTPException(404, "No such fee schedule")
-    if body.active:
-        other = rateset.clashes(
-            conn, acct, privatepay=bool(held["privatepay"]),
-            payerkinds=[k for k in (held.get("payerkinds") or "").split(",") if k],
-            payerids=held.get("payerids") or [],
-            effectivefrom=held["effectivefrom"], effectiveto=held["effectiveto"],
-            scheduleid=scheduleid)
-        if other:
-            raise HTTPException(409,
-                f"{other['name']} covers {other['over']} over those dates now. "
-                "End that one first.")
     rateset.set_active(conn, acct, scheduleid, body.active)
     log(conn, user, "rates-retired" if not body.active else "rates-reinstated",
         "company", acct, {"schedule": scheduleid}, ip=client_ip(request))
@@ -6134,8 +6759,8 @@ def _mcs150_counts(conn: Connection, acct: str) -> dict:
         FROM drivers WHERE accountid = :a AND deleted IS NULL AND stub = 0
     """, a=acct)
     working = [d for d in drivers if d["hiredon"] and not d["terminatedon"]]
-    # A CDL holder is one whose licence says so. The class is what the licence carries, so this is
-    # read off the licence rather than off whether anybody ran a Clearinghouse query for them.
+    # A CDL holder is one whose license says so. The class is what the license carries, so this is
+    # read off the license rather than off whether anybody ran a Clearinghouse query for them.
     cdl = [d for d in working if (d["licenseclass"] or "").upper() in ("A", "B", "C")]
 
     vehicles = rows(conn, """
@@ -6337,20 +6962,9 @@ def appoint_company_role(role: str, body: RoleIn, request: Request, tasks: Backg
         on=localnow(user["timezone"]).date(), by=user["recordid"])
     log(conn, user, "role-appointed", "company", acct, {"role": role, "userid": body.userid},
         ip=client_ip(request))
-    # A supervisor is the person who decides whether a driver is sent for a reasonable suspicion
-    # test, and 49 CFR 382.603 asks them to be trained for it. Telling them they hold the
-    # appointment is the first half; the second is that their own record is waiting for their
-    # signature, because somebody else recording that they were trained is not them saying so.
-    if role == "supervisor":
-        them = row(conn, "SELECT name, email FROM users WHERE recordid = :u AND accountid = :a",
-                   u=body.userid, a=acct)
-        company = (row(conn, "SELECT name FROM accounts WHERE recordid = :a", a=acct)
-                   or {}).get("name") or "your company"
-        if them and (them.get("email") or "").strip():
-            subject, html, text = emails.supervisor_appointed(
-                them["name"], company,
-                f"{settings.public_url.rstrip('/')}/company?sign=supervisor")
-            tasks.add_task(mailer.send, them["email"], subject, html, text)
+    # Nothing is sent. A supervisor sees the banner asking for their signature the moment
+    # they sign in - driven by the appointment itself, so it needs no mail and cannot be
+    # missed in a spam folder.
     saved(conn)
     return {"ok": True}
 
@@ -6688,6 +7302,150 @@ def answer_requirement_fact(driverid: str, code: str, body: FactIn, request: Req
     return {"ok": True, "evaluation": evaluation}
 
 
+@router.get("/drivers/{driverid}/authorizations")
+def driver_authorizations(driverid: str, user: dict = Depends(current_user),
+                          conn: Connection = Depends(get_conn)):
+    """The broker contracts that require approval, and whether this driver holds it."""
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    return {"contracts": rows(conn, f"""
+        SELECT c.recordid, c.broker, c.state, c.contractref, c.services, a.recordid AS approvalid,
+               a.approvedon, u.name AS approvedbyname
+        FROM companycontracts c
+        LEFT JOIN driverauthorizations a ON a.contractid = c.recordid AND a.driverid = :d
+             AND a.endedon IS NULL
+        LEFT JOIN users u ON u.recordid = a.approvedby
+        WHERE c.accountid = :a AND c.requiresapproval = 1 AND c.status <> 'ended'
+          AND {payerlines.live("c")}
+          AND (c.effectiveto IS NULL OR c.effectiveto >= CURDATE())
+        ORDER BY c.broker, c.state
+    """, a=acct, d=driverid)}
+
+
+@router.post("/drivers/{driverid}/authorizations/{contractid}")
+def approve_for_contract(driverid: str, contractid: str, request: Request,
+                         user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    if not row(conn, "SELECT 1 AS x FROM companycontracts WHERE recordid = :c AND accountid = :a",
+               c=contractid, a=acct):
+        raise HTTPException(404, "No such contract")
+    if row(conn, "SELECT 1 AS x FROM driverauthorizations WHERE driverid = :d AND contractid = :c "
+                 "AND accountid = :a AND endedon IS NULL", d=driverid, c=contractid, a=acct):
+        raise HTTPException(409, "The driver is already approved for this contract")
+    run(conn, """
+        INSERT INTO driverauthorizations (recordid, accountid, driverid, contractid, approvedon,
+                                          approvedby)
+        VALUES (:id, :a, :d, :c, :now, :u)
+    """, id=newid(), a=acct, d=driverid, c=contractid, now=utcnow(), u=user["recordid"])
+    log(conn, user, "approve", "driver", driverid, {"contract": contractid}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+@router.post("/drivers/{driverid}/authorizations/{contractid}/end")
+def end_contract_approval(driverid: str, contractid: str, request: Request,
+                          user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """Ended, not deleted: the approval was real while it lasted."""
+    n = run(conn, """
+        UPDATE driverauthorizations SET endedon = :now, endedby = :u
+        WHERE driverid = :d AND contractid = :c AND accountid = :a AND endedon IS NULL
+    """, now=utcnow(), u=user["recordid"], d=driverid, c=contractid, a=user["accountid"]).rowcount
+    if not n:
+        raise HTTPException(404, "The driver is not approved for this contract")
+    log(conn, user, "unapprove", "driver", driverid, {"contract": contractid}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+# Where a screening came from. Only the first two are the authority itself.
+PROVENANCE = {"fdle": "FDLE", "ahca": "AHCA Clearinghouse", "vendor": "Screening vendor"}
+
+
+class ProvenanceIn(BaseModel):
+    provenance: str
+
+
+@router.put("/credentials/{credentialid}/provenance")
+def set_provenance(credentialid: str, body: ProvenanceIn, request: Request,
+                   user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """Record where a screening came from. A Level 1 is relied on only when it came from the FDLE
+    or the AHCA Clearinghouse; a vendor's report on its own is on file and under review."""
+    if body.provenance not in PROVENANCE:
+        raise HTTPException(400, "Unknown source")
+    held = row(conn, "SELECT subject, subjectid FROM credentials WHERE recordid = :c "
+                     "AND accountid = :a AND deleted IS NULL", c=credentialid, a=user["accountid"])
+    if not held:
+        raise HTTPException(404, "No such record")
+    run(conn, "UPDATE credentials SET provenance = :p, updated = :now WHERE recordid = :c",
+        p=body.provenance, now=utcnow(), c=credentialid)
+    log(conn, user, "update", "credential", credentialid, {"provenance": body.provenance},
+        ip=client_ip(request))
+    _reevaluate_subject(conn, user, held["subject"], held["subjectid"])
+    saved(conn)
+    return {"ok": True}
+
+
+@router.get("/drivers/{driverid}/transit-programs")
+def driver_transit_programs(driverid: str, user: dict = Depends(current_user),
+                            conn: Connection = Depends(get_conn)):
+    """The transit safety programs this driver can be assigned to - those touching the company -
+    and which they are."""
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    from app.routers.operating import _transit
+    profile = row(conn, "SELECT operatingstates FROM companyprofiles WHERE accountid = :a", a=acct) or {}
+    held = {r["programcode"] for r in rows(conn, "SELECT programcode FROM drivertransitprograms "
+                                                 "WHERE accountid = :a AND driverid = :d", a=acct, d=driverid)}
+    return {"programs": [{**t, "assigned": t["code"] in held} for t in _transit(conn, acct, profile)]}
+
+
+class TransitAssignIn(BaseModel):
+    codes: list[str] = []
+
+
+@router.put("/drivers/{driverid}/transit-programs")
+def assign_transit_programs(driverid: str, body: TransitAssignIn, request: Request,
+                            user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    known = {r["code"] for r in rows(conn, "SELECT code FROM transitsafetyprograms WHERE active = 1")}
+    codes = [c for c in dict.fromkeys(body.codes) if c in known]
+    run(conn, "DELETE FROM drivertransitprograms WHERE accountid = :a AND driverid = :d", a=acct, d=driverid)
+    for c in codes:
+        run(conn, "INSERT INTO drivertransitprograms (accountid, driverid, programcode, added) "
+                  "VALUES (:a, :d, :c, :now)", a=acct, d=driverid, c=c, now=utcnow())
+    # The Florida flag other screens still read - the Hours of Service tab - kept in step.
+    run(conn, "UPDATE drivers SET chapter1490 = :f WHERE recordid = :d AND accountid = :a",
+        f=int("FL_1490" in codes), d=driverid, a=acct)
+    log(conn, user, "update", "driver", driverid, {"transitprograms": codes}, ip=client_ip(request))
+    _reevaluate_subject(conn, user, "driver", driverid)
+    saved(conn)
+    return {"ok": True}
+
+
+class EngagementIn(BaseModel):
+    engagement: str | None = None
+
+
+@router.put("/drivers/{driverid}/engagement")
+def set_engagement(driverid: str, body: EngagementIn, request: Request, user: dict = Depends(editor),
+                   conn: Connection = Depends(get_conn)):
+    """How the company engages this driver: employee, contractor, or supplied by a subcontracted
+    provider. Recorded as the company says it; blank falls back to the company's employment model."""
+    if body.engagement and body.engagement not in ("employee", "contractor", "subcontracted"):
+        raise HTTPException(400, "Unknown engagement")
+    n = run(conn, "UPDATE drivers SET engagement = :e, updated = :now "
+                  "WHERE recordid = :d AND accountid = :a AND deleted IS NULL",
+            e=body.engagement or None, now=utcnow(), d=driverid, a=user["accountid"]).rowcount
+    if not n:
+        raise HTTPException(404, "Driver not found")
+    log(conn, user, "update", "driver", driverid, {"engagement": body.engagement},
+        ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
 @router.get("/drivers/{driverid}/requirements")
 def driver_requirements(driverid: str, user: dict = Depends(current_user),
                         conn: Connection = Depends(get_conn)):
@@ -6707,6 +7465,8 @@ def driver_requirements(driverid: str, user: dict = Depends(current_user),
     # they are not reasons to hold up a decision, so they are not put in front of the person
     # making one. Once hired, the whole file is theirs to keep - nothing is filtered away.
     hired = bool(driver.get("hiredon")) or driver["status"] in ("hired", "inactive")
+    # Read off the whole file, before anything is held back for a driver not yet hired.
+    overview = qualification.overview(driver, items, gathered["facts"])
     later = 0
     if not hired:
         keep = [i for i in items if i["duestage"] in ("prehire", "predrive", None)]
@@ -6723,7 +7483,7 @@ def driver_requirements(driverid: str, user: dict = Depends(current_user),
         kind, _, which = (i["evidencesource"] or "").partition(":")
         i["readonly"] = kind == "driverfact" and which not in DRIVER_FACTS
     return {"items": items, "facts": gathered["facts"], "fleet": gathered["fleet"],
-            "counts": counted, "hired": hired,
+            "counts": counted, "hired": hired, "overview": overview,
             # How many are being held back until they are hired, so the screen can say so rather
             # than quietly showing a shorter list than the file actually holds.
             "later": later,
@@ -6788,13 +7548,38 @@ def _answered(conn: Connection, accountid: str, driverid: str, rule: dict, kind:
 #
 # "ordered" is the awkward one, because it means two different things. A driving record sent for
 # with nothing on file is a gap - the driver may not drive on a question nobody has answered. A
-# licence that is valid until 2029 with a fresh copy asked of the driver is not a gap at all, and
+# license that is valid until 2029 with a fresh copy asked of the driver is not a gap at all, and
 # grounding somebody over it would be absurd. So an order only stops where nothing is behind it.
 STOPPING = ("failed", "expired", "overdue", "pending", "review")
 # Of those, the ones that are a verdict on the driver rather than work outstanding. "Return-to-duty
 # in progress" is here because it is not a softer kind of prohibited: the driver may not perform
 # safety-sensitive functions in either state, and the only difference is what the office does next.
 ADVERSE_STATUS = ("failed", "expired", "overdue", "prohibited", "rtdinprogress")
+
+# What is wrong with a requirement, in words that can stand in front of its name.
+#
+# The column was printing the requirement's NAME on its own, under a heading that says "Why". So a
+# driver with no English proficiency record on file read as "Not eligible - Able to read and speak
+# English", which says the opposite of what is meant. A reason has to be a statement about the
+# record, not the title of it.
+WRONG_WITH = {
+    "pending": "Nothing on file",
+    "expired": "Expired",
+    "overdue": "Overdue",
+    "failed": "Not met",
+    "prohibited": "Prohibited",
+    "rtdinprogress": "Return to duty not finished",
+    "unknown": "Cannot be decided",
+}
+
+
+def _blocking(barred: list[dict], clear: str) -> str:
+    """The one thing in the way, named - or the first of several, with the rest counted."""
+    if not barred:
+        return clear
+    first = barred[0]
+    said = f'{WRONG_WITH.get(first["status"], first["status"].title())}: {first["name"]}'
+    return said if len(barred) == 1 else f"{said}, and {len(barred) - 1} more"
 
 
 def _stops(item: dict) -> bool:
@@ -6823,7 +7608,7 @@ def _gate(conn: Connection, accountid: str, driverid: str, items: list[dict],
     """Can this driver be assigned a trip today?
 
     Deliberately narrower than "is the file complete". What stops a driver is a sentence somewhere
-    saying they may not drive - an expired licence, an expired medical card, a prohibited drug and
+    saying they may not drive - an expired license, an expired medical card, a prohibited drug and
     alcohol status, a query that is overdue. The I-9, the trainings and the policy receipts are
     real work the office owes, and they are not a reason to leave a trip uncovered this afternoon.
     """
@@ -6850,7 +7635,7 @@ def _gate(conn: Connection, accountid: str, driverid: str, items: list[dict],
         stops.insert(0, {"code": "DA_STATUS", "name": "Drug and alcohol status",
                          "status": da["status"], "why": da["why"]})
     # Stopped and DISQUALIFIED are not the same thing, and a list that calls them both the second
-    # one is a list that cries wolf. A pending driver with a licence copy still to come is not
+    # one is a list that cries wolf. A pending driver with a license copy still to come is not
     # barred from anything - they have never been cleared in the first place, and the work to
     # finish is what the dashboard counts. Disqualified means something came back against them: a
     # determination that failed, a record that ran out, an obligation that went past its date, or a
@@ -7053,7 +7838,7 @@ def driver_dashboard(driverid: str, user: dict = Depends(current_user),
             band = "expiring"
         else:
             band = "current"
-        # A licence runs out; a screening falls due again. The same date means two different things
+        # A license runs out; a screening falls due again. The same date means two different things
         # and is read by two different people, so the record says which kind it is and when it was
         # last done - "expires" against a recheck interval is the wrong word for the right date.
         tracked.append({"code": i["code"], "name": i["name"], "expireson": ends, "band": band,
@@ -7189,7 +7974,12 @@ def requirement_detail(driverid: str, code: str, user: dict = Depends(current_us
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
     rule = row(conn, """
-        SELECT recordid, code, name, description, authority, citation, evidencekind, evidencesource,
+        SELECT recordid, code,
+               -- The qualification's name, not the rule's: the row and its dialog say the same thing.
+               COALESCE((SELECT q.name FROM qualificationcatalog q
+                         WHERE q.code = compliancerules.qualificationcode), name) AS name,
+               qualificationcode, authoritycategory, enforcement, legalreview,
+               description, authority, citation, evidencekind, evidencesource,
                -- `origin` decides whether a record can be "read" at all. Left out of this query,
                -- needs_reading() fell back to its default of "came from outside", so a record
                -- the office typed in itself - the day a driver went into the random pool - was
@@ -7202,13 +7992,22 @@ def requirement_detail(driverid: str, code: str, user: dict = Depends(current_us
     """, c=code, a=acct)
     if not rule:
         raise HTTPException(404, "No such requirement")
+    # Every source behind the same qualification, so the dialog can say why it is asked.
+    rule["sources"] = rows(conn, """
+        SELECT code, authority, citation, authoritycategory, legalreview FROM compliancerules
+        WHERE subject = 'driver' AND effectiveto IS NULL AND (accountid IS NULL OR accountid = :a)
+          AND qualificationcode = :q
+        ORDER BY FIELD(authoritycategory, 'FEDERAL_GENERAL', 'STATE_GENERAL', 'FEDERAL_MEDICAID',
+                       'STATE_MEDICAID', 'CONTRACT_COMPANY'), code
+    """, a=acct, q=rule["qualificationcode"]) if rule["qualificationcode"] else []
 
     kind, _, which = (rule["evidencesource"] or "").partition(":")
     # What the form needs to file one: a credential type to write against, or the doctype to ask
     # the driver to sign.
-    # `category` comes with it because a training record is asked for differently from a licence:
+    # `category` comes with it because a training record is asked for differently from a license:
     # it has somebody who gave it, and who that was is part of the record.
-    ctype = row(conn, "SELECT recordid, name, category, requirestesting, defaultvaliddays "
+    ctype = row(conn, "SELECT recordid, name, category, requirestesting, defaultvaliddays, "
+                      "requiresprovenance "
                       "FROM credentialtypes "
                       "WHERE code = :c AND active = 1", c=which) if kind == "credential" else None
     signed = None
@@ -7218,7 +8017,23 @@ def requirement_detail(driverid: str, code: str, user: dict = Depends(current_us
             WHERE accountid = :a AND ownertype = 'driver' AND ownerid = :d AND doctype = :t
             ORDER BY signedon DESC LIMIT 1
         """, a=acct, d=driverid, t=which)
+    # A requirement about the file as a whole is not a document: where it stands, and what it is
+    # still waiting on, is worked out from the rest of the driver's file.
+    derived = None
+    if rule["code"] in rules.DERIVED:
+        prefix = rules.DERIVED[rule["code"]][0]
+        f = factset.assemble(conn, acct, driverid=driverid)["facts"]
+        items = rules.for_driver(conn, acct, driverid, f)
+        me = next((i for i in items if i["code"] == rule["code"]), None)
+        short = [i["name"] for i in items
+                 if i["code"] != rule["code"] and i.get("applies") is True
+                 and i["status"] not in ("satisfied", "expiring", "derived")
+                 and any((src.get("citation") or "").startswith(prefix)
+                         for src in (i.get("sources") or [i]))]
+        derived = {"status": (me or {}).get("status"), "why": (me or {}).get("why"),
+                   "missing": short}
     return {
+        "derived": derived,
         "requirement": rule,
         "source": {"kind": kind or None, "which": which or None},
         # What the rule normally reads, plus anything filed straight against it - a paper copy of a
@@ -7233,13 +8048,13 @@ def requirement_detail(driverid: str, code: str, user: dict = Depends(current_us
             + (rules.history(conn, acct, driverid, rule["alternatesource"])
                if _alternate_open(conn, acct, driverid, rule) else [])),
         "signed": signed["signedon"] if signed else None,
-        # A driving record belongs to the licence it was pulled on - a driver holding licences in
+        # A driving record belongs to the license it was pulled on - a driver holding licenses in
         # two states has two histories - so ordering or filing one has to say which.
-        "licences": rows(conn, """
+        "licenses": rows(conn, """
             SELECT recordid, number, state, active FROM driverlicenses
             WHERE accountid = :a AND driverid = :d ORDER BY active DESC, issued DESC
         """, a=acct, d=driverid) if kind == "mvr" else [],
-        # A driving record pulled on a commercial licence carries the State's own answer about
+        # A driving record pulled on a commercial license carries the State's own answer about
         # medical qualification, and a record pulled on an ordinary one does not - so the form that
         # files it asks different questions, and this is what decides which.
         "cdl": (row(conn, "SELECT licenseclass FROM drivers WHERE recordid = :d AND accountid = :a",
@@ -7264,7 +8079,7 @@ def requirement_detail(driverid: str, code: str, user: dict = Depends(current_us
             ORDER BY c.issuedon DESC, c.added DESC LIMIT 1
         """, a=acct, d=driverid) or {}).get("expireson") if kind == "cdlismedical" else None,
         # Which licensing authorities this rule actually asks about, and how each one stands.
-        # 49 CFR 391.23(a)(1) wants a record from every state the driver held a licence in over the
+        # 49 CFR 391.23(a)(1) wants a record from every state the driver held a license in over the
         # window, so the screen shows the states rather than one record and a silence.
         "coverage": mvrs.coverage(
             conn, acct, driverid, window=mvrs.HIRE_LOOKBACK,
@@ -7304,6 +8119,16 @@ def hire_driver(driverid: str, body: HireIn, request: Request, tasks: Background
         UPDATE drivers SET status = 'hired', hiredon = COALESCE(hiredon, :today), updated = :now
         WHERE recordid = :id AND accountid = :a
     """, today=date.today(), now=utcnow(), id=driverid, a=user["accountid"])
+    # Hired without ever passing through pending - or before the screening existed - means never
+    # screened. Done here for the same reason and on the same terms as the move to pending: in the
+    # same save, and where a list cannot be had, the driver is not hired.
+    missing = screening.never_screened(conn, user["accountid"], driverid)
+    if missing:
+        try:
+            screening.screen_now(conn, driverid, missing)
+        except Exception as e:
+            raise HTTPException(503, "The exclusion screening could not be run, so this driver "
+                                     f"was not hired. Try again shortly. ({e})") from None
     run(conn, """
         UPDATE driverapplications SET status = 'approved', reviewedby = :u, reviewedon = :now
         WHERE driverid = :id AND accountid = :a
@@ -7318,7 +8143,7 @@ def hire_driver(driverid: str, body: HireIn, request: Request, tasks: Background
     # Part 395 reaches, because that is who it is about - 49 CFR 395.8(j)(2) asks the carrier to
     # obtain it before the driver begins work, so it travels with the rest of the first-day
     # paperwork rather than waiting for somebody to remember it on the morning of a dispatch.
-    needs7 = _needs_prev7(conn, acct, driverid)
+    needs7 = _needs_prev7(conn, user["accountid"], driverid)
     packet = ["I9", "W4"] + (["PREV7_ONDUTY"] if needs7 else [])
     sent = None
     for doctype in packet:
@@ -7356,7 +8181,7 @@ def deactivate_driver(driverid: str, request: Request, user: dict = Depends(edit
     person with the same qualification history behind them - and the day they came off is stamped
     beside it.
 
-    Anything still out with them is left alone. A licence that expires next month still expires
+    Anything still out with them is left alone. A license that expires next month still expires
     next month, and an I-9 waiting to be read is still waiting: taking somebody off the roster
     answers no question about their paperwork, and quietly closing those would lose the record of
     what was outstanding on the day they left.
@@ -7441,10 +8266,10 @@ def update_driver(driverid: str, body: DriverIn, user: dict = Depends(editor), c
         raise HTTPException(409, "This driver is still an applicant. Their application cannot be edited here.")
     r = run(conn, """
         UPDATE drivers SET externalid = :ext, firstname = :f, lastname = :l, dob = :dob, licensenumber = :lic,
-               licensestate = :ls, licensesince = :lsince, email = :em, phone = :ph,
+               licensestate = :ls, email = :em, phone = :ph,
                emergencyname = :en, emergencyphone = :ep, hiredon = :h, terminatedon = :t,
                address1 = :a1, address2 = :a2, city = :city, state = :st, zip = :zip,
-               operation = :operation, chapter1490 = :ch1490, datprogram = :dat,
+               operation = :operation,
                endorsementsneeded = :needs, englishproficient = :english, stub = 0,
                updated = :now
         WHERE recordid = :id AND accountid = :a AND deleted IS NULL
@@ -7454,7 +8279,8 @@ def update_driver(driverid: str, body: DriverIn, user: dict = Depends(editor), c
         h=body.hiredon, t=body.terminatedon, a1=body.address1, a2=body.address2, city=body.city,
         st=(body.state or "").upper()[:2] or None, zip=body.zip,
         operation=body.operation if body.operation in OPERATION else "noncmv",
-        ch1490=int(bool(body.chapter1490)),
+        # chapter1490 is not written here: it follows the driver's transit safety program
+        # assignments (PUT /drivers/{id}/transit-programs), so a save of this form cannot undo them.
         # Kept as the letters themselves, in one order, so "P, S" and "sp" are one answer.
         needs="".join(rules.ENDORSEMENTS(body.endorsementsneeded)) or None,
         english=None if body.englishproficient is None else int(body.englishproficient),
@@ -7766,7 +8592,7 @@ def list_vehicles(user: dict = Depends(current_user), conn: Connection = Depends
     for c in creds:
         by_vehicle.setdefault(c["subjectid"], []).append(c)
     for v in vehicles:
-        v["licence"] = vehicleclass.licence_for(v)
+        v["license"] = vehicleclass.license_for(v)
         latest = _latest_by_type(by_vehicle.get(v["recordid"], []), today)
         v["credentials"] = len(latest)
         v["expired"] = sum(1 for c in latest.values() if c["state"] in ("expired", "revoked"))
@@ -7798,7 +8624,7 @@ def get_vehicle(vehicleid: str, user: dict = Depends(current_user), conn: Connec
     acct = user["accountid"]
     v = row(conn, "SELECT * FROM vehicles WHERE recordid = :id AND accountid = :a AND deleted IS NULL", id=vehicleid, a=acct)
     if v:
-        v["licence"] = vehicleclass.licence_for(v)
+        v["license"] = vehicleclass.license_for(v)
         # What follows from the measurements, with the reason for each - never stored, always shown.
         v["facts"] = vehicleclass.facts(v)
     if not v:
@@ -7911,6 +8737,9 @@ async def create_credential(
     # and who watched it being shown. See F.A.C. 14-90.004(3)(d).
     testedon: date | None = Form(None),
     testedby: str | None = Form(None),
+    screentype: str | None = Form(None),
+    result: str | None = Form(None),
+    provenance: str | None = Form(None),
     amount: float | None = Form(None),
     notes: str | None = Form(None),
     supersedes: str | None = Form(None),
@@ -7950,11 +8779,15 @@ async def create_credential(
     cid = newid()
     run(conn, """
         INSERT INTO credentials (recordid, accountid, credentialtypeid, subject, subjectid, documentid, number, issuer, amount,
-                                 issuedon, testedon, testedby, expireson, exempt, supersedes, notes, enteredby)
-        VALUES (:id, :a, :t, :s, :sid, :doc, :num, :iss, :amt, :io, :to, :tby, :eo, :ex, :sup, :notes, :u)
+                                 issuedon, testedon, testedby, screentype, result, provenance,
+                                 expireson, exempt, supersedes, notes, enteredby)
+        VALUES (:id, :a, :t, :s, :sid, :doc, :num, :iss, :amt, :io, :to, :tby, :st, :res, :prov,
+                :eo, :ex, :sup, :notes, :u)
     """, id=cid, a=acct, t=credentialtypeid, s=ctype["subject"], sid=subjectid, doc=documentid, num=number,
         iss=issuer, amt=amount if ctype["hasamount"] else None, io=issuedon,
-        to=testedon, tby=(testedby or None), eo=expireson,
+        to=testedon, tby=(testedby or None), st=(screentype or None)[:32] if screentype else None,
+        res=(result or None)[:16] if result else None,
+        prov=provenance if provenance in PROVENANCE else None, eo=expireson,
         ex=1 if exempt else 0, sup=supersedes, notes=notes, u=user["recordid"])
     # Somebody in this office put it here, so somebody in this office has read it. A medical
     # certificate is made by an examiner and a training certificate by a trainer - both come from
@@ -8040,6 +8873,102 @@ def _own_keys_only(user: dict):
     if user.get("platformrole"):
         raise HTTPException(403, "TripProof staff cannot configure a customer's payment "
                                  "gateway - the company holds its own merchant keys")
+
+
+# ------------------------------------------------------------------------------------------------
+# Background checks: the company's own account with backgroundchecks.com.
+# ------------------------------------------------------------------------------------------------
+
+class ConnectIn(BaseModel):
+    token: str
+
+
+@router.get("/company/screening")
+def screening_account(user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
+    """Whether this company has an account of its own, and if so what is on it.
+
+    Everything below the first two fields is read live from the vendor with the COMPANY'S key, not
+    ours. It is their account: their invoices, their prices, their people."""
+    acct = user["accountid"]
+    out = {
+        "connected": screeningaccount.connected(conn, acct),
+        # Absent a platform source token nobody can sign up, and the screen has to say so rather
+        # than offer a button that cannot work.
+        "cansignup": bool(backgroundchecks.source_token()),
+        "sourcetoken": backgroundchecks.source_token(),
+        "widgetscript": backgroundchecks.registration_widget_script(),
+    }
+    if not out["connected"]:
+        return out
+    token = screeningaccount.token_for(conn, acct)
+    # One failure must not blank the page: a company whose invoices endpoint is having a bad
+    # morning should still see who they are and what they can order. But it has to say WHICH part
+    # is missing. An unattributed "the request was refused" above a page full of correct
+    # information reads as though none of it can be trusted - and a freshly created account often
+    # has nothing to say about billing for a minute or two, which is not an error worth alarming
+    # anybody with.
+    def _try(what, fn, fallback):
+        try:
+            return fn(token)
+        except backgroundchecks.ScreeningError as e:
+            out.setdefault("problems", []).append(f"{what} could not be read just now - {e}")
+            return fallback
+    out["account"] = _try("Your account details", backgroundchecks.account, {})
+    out["teams"] = _try("Your teams", backgroundchecks.teams, [])
+    out["billing"] = _try("Your payment details", backgroundchecks.billing_info, {})
+    out["invoices"] = _try("Your invoices", backgroundchecks.invoices, [])
+    out["skus"] = _try("The reports you can order", backgroundchecks.skus,
+                       {"reports": [], "addons": []})
+    return out
+
+
+@router.post("/company/screening/connect")
+def connect_screening(body: ConnectIn, request: Request,
+                      user: dict = Depends(account_admin),
+                      conn: Connection = Depends(get_conn)):
+    """Claim the account their Create Account widget has just made for this company."""
+    acct = user["accountid"]
+    try:
+        screeningaccount.adopt(conn, acct, user["recordid"], body.token)
+    except backgroundchecks.ScreeningError as e:
+        raise HTTPException(502, str(e)) from e
+    log(conn, user, "screening-connected", "account", acct, None, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+@router.delete("/company/screening")
+def disconnect_screening(request: Request, user: dict = Depends(account_admin),
+                         conn: Connection = Depends(get_conn)):
+    """Stop holding the key. The account at the vendor is theirs and is left alone."""
+    acct = user["accountid"]
+    screeningaccount.forget(conn, acct)
+    log(conn, user, "screening-disconnected", "account", acct, None, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+@router.get("/company/screening/invoices/{reference}/pdf")
+def screening_invoice_pdf(reference: str, user: dict = Depends(account_admin),
+                          conn: Connection = Depends(get_conn)):
+    """One invoice, fetched with the company's own key and handed straight on.
+
+    Proxied rather than linked because the alternative is putting their API token in a URL in a
+    browser, and that token opens every report on their account."""
+    # Their public invoice id, and nothing that could be read as a path. The reference goes into
+    # a URL at the vendor, so it is checked here rather than trusted.
+    if not re.fullmatch(r"[A-Za-z0-9-]{1,40}", reference or ""):
+        raise HTTPException(400, "That is not an invoice reference")
+    token = screeningaccount.token_for(conn, user["accountid"])
+    if not token:
+        raise HTTPException(409, "This company has no background checks account yet.")
+    try:
+        pdf = backgroundchecks.invoice_pdf(reference, token)
+    except backgroundchecks.ScreeningError as e:
+        raise HTTPException(502, str(e)) from e
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition":
+                             f'inline; filename="invoice-{reference}.pdf"'})
 
 
 @router.get("/company/gateways")

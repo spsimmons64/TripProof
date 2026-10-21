@@ -7,11 +7,12 @@
 # if a dispatch console is ever built, without the client's question changing.
 ###################################################################################################
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.engine import Connection
 
-from app import certn, events
+from app import backgroundchecks, certn, events, screeningaccount
 from app.db import get_conn, row, saved
 from app.security import current_user, editor
 
@@ -52,6 +53,10 @@ def mark_reviewed(recordid: str, user: dict = Depends(editor), conn: Connection 
 async def certn_said(request: Request, conn: Connection = Depends(get_conn)):
     """Certn telling us an order has moved. Public by necessity, so it proves who it is.
 
+    Certn is no longer the vendor new orders go to - backgroundchecks.com is, and it has no webhook
+    of its own. This stays because an order placed at Certn before the change can still finish, and
+    a result that arrives with nowhere to land is a driver whose file never completes.
+
     Matched on THEIR reference, which is the only thread between an order placed this morning and a
     result arriving tonight. An unknown reference is answered 200 and ignored: a webhook retried
     for ever because we said 404 to something that is not ours helps nobody.
@@ -76,6 +81,56 @@ async def certn_said(request: Request, conn: Connection = Depends(get_conn)):
         return {"ok": True}
     from app.routers.vault import _land_screening
     _land_screening(conn, held["accountid"], held["driverid"], held["recordid"], ref,
-                    certn.read_status(said))
+                    certn.read_status(said), "certn")
+    saved(conn)
+    return {"ok": True}
+
+
+@router.post("/webhooks/backgroundchecks")
+async def backgroundchecks_said(request: Request, conn: Connection = Depends(get_conn)):
+    """backgroundchecks.com telling us a report has moved.
+
+    This endpoint believes ONE thing in what it is sent: the report key. Everything else - whether
+    the report is finished, what it found - is then asked of their API directly, over an
+    authenticated connection, by the same code the Check For The Result button uses.
+
+    That is deliberate, and it is what makes the endpoint safe to leave open. Their documentation
+    describes no signing scheme, so there is nothing to verify a caller with; an endpoint that
+    believed its body could be told a driver was cleared by anybody who found the URL. Believing
+    only the key reduces a forged call to a wasted lookup against a key we either have or do not.
+
+    An unknown key is answered 200 and ignored. A webhook retried for ever because we said 404 to
+    something that is not ours helps nobody."""
+    body = await request.body()
+    if not backgroundchecks.webhook_ok(body, request.headers):
+        # Said without detail. Which part failed is exactly what somebody guessing wants told.
+        logging.getLogger("tripproof.live").warning(
+            "backgroundchecks webhook refused: signature did not match the body")
+        raise HTTPException(401, "Not from backgroundchecks.com")
+    try:
+        said = json.loads(body or b"{}")
+    except ValueError:
+        raise HTTPException(400, "Unreadable") from None
+    ref = str(said.get("report_key") or said.get("key") or said.get("id") or "").strip()
+    if not ref:
+        return {"ok": True}
+    held = row(conn, """
+        SELECT recordid, accountid, driverid FROM driverreports
+        WHERE vendor = 'backgroundchecks' AND vendorref = :ref
+    """, ref=ref)
+    if not held:
+        return {"ok": True}
+    # Asked with the key of the account the report belongs to. Theirs, not ours: a report lives
+    # on one company's account and this installation's credential is not valid for it.
+    try:
+        got = backgroundchecks.fetch(
+            ref, screeningaccount.token_for(conn, held["accountid"]))
+    except backgroundchecks.ScreeningError:
+        # They told us something moved and we could not go and look. Answered 200 so they stop
+        # retrying; the order stays open and the sweep - or the office - will pick it up.
+        return {"ok": True}
+    from app.routers.vault import _land_screening
+    _land_screening(conn, held["accountid"], held["driverid"], held["recordid"], ref,
+                    got["status"], "backgroundchecks")
     saved(conn)
     return {"ok": True}

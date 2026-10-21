@@ -143,7 +143,7 @@ def _fullname(app_: dict) -> str:
 
 
 def _blanks(app_: dict) -> dict:
-    """What the documents we ship put in their blanks: the company, the driver, and the licence the
+    """What the documents we ship put in their blanks: the company, the driver, and the license the
     Clearinghouse consent is given under - the commercial one if the driver listed one."""
     data = json.loads(app_["data"] or "{}")
     licenses = ((data.get("steps") or {}).get("2") or {}).get("licenses") or []
@@ -277,12 +277,12 @@ def state(app_: dict = Depends(session), conn: Connection = Depends(get_conn)):
     return s
 
 
-def _keep_licences(conn: Connection, app_: dict, declared: list) -> None:
-    """Put the licences the applicant listed onto the driver's own file.
+def _keep_licenses(conn: Connection, app_: dict, declared: list) -> None:
+    """Put the licenses the applicant listed onto the driver's own file.
 
     Until this, step 2 wrote the number and the class onto the `drivers` row and nowhere else, so a
-    driver who completed the application had no `driverlicenses` record at all - and both licence
-    requirements read that table. The copy requirement said "Nothing on file yet" about a licence
+    driver who completed the application had no `driverlicenses` record at all - and both license
+    requirements read that table. The copy requirement said "Nothing on file yet" about a license
     the driver had just photographed and sent in, which is the complaint that found this.
 
     Matched on state and number so a resumed application updates its own rows rather than growing a
@@ -311,22 +311,24 @@ def _keep_licences(conn: Connection, app_: dict, declared: list) -> None:
         if got:
             run(conn, """
                 UPDATE driverlicenses SET classification = :c, endorsements = :e, issued = :i,
-                       expires = :x, active = :act, copydocumentid = COALESCE(copydocumentid, :doc),
+                       originalissued = :oi, expires = :x, active = :act, copydocumentid = COALESCE(copydocumentid, :doc),
                        updated = :now
                 WHERE recordid = :id
             """, c=(one.get("classification") or None), e=ends, i=(one.get("issued") or None),
+                oi=(one.get("originalissued") or None),
                 x=(one.get("expires") or None), act=active, doc=front, now=utcnow(),
                 id=got["recordid"])
         else:
             run(conn, """
                 INSERT INTO driverlicenses (recordid, accountid, driverid, number, state,
-                                            classification, endorsements, issued, expires, active,
-                                            copydocumentid, note)
-                VALUES (:id, :a, :d, :n, :s, :c, :e, :i, :x, :act, :doc, 'From the application')
+                                            classification, endorsements, issued, originalissued,
+                                            expires, active, copydocumentid, note)
+                VALUES (:id, :a, :d, :n, :s, :c, :e, :i, :oi, :x, :act, :doc, 'From the application')
             """, id=newid(), a=acct, d=driverid, n=number, s=state,
                 c=(one.get("classification") or None), e=ends, i=(one.get("issued") or None),
+                oi=(one.get("originalissued") or None),
                 x=(one.get("expires") or None), act=active, doc=front)
-    # Only one licence is the one they drive on.
+    # Only one license is the one they drive on.
     run(conn, """
         UPDATE driverlicenses SET active = 0
         WHERE accountid = :a AND driverid = :d AND number <> :n
@@ -358,7 +360,7 @@ def save_step(body: StepIn, request: Request, app_: dict = Depends(session), con
             f=(a.get("firstname") or app_["firstname"])[:64], l=(a.get("lastname") or app_["lastname"])[:64],
             p=(a.get("phone") or None), e=(a.get("email") or None), now=utcnow(), id=app_["driverid"])
     if body.step == 2:
-        # The licence they hold now - the most recently issued of the ones listed - is what a trip is
+        # The license they hold now - the most recently issued of the ones listed - is what a trip is
         # judged against, so it is kept on the driver rather than only inside the application.
         held = sorted((a.get("licenses") or []), key=lambda l: l.get("issued") or "", reverse=True)
         current = held[0] if held else {}
@@ -371,8 +373,8 @@ def save_step(body: StepIn, request: Request, app_: dict = Depends(session), con
             cls=(current.get("classification") or None),
             end="".join(current.get("endorsements") or []) or None,
             now=utcnow(), id=app_["driverid"])
-        # And onto the driver's licence file, which is what both licence requirements read.
-        _keep_licences(conn, app_, a.get("licenses"))
+        # And onto the driver's license file, which is what both license requirements read.
+        _keep_licenses(conn, app_, a.get("licenses"))
     saved(conn)
     return {"ok": True, "step": step}
 
@@ -431,7 +433,7 @@ async def upload(kind: str = Form(...), file: UploadFile = File(...), request: R
             m=stored_type or "application/octet-stream", b=len(data_bytes), h=digest, k=key)
     data = json.loads(app_["data"] or "{}")
     data.setdefault("uploads", {})[kind] = {"documentid": documentid, "filename": stored_name[:255]}
-    # The front of the card IS the copy the licence requirement asks for. Linked here as well as in
+    # The front of the card IS the copy the license requirement asks for. Linked here as well as in
     # step 2 because either can happen first: photograph the card then type the number, or the
     # other way round.
     if kind == "license_front":
@@ -451,7 +453,7 @@ class ScanOut(BaseModel):
 
 @router.post("/session/scan")
 async def scan_license(request: Request, file: UploadFile = File(...), app_: dict = Depends(session)):
-    """Read the barcode on the back of a licence and hand back what it says.
+    """Read the barcode on the back of a license and hand back what it says.
 
     The photograph is not kept: this is a reading, not an upload, and the applicant confirms what it
     found before any of it joins their application."""
@@ -813,9 +815,9 @@ def submit(request: Request, tasks: BackgroundTasks, app_: dict = Depends(sessio
     # The two commercial consents are only asked of a driver who said they will operate a commercial
     # vehicle for the company, so they are not missing from anyone else's application.
     data = json.loads(app_["data"] or "{}")
-    # A commercial driver is one who holds a commercial licence: the card decides, not a question.
-    licences = ((data.get("steps") or {}).get("2") or {}).get("licenses") or []
-    cmv = any((l.get("classification") or "").upper() in ("A", "B", "C") for l in licences)
+    # A commercial driver is one who holds a commercial license: the card decides, not a question.
+    licenses = ((data.get("steps") or {}).get("2") or {}).get("licenses") or []
+    cmv = any((l.get("classification") or "").upper() in ("A", "B", "C") for l in licenses)
     wanted = [d for d in STEP_DOCS.values() if d not in CMV_DOCS or cmv]
     missing = [d for d in wanted if d not in have]
     if missing:

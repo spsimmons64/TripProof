@@ -1,0 +1,12 @@
+-- `driverreports.tier` is twelve characters wide, and the tiers no longer fit in it.
+--
+-- Migration 228 sized it for Certn's two depths - "core" and "complete". The tiers are now the
+-- fee schedule's own codes: BACKGROUND_BASIC is sixteen characters and BACKGROUND_PROFESSIONAL is
+-- twenty-three. MariaDB refuses the insert.
+--
+-- The failure is worse than it sounds, because of WHERE it happens. The order is placed at the
+-- vendor first, deliberately - an order we cannot name is an order whose result can never be
+-- matched to a driver - and the row is written after. So a column too narrow meant the report was
+-- ordered and paid for, and then nothing at all was recorded against the driver: no key, no
+-- charge, no sign it ever happened, and a 500 on the screen.
+ALTER TABLE driverreports MODIFY COLUMN tier VARCHAR(32) NULL;

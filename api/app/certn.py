@@ -35,27 +35,11 @@ from app.config import settings
 
 log = logging.getLogger("tripproof.certn")
 
-# What we sell, and what we ask Certn for. The depth is ours to name; the flags are theirs.
-TIERS = {
-    "core": {
-        "name": "Core Background Check",
-        "price": 2399,
-        "covers": "National criminal database and sex offender registry searches.",
-        # Certn turns individual checks on with request flags.
-        "flags": {"request_enhanced_identity_verification": True,
-                  "request_softcheck": True},
-    },
-    "complete": {
-        "name": "Complete Background Check",
-        "price": 5999,
-        "covers": "Everything in Core, plus county and federal criminal searches and identity "
-                  "verification.",
-        "flags": {"request_enhanced_identity_verification": True,
-                  "request_softcheck": True,
-                  "request_us_criminal_record_check": True,
-                  "request_employment_verification": False},
-    },
-}
+# What we used to sell here. The names, prices and sentences moved to the fee schedule when the
+# vendor changed - see migration 287 - and what is left is kept only so an order placed under one
+# of these names can still be read back.
+TIERS = {"core": {"name": "Core Background Check"},
+         "complete": {"name": "Complete Background Check"}}
 
 # Their words for where an application has got to, mapped to the three states this application
 # understands. Anything unrecognised is treated as still running rather than as finished, because
@@ -85,37 +69,12 @@ def _client() -> httpx.Client:
 
 
 def order(tier: str, driver: dict, email: str | None) -> dict:
-    """Place one screening. Returns their reference and their first word on it.
+    """No longer used. Screening moved to backgroundchecks.com - see app/backgroundchecks.py.
 
-    Nothing is written by the caller until this returns a reference: an order we cannot name is an
-    order whose result can never be matched to a driver."""
-    if tier not in TIERS:
-        raise CertnError("Choose a Core or a Complete background check.")
-    body = {
-        "email": email or None,
-        "information": {
-            "first_name": (driver.get("firstname") or "").strip(),
-            "last_name": (driver.get("lastname") or "").strip(),
-            "date_of_birth": str(driver["dob"]) if driver.get("dob") else None,
-        },
-        **TIERS[tier]["flags"],
-    }
-    try:
-        with _client() as http:
-            r = http.post("/api/v1/applications/", json=body)
-    except httpx.HTTPError as e:
-        log.warning("certn order failed: %s", e)
-        raise CertnError("Certn could not be reached. Nothing was ordered and nothing was "
-                         "charged - try again in a moment.") from e
-    if r.status_code >= 400:
-        log.warning("certn order rejected %s: %s", r.status_code, r.text[:400])
-        raise CertnError(_rejection(r))
-    got = r.json()
-    ref = got.get("id") or got.get("applicant_id") or got.get("application_id")
-    if not ref:
-        raise CertnError("Certn accepted the order but did not say which one it is, so it cannot "
-                         "be tracked. Nothing was charged.")
-    return {"ref": str(ref), "status": _read_status(got)}
+    Kept refusing rather than deleted: everything else in this module is still needed, because an
+    order placed here before the change can still finish, still arrive on the webhook and still
+    have to be fetched and filed. Only the placing of NEW orders has moved."""
+    raise CertnError("Background screening is ordered from backgroundchecks.com now.")
 
 
 def fetch(ref: str) -> dict:

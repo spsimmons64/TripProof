@@ -16,7 +16,7 @@ DRIVER_DOC_VERSION = "2026-09-25a"
 _DIR = Path(__file__).resolve().parent / "legal" / "driver"
 
 def fill(doc: dict, values: dict) -> dict:
-    """Some documents name the company, the person signing, or what they hold a licence under. The
+    """Some documents name the company, the person signing, or what they hold a license under. The
     blanks are filled here, on the server, so the text that is hashed is the text that was shown.
 
     What goes on the line is upper case, as it is everywhere else in the application, whatever case

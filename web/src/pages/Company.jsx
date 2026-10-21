@@ -9,7 +9,9 @@ import { useUser } from '../App.jsx'
 import Qualifications from './Qualifications.jsx'
 import CompanyRequirements from './CompanyRequirements.jsx'
 import MerchantConnect from './MerchantConnect.jsx'
+import BackgroundChecks from './BackgroundChecks.jsx'
 import Billing from './Billing.jsx'
+import OperatingProfile from './OperatingProfile.jsx'
 
 const FIELDS = ['name', 'address1', 'address2', 'city', 'county', 'state', 'zip', 'phone', 'fax',
   'email', 'supportemail', 'billingemail', 'ein', 'usdot', 'mcnumber', 'medicaidid', 'npi',
@@ -34,13 +36,17 @@ const asChoice = (answer) => (answer === null || answer === undefined ? '' : (an
 const tabsFor = (role) => [
   ['profile', 'Company'],
   ['operations', 'Operations'],
+  ['operating-profile', 'Operating Profile'],
   ['qualifications', 'Driver Qualifications'],
   ['requirements', 'Company Requirements'],
   // Merchant Connect holds the company's own merchant keys, so it is shown to the same
   // people Billing is - and for the same reason. A tab that opens on "you may not look at
   // this" is worse than no tab.
+  // Background Checks sits with these for the same reason: it holds the key to an account that
+  // can spend the company's money, and shows that account's invoices.
   ...(['owner', 'admin'].includes(role)
-    ? [['merchant', 'Merchant Connect'], ['billing', 'Billing']] : []),
+    ? [['screening', 'Background Checks'], ['merchant', 'Merchant Connect'],
+       ['billing', 'Billing']] : []),
 ]
 
 export default function Company({ tab = 'profile' }) {
@@ -67,8 +73,10 @@ export default function Company({ tab = 'profile' }) {
       </header>
       {on === 'profile' && <CompanyProfile />}
       {on === 'operations' && <Operations />}
+      {on === 'operating-profile' && <OperatingProfile />}
       {on === 'qualifications' && <Qualifications />}
       {on === 'requirements' && <CompanyRequirements />}
+      {on === 'screening' && <BackgroundChecks />}
       {on === 'merchant' && <MerchantConnect />}
       {on === 'billing' && <Billing />}
     </div>
@@ -114,13 +122,14 @@ function Operations() {
       </div>
       {err && <div className="notice bad">{err}</div>}
       {saved && <div className="notice good">Saved.</div>}
-      <div className="card">
+      <div className="card qualcard">
+        <div className="infotabs"><h3>
+          Operations
+          {open > 0 && <span className="sectionnote">{open} unanswered</span>}
+        </h3></div>
+        <div className="panelbody">
         <fieldset className="plain" disabled={!canEdit}>
           <section>
-            <h3 className="formsection">
-              Operations
-              {open > 0 && <span className="sectionnote">{open} unanswered</span>}
-            </h3>
             <div className="asklist">
               {questions.map((q) => (
                 <label key={q.code} className="askrow">
@@ -139,6 +148,7 @@ function Operations() {
             </div>
           </section>
         </fieldset>
+        </div>
       </div>
     </div>
   )
@@ -173,17 +183,17 @@ function CompanyForm({ company, onSaved }) {
       </div>
       {f.error && <div className="notice bad">{f.error}</div>}
       {saved && <div className="notice good">Saved.</div>}
-      <div className="card">
-        <fieldset className="plain" disabled={!canEdit}>
-          <form className="profilesections" onSubmit={f.onSubmit}>
-            <section>
-              <h3 className="formsection">Demographics</h3>
+      <fieldset className="plain" disabled={!canEdit}>
+        <form className="stack" onSubmit={f.onSubmit}>
+            <div className="card qualcard">
+              <div className="infotabs"><h3>Demographics</h3></div>
+              <div className="panelbody">
               <div className="profileform">
-                <label className="field span-4">Company name *<input required value={v.name} onChange={set('name')} /></label>
+                <label className="field span-4">Company Name *<input required value={v.name} onChange={set('name')} /></label>
                 <label className="field span-1">DBA<input value={v.dba} onChange={set('dba')} /></label>
                 <label className="field span-1">Account #<input value={company.accountnumber || ''} disabled /></label>
-                <label className="field span-6">Address line 1<input value={v.address1} onChange={set('address1')} autoComplete="address-line1" /></label>
-                <label className="field span-6">Address line 2<input value={v.address2} onChange={set('address2')} autoComplete="address-line2" /></label>
+                <label className="field span-6">Address Line 1<input value={v.address1} onChange={set('address1')} autoComplete="address-line1" /></label>
+                <label className="field span-6">Address Line 2<input value={v.address2} onChange={set('address2')} autoComplete="address-line2" /></label>
                 <label className="field span-2">City<input value={v.city} onChange={set('city')} autoComplete="address-level2" /></label>
                 <label className="field span-1">County<input value={v.county} onChange={set('county')} /></label>
                 <label className="field span-1">State
@@ -193,17 +203,21 @@ function CompanyForm({ company, onSaved }) {
                 <label className="field span-3">Telephone<PhoneInput value={v.phone} onChange={set('phone')} /></label>
                 <label className="field span-3">Fax<PhoneInput value={v.fax} onChange={set('fax')} autoComplete="off" /></label>
               </div>
-            </section>
-            <section>
-              <h3 className="formsection">Email Addresses</h3>
+              </div>
+            </div>
+            <div className="card qualcard">
+              <div className="infotabs"><h3>Email Addresses</h3></div>
+              <div className="panelbody">
               <div className="profileform">
                 <label className="field span-2">General<EmailInput value={v.email} onChange={set('email')} /></label>
                 <label className="field span-2">Support<EmailInput value={v.supportemail} onChange={set('supportemail')} /></label>
                 <label className="field span-2">Billing<EmailInput value={v.billingemail} onChange={set('billingemail')} /></label>
               </div>
-            </section>
-            <section>
-              <h3 className="formsection">Identifiers</h3>
+              </div>
+            </div>
+            <div className="card qualcard">
+              <div className="infotabs"><h3>Identifiers</h3></div>
+              <div className="panelbody">
               <div className="profileform fiveup">
                 <label className="field">EIN<EinInput value={v.ein} onChange={set('ein')} /></label>
                 {/* The biennial update's month comes off the last digit of this number and its
@@ -213,10 +227,10 @@ function CompanyForm({ company, onSaved }) {
                 <label className="field">Medicaid ID<input value={v.medicaidid} onChange={set('medicaidid')} /></label>
                 <label className="field">NPI<input value={v.npi} onChange={set('npi')} inputMode="numeric" /></label>
               </div>
-            </section>
-          </form>
-        </fieldset>
-      </div>
+              </div>
+            </div>
+        </form>
+      </fieldset>
     </div>
   )
 }

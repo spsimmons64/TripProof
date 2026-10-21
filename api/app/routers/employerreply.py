@@ -58,18 +58,21 @@ def _open_inquiry(conn: Connection, token: str) -> dict:
 
 
 @router.get("/{token}")
-def what_is_being_asked(token: str, conn: Connection = Depends(get_conn)):
+def what_is_being_asked(token: str, request: Request, conn: Connection = Depends(get_conn)):
     """The form, with everything already known filled in.
 
     Sections 1, 2 and 3 of the SPHI are things the carrier knows and the employer should not have to
     type: who the driver is, who is asking, and what the driver said about working there. The
     employer confirms or corrects; they do not transcribe.
 
-    The driver's licence number is here because the form asks for it and it is how a previous
+    The driver's license number is here because the form asks for it and it is how a previous
     employer finds the right person in their own records - the same reason their date of birth is.
     Nothing is shown that the carrier did not already hold about their own applicant."""
     held = _open_inquiry(conn, token)
     return {
+        # Where the person signing is, for the stamp under their signature - the same address the
+        # reply is recorded against when it is sent.
+        "ip": client_ip(request),
         # 1 - the driver, so the employer can find them in their records
         "driver": {
             "name": f'{held["firstname"]} {held["lastname"]}'.strip().title(),

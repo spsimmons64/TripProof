@@ -124,18 +124,19 @@ def standing(accident: dict) -> tuple[str, str]:
 def record(conn: Connection, accountid: str, driverid: str, *, occurredon, location=None,
            fatalities=None, injuries=None, hazmatreleased=None, injurytreatedaway=None,
            towaway=None, cited=None, citedon=None, nottested=None, note=None,
-           enteredby=None) -> str:
+           enteredby=None, atfault=None) -> str:
     """Put one accident in the register. Nothing is decided here - the facts are stored as given,
     including the ones nobody can answer yet, and `decide` reads them."""
     rid = newid()
     run(conn, """
         INSERT INTO driveraccidents (recordid, accountid, driverid, occurredon, location,
                                      fatalities, injuries, hazmatreleased, injurytreatedaway,
-                                     towaway, cited, citedon, nottested, note, enteredby)
-        VALUES (:id, :a, :d, :on, :loc, :dead, :hurt, :hm, :away, :tow, :cit, :citon, :nt, :n, :u)
+                                     towaway, cited, citedon, atfault, nottested, note, enteredby)
+        VALUES (:id, :a, :d, :on, :loc, :dead, :hurt, :hm, :away, :tow, :cit, :citon, :af, :nt, :n,
+                :u)
     """, id=rid, a=accountid, d=driverid, on=occurredon, loc=(location or None),
         dead=fatalities, hurt=injuries, hm=hazmatreleased, away=injurytreatedaway, tow=towaway,
-        cit=cited, citon=citedon, nt=(nottested or None), n=(note or None), u=enteredby)
+        cit=cited, citon=citedon, af=atfault, nt=(nottested or None), n=(note or None), u=enteredby)
     return rid
 
 
@@ -143,7 +144,8 @@ def amend(conn: Connection, accountid: str, recordid: str, **fields) -> None:
     """Answer what was not known at the time. An accident is written up before the citation is
     known, so the record has to be able to learn - this is the only way these columns change."""
     allowed = ("fatalities", "injuries", "hazmatreleased", "injurytreatedaway", "towaway",
-               "cited", "citedon", "alcoholtestid", "drugtestid", "nottested", "note", "location")
+               "cited", "citedon", "alcoholtestid", "drugtestid", "nottested", "note", "location",
+               "atfault")
     sets = {k: v for k, v in fields.items() if k in allowed}
     if not sets:
         return

@@ -1,21 +1,119 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import DocumentViewer from '../components/DocumentViewer.jsx'
+import IssueDialog, { ProblemBanner } from '../components/IssueDialog.jsx'
+import OutDialog from '../components/OutDialog.jsx'
+import AssignDialog from '../components/AssignDialog.jsx'
 import { Link, useParams } from 'react-router-dom'
-import { Eye, FileText, PauseCircle } from 'lucide-react'
+import { AlertTriangle, Eye, FileText, PauseCircle } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { date, datetime, money, through, tzDateTime } from '../lib/format.js'
 import { Badge, Loading, useLoad } from '../components/ui.jsx'
+
+// Everything that happened on one leg, in the order it happened.
+//
+// Assembled rather than stored: the assignment history, the execution times, every wait and every
+// issue are separate records written by different people at different moments, and an audit asks
+// one question of all of them - what happened, when, and who says so. A single list is the only
+// honest answer, because a reader must be able to see that nothing has been left out between two
+// rows.
+//
+// Every line carries its own time. Nothing here is computed from "now", so this page reads the
+// same in a year as it does this afternoon.
+function WhatHappened({ leg, issues, words }) {
+  const events = []
+  // Two kinds of time land in this one list and they are not read the same way. A pickup is a
+  // BUSINESS time - stored as the wall clock the company works to, shown exactly as recorded. A
+  // moment something happened is a TIMESTAMP, stored in UTC, and has to be turned into the
+  // reader's zone. Formatting the second kind like the first put every line on this page four
+  // hours into the future, which on a page whose whole purpose is an audit is not a small thing.
+  const add = (at, what, detail, tone, zoned = true) =>
+    { if (at) events.push({ at, what, detail, tone, zoned }) }
+
+  for (const a of leg.assignments || []) {
+    add(a.assignedon, 'Assigned',
+        [a.drivername || 'no driver', a.unit, a.byname && `by ${a.byname}`]
+          .filter(Boolean).join(' · '))
+    if (a.override) {
+      add(a.assignedon, 'Warning accepted', a.overridereason, 'warn')
+    }
+    add(a.acknowledgedon, 'Driver acknowledged', a.drivername)
+    add(a.declinedon, 'Driver declined', a.drivername, 'warn')
+    add(a.endedon, 'Taken off',
+        [(words.endreasons || {})[a.endreason] || a.endreason, a.drivername]
+          .filter(Boolean).join(' · '), 'warn')
+  }
+  add(leg.pickupat, 'Pickup time', 'Scheduled', undefined, false)
+  // Every step the driver reported, with the moment it happened and who said so. A step reported
+  // from a phone and one typed in by the office are different kinds of evidence, so the line says
+  // which - and where the two times differ, the delay in reaching us is stated rather than hidden.
+  const SAID = { enroute: 'On the way', arrived: 'Arrived at the pickup',
+                 onboard: 'Passenger aboard', completed: 'Arrived at the destination' }
+  for (const e of leg.events || []) {
+    const late = e.recordedon && e.happenedon && e.recordedon !== e.happenedon
+    add(e.happenedon, SAID[e.state] || e.state,
+        [e.drivername ? `reported by ${e.drivername}` : e.byname ? `entered by ${e.byname}` : null,
+         e.latitude != null ? `${Number(e.latitude).toFixed(5)}, ${Number(e.longitude).toFixed(5)}` : null,
+         late ? `reached us ${tzDateTime(e.recordedon)}` : null].filter(Boolean).join(' · '))
+  }
+  for (const w of leg.waits || []) {
+    add(w.startedon, 'Waiting started',
+        [(words.waitreasons || {})[w.reason] || w.reason, w.note].filter(Boolean).join(' · '))
+    add(w.endedon, 'Waiting ended', `${w.minutes} minute${w.minutes === 1 ? '' : 's'}`)
+  }
+  for (const i of issues) {
+    add(i.raisedon, 'Problem reported',
+        [(words.issuekinds || {})[i.kind] || i.kind, i.note, i.drivername && `- ${i.drivername}`]
+          .filter(Boolean).join(' · '), 'bad')
+    add(i.acknowledgedon, 'Problem seen by the office', i.byname)
+    add(i.resolvedon, 'Problem resolved', i.resolution)
+  }
+  // What the finished leg is worth, rather than a second "completed" line beside the event.
+  if (leg.dropoffat) {
+    add(leg.dropoffat, 'Leg closed',
+        [leg.miles != null && `${leg.miles} miles`, leg.signature && 'signature captured',
+         leg.gps && 'GPS recorded'].filter(Boolean).join(' · ') || 'No mileage or signature recorded',
+        undefined, false)
+  }
+
+  events.sort((x, y) => String(x.at).localeCompare(String(y.at)))
+  if (!events.length) return <div className="muted small">Nothing has happened on this leg yet.</div>
+
+  return (
+    <table className="residencetable recordtable happened">
+      <thead><tr><th>When</th><th>What</th><th>Detail</th></tr></thead>
+      <tbody>
+        {events.map((e, n) => (
+          <tr key={`${e.at}-${e.what}-${n}`}>
+            <td className="mono">{e.zoned ? tzDateTime(e.at) : datetime(e.at)}</td>
+            <td className={e.tone === 'bad' ? 'st-expired' : e.tone === 'warn' ? 'st-ordered' : undefined}>
+              {e.what}
+            </td>
+            <td>{e.detail || ''}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
 
 export default function TripDetail() {
   const { id } = useParams()
   const [trip, error, reload] = useLoad(() => api.get(`/trips/${id}`), [id])
   const [phi, setPhi] = useState(null)
+  const [issue, setIssue] = useState(null)
+  const [out, setOut] = useState(false)
+  const [assigning, setAssigning] = useState(null)
+  const legOf = (i) => (trip.legs || []).find((l) => l.recordid === i.legid)
   const [viewing, setViewing] = useState(null)      // the credential whose file is being read
   if (!trip) return <Loading error={error} />
   const atRisk = trip.checks.some((c) => c.outcome !== 'pass')
 
   // Member identity is fetched only on request, and the server logs each reveal.
   const reveal = async () => setPhi(await api.get(`/trips/${id}/phi`))
+  // An OPEN problem is not history, so it does not belong in the timeline below - that table is
+  // a record and nothing in it is computed from now. It belongs at the top, where somebody who
+  // opened this trip because they were told there was a problem can act on it.
+  const open = (trip.issues || []).filter((i) => !i.resolvedon)
   const setBilling = async (billingstatus) => { await api.patch(`/trips/${id}`, { billingstatus }); reload() }
 
   return (
@@ -33,6 +131,33 @@ export default function TripDetail() {
           {!phi && <button onClick={reveal}><Eye size={14} /> Show member details</button>}
         </div>
       </div>
+
+      {open.map((i) => (
+        <ProblemBanner key={i.recordid} issue={i} kinds={trip.issuekinds}>
+          <button type="button" className="pushright" onClick={() => setIssue(i)}>
+            <AlertTriangle size={14} /> Deal With It
+          </button>
+        </ProblemBanner>
+      ))}
+
+      {/* The same moves the dispatch board offers. Sending somebody to another screen to do the
+          thing this screen has just told them about is the dead end all over again. */}
+      {issue && (
+        <IssueDialog issue={issue} kinds={trip.issuekinds || {}}
+          title={`A Problem On ${trip.externalid}`}
+          onOut={() => { setOut({ kind: 'vehicle', who: legOf(issue)?.vehicleid }); setIssue(null) }}
+          onReassign={() => { setAssigning({ legid: issue.legid, tripid: trip.recordid,
+                                             externalid: trip.externalid }); setIssue(null) }}
+          onClose={() => setIssue(null)}
+          onDone={() => { setIssue(null); reload() }} />
+      )}
+      {out && <OutDialog start={out} onClose={() => setOut(false)}
+        onDone={() => { setOut(false); reload() }} />}
+      {assigning && (
+        <AssignDialog leg={assigning} onClose={() => setAssigning(null)}
+          onCancel={() => setAssigning(null)}
+          onDone={() => { setAssigning(null); reload() }} />
+      )}
 
       {phi && (
         <div className="card">
@@ -54,6 +179,8 @@ export default function TripDetail() {
               <span>· Signature {leg.signature ? 'yes' : 'no'} · GPS {leg.gps ? 'yes' : 'no'}</span>
             </div>
             {lp && <div className="small muted" style={{ marginBottom: 12 }}>From {lp.pickupaddress || '-'} to {lp.dropoffaddress || '-'}</div>}
+            <WhatHappened leg={leg} issues={trip.issues.filter((i) => i.legid === leg.recordid)}
+              words={trip} />
             <div className="tablewrap"><table>
               <thead><tr><th>Requirement</th><th>Rule set</th><th>Result</th><th>Evidence</th><th>Covered</th></tr></thead>
               <tbody>{checks.map((c) => (
@@ -74,6 +201,38 @@ export default function TripDetail() {
           </div>
         )
       })}
+      {/* What was done to the trip itself, as against to one of its legs: accepted, returned,
+          priced, held. Append-only, so this is the part nobody can quietly correct. */}
+      {(trip.rejections?.length > 0 || trip.activity?.length > 0) && (
+        <div className="card">
+          <h2>The Record</h2>
+          <table className="residencetable recordtable happened">
+            <thead><tr><th>When</th><th>What</th><th>Detail</th></tr></thead>
+            <tbody>
+              {(trip.rejections || []).map((r, n) => (
+                <Fragment key={`r${n}`}>
+                  <tr><td className="mono">{datetime(r.requestedon)}</td>
+                    <td className="st-ordered">Returned to the broker</td>
+                    <td>{[(trip.returnreasons || {})[r.reason] || r.reason, r.note,
+                          r.byname && `by ${r.byname}`].filter(Boolean).join(' · ')}</td></tr>
+                  {r.senton && <tr><td className="mono">{datetime(r.senton)}</td>
+                    <td>Sent to the broker</td><td>{r.sentby}</td></tr>}
+                  {r.acknowledgedon && <tr><td className="mono">{datetime(r.acknowledgedon)}</td>
+                    <td>Broker acknowledged</td><td>{r.acknowledgedref || ''}</td></tr>}
+                </Fragment>
+              ))}
+              {(trip.activity || []).map((a, n) => (
+                <tr key={`a${n}`}>
+                  <td className="mono">{tzDateTime(a.added)}</td>
+                  <td>{a.action}</td>
+                  <td className="small">{[a.byname, a.detail].filter(Boolean).join(' · ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {trip.run && <div className="small muted">Checked {tzDateTime(trip.run.finished)} by engine {trip.run.engineversion} ({trip.run.reason}). Run {trip.run.recordid}.</div>}
       {viewing && (
         <DocumentViewer id={viewing.documentid} name={viewing.filename || viewing.typename}

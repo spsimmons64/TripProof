@@ -10,7 +10,7 @@ import {
 // The editor a company rewrites its own policies in.
 //
 // Tiptap rather than TinyMCE, which is GPL and cannot ship in a commercial product without a
-// licence. Core and every extension used here are MIT, checked against the installed packages
+// license. Core and every extension used here are MIT, checked against the installed packages
 // rather than against the documentation.
 //
 // What the editor has to protect is the merge fields. {company}, {derline} and {safetyline} fill

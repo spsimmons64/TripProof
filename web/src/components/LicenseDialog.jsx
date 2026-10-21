@@ -3,10 +3,10 @@ import { AlertCircle, X } from 'lucide-react'
 import { STATE_NAMES } from '../lib/states.js'
 import { UpperInput } from './MaskedInput.jsx'
 
-// A driver's licence, asked for the same way wherever it is asked for.
+// A driver's license, asked for the same way wherever it is asked for.
 //
 // The applicant fills this in on the way through their application, and the office fills the same
-// thing in when it corrects a record or adds a licence somebody forgot to mention. They were two
+// thing in when it corrects a record or adds a license somebody forgot to mention. They were two
 // forms asking for the same document in different words, which is how a file ends up holding a
 // class the office chose from a free-text box and endorsements nobody validated. One form now.
 //
@@ -55,15 +55,15 @@ export function useFirstField() {
   return box
 }
 
-// `onAdd` receives the licence with `endorsements` as an array of codes, and - where the caller
+// `onAdd` receives the license with `endorsements` as an array of codes, and - where the caller
 // asked for copies - the front and back files chosen, which it stores in its own way.
-export const BLANK_LICENCE = { number: '', confirm: '', state: '', issued: '', expires: '',
-                               classification: '', endorsements: [] }
+export const BLANK_LICENSE = { number: '', confirm: '', state: '', issued: '', expires: '',
+                               originalissued: '', classification: '', endorsements: [] }
 
-// What is wrong with a licence as filled in, as {field: message}. Here rather than in the dialog
+// What is wrong with a license as filled in, as {field: message}. Here rather than in the dialog
 // because the driver fills the same form in from their own link, and two copies of these rules
-// would be two definitions of a valid licence.
-export function licenceProblems(r) {
+// would be two definitions of a valid license.
+export function licenseProblems(r) {
   const required = [['number', 'The license number is required'], ['state', 'The state is required'],
                     ['confirm', 'Enter the license number again'],
                     ['issued', 'The issue date is required'],
@@ -73,11 +73,14 @@ export function licenceProblems(r) {
     required.filter(([k]) => !String(r[k] ?? '').trim()).map(([k, m]) => [k, m]))
   if (!problems.confirm && r.number.trim() !== r.confirm.trim()) problems.confirm = 'The two do not match'
   if (!problems.expires && r.issued && r.expires < r.issued) problems.expires = 'Expires comes after issued'
+  if (r.originalissued && r.issued && r.originalissued > r.issued) {
+    problems.originalissued = 'The original issue date comes before the issue date'
+  }
   return problems
 }
 
-// The fields themselves, with no dialog around them - the office adds a licence in a modal and a
-// driver fills the same thing in on a page of their own, and a licence is a licence either way.
+// The fields themselves, with no dialog around them - the office adds a license in a modal and a
+// driver fills the same thing in on a page of their own, and a license is a license either way.
 export function LicenseFields({ r, setR, bad, setBad, copies = false,
                                front, setFront, back, setBack }) {
   const set = (k) => (e) => {
@@ -108,7 +111,11 @@ export function LicenseFields({ r, setR, bad, setBad, copies = false,
       {field('state', 'License State *', 2, <StateSelect value={r.state} onChange={set('state')} />)}
       {field('issued', 'Issue Date *', 2, <input type="date" value={r.issued} onChange={set('issued')} />)}
       {field('expires', 'Expire Date *', 2, <input type="date" value={r.expires} onChange={set('expires')} />)}
-      {field('classification', 'Classification *', 6, (
+      {/* Printed on some cards beside the issue date, which is usually the latest renewal. It is
+          when the driver was first licensed, and so how long they have been driving. */}
+      {field('originalissued', 'Original Issue Date (If Shown)', 2,
+        <input type="date" value={r.originalissued || ''} onChange={set('originalissued')} />)}
+      {field('classification', 'Classification *', 4, (
         <select value={r.classification} onChange={setClass}>
           <option value="">Choose</option>
           {LICENSE_CLASSES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
@@ -125,7 +132,7 @@ export function LicenseFields({ r, setR, bad, setBad, copies = false,
           ))}
         </div>
       </div>
-      {/* The office files the copies with the licence; an applicant sends them at the step that
+      {/* The office files the copies with the license; an applicant sends them at the step that
           asks for them, so the inputs are only here where they are wanted. */}
       {copies && (
         <>
@@ -145,7 +152,7 @@ export function LicenseFields({ r, setR, bad, setBad, copies = false,
 export default function LicenseDialog({ onAdd, onClose, initial, copies = false }) {
   // Correcting one starts from what is there, with the number already in both boxes.
   // Correcting one starts from what is there, with the number already in both boxes.
-  const [r, setR] = useState({ ...BLANK_LICENCE,
+  const [r, setR] = useState({ ...BLANK_LICENSE,
                                ...(initial ? { ...initial, confirm: initial.number } : {}) })
   const [front, setFront] = useState(null)
   const [back, setBack] = useState(null)
@@ -153,7 +160,7 @@ export default function LicenseDialog({ onAdd, onClose, initial, copies = false 
   const box = useFirstField()
   const save = (e) => {
     e.preventDefault()
-    const problems = licenceProblems(r)
+    const problems = licenseProblems(r)
     setBad(problems)
     if (!Object.keys(problems).length) {
       const { confirm: _typedtwice, ...license } = r

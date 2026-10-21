@@ -57,7 +57,7 @@ export default function CustomerProfileForm({ account, onClose, onSaved, details
         <section>
           <h3 className="formsection">Demographics</h3>
           <div className="profileform">
-            <label className="field span-5">Company name *<input required value={v.name} onChange={f.set('name')} /></label>
+            <label className="field span-5">Company Name *<input required value={v.name} onChange={f.set('name')} /></label>
             <label className="field span-1">Status
               <select value={v.status} onChange={f.set('status')}>
                 {/* Setup is set by the online signup, never chosen here; it shows only while an account is in it. */}
@@ -65,8 +65,8 @@ export default function CustomerProfileForm({ account, onClose, onSaved, details
                 <option value="active">Active</option><option value="inactive">Inactive</option>
               </select>
             </label>
-            <label className="field span-6">Address line 1<input value={v.address1} onChange={f.set('address1')} autoComplete="address-line1" /></label>
-            <label className="field span-6">Address line 2<input value={v.address2} onChange={f.set('address2')} autoComplete="address-line2" /></label>
+            <label className="field span-6">Address Line 1<input value={v.address1} onChange={f.set('address1')} autoComplete="address-line1" /></label>
+            <label className="field span-6">Address Line 2<input value={v.address2} onChange={f.set('address2')} autoComplete="address-line2" /></label>
             <label className="field span-2">City<input value={v.city} onChange={f.set('city')} autoComplete="address-level2" /></label>
             <label className="field span-1">County<input value={v.county} onChange={f.set('county')} /></label>
             <label className="field span-1">State
@@ -96,8 +96,8 @@ export default function CustomerProfileForm({ account, onClose, onSaved, details
         <section>
           <h3 className="formsection">Administrator</h3>
           <div className="profileform">
-            <label className="field span-3">Admin name *<input required value={v.adminname} onChange={f.set('adminname')} /></label>
-            <label className="field span-3">Admin email *<input type="email" required value={v.adminemail} onChange={f.set('adminemail')} /></label>
+            <label className="field span-3">Admin Name *<input required value={v.adminname} onChange={f.set('adminname')} /></label>
+            <label className="field span-3">Admin Email *<input type="email" required value={v.adminemail} onChange={f.set('adminemail')} /></label>
           </div>
         </section>
       </form>

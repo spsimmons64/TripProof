@@ -78,6 +78,7 @@ export default function EmployerReply() {
   const [bad, setBad] = useState({})
   const [busy, setBusy] = useState(false)
   const [signing, setSigning] = useState(false)
+  const [signedAt, setSignedAt] = useState('')   // when the name was put to it, for the stamp
   const box = useFirstField()
   const [v, setV] = useState({
     employmentverified: '', position: '', confirmedfrom: '', confirmedthrough: '',
@@ -214,11 +215,11 @@ export default function EmployerReply() {
             <div className="profileform">
               <label className="field span-3">Position
                 <input value={v.position} className="upper" onChange={upper('position')} /></label>
-              <label className="field span-3">Dates - from
+              <label className="field span-3">Dates - From
                 <input type="date" value={v.confirmedfrom} onChange={set('confirmedfrom')} /></label>
-              <label className="field span-3">Dates - to
+              <label className="field span-3">Dates - To
                 <input type="date" value={v.confirmedthrough} onChange={set('confirmedthrough')} /></label>
-              <label className="field span-3">DOT mode
+              <label className="field span-3">DOT Mode
                 <select value={v.dotmode} onChange={set('dotmode')}>
                   <option value="">Choose</option>
                   {MODES.map((m) => <option key={m} value={m}>{m === 'other' ? 'Other' : m}</option>)}
@@ -231,7 +232,7 @@ export default function EmployerReply() {
                 </div>
               </div>
               {/* Anything the questions above did not have a box for. */}
-              <label className="field span-6">Anything else
+              <label className="field span-6">Anything Else
                 <textarea rows={3} value={v.note} className="upper"
                   onChange={upper('note')} /></label>
             </div>
@@ -274,7 +275,7 @@ export default function EmployerReply() {
                           n === i ? { ...x, hazmat: e.target.checked } : x))} /> Hazmat
                     </label>
                     <label className="field span-4">Notes
-                      <input value={a.note || ''} className="upper"
+                      <textarea value={a.note || ''} className="upper"
                         onChange={(e) => setAccidents(accidents.map((x, n) =>
                           n === i ? { ...x, note: e.target.value.toUpperCase() } : x))} /></label>
                     <div className="field span-2">
@@ -359,6 +360,14 @@ export default function EmployerReply() {
                   {v.signature
                     ? <span className={`sigink font-${v.fontkey}`}>{v.signature}</span>
                     : null}
+                  {/* What the signing is, under it, as on every signature in the product: who typed
+                      the name, when and from where. The same three go on the reply that is kept. */}
+                  {v.signature ? (
+                    <span className="sigstamp">
+                      <span>Signed electronically · {v.signature}</span>
+                      <span>{signedAt} · IP {asked?.ip || 'not recorded'}</span>
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="signbox datebox">
@@ -389,6 +398,7 @@ export default function EmployerReply() {
           onSigned={(typedname, fontkey) => {
             setBad(({ signature: _gone, ...rest }) => rest)
             setV((s) => ({ ...s, signature: typedname, fontkey }))
+            setSignedAt(new Date().toLocaleString('en-US'))
             setSigning(false)
           }} />
       )}

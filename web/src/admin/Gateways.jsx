@@ -27,9 +27,6 @@ export default function Gateways() {
       <div className="pagehead">
         <div>
           <h1>Payment Gateways</h1>
-          <div className="muted">
-            The processors a company can take a private-pay card through.
-          </div>
         </div>
       </div>
       <DataGrid columns={COLUMNS} rows={data?.gateways} rowKey={(g) => g.code} error={error}

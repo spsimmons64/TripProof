@@ -1,10 +1,34 @@
-import { useState } from 'react'
-import { Loader2, Plus, Wrench } from 'lucide-react'
+import { Fragment, useState } from 'react'
+import { ChevronRight, Loader2, Plus, Wrench } from 'lucide-react'
 import { api } from '../lib/api.js'
-import { Loading, useLoad } from '../components/ui.jsx'
+import { Badge, Loading, useLoad } from '../components/ui.jsx'
 import { Modal } from '../admin/common.jsx'
 import DocumentViewer from '../components/DocumentViewer.jsx'
+import { CredentialForm } from '../components/Credentials.jsx'
 import { date } from '../lib/format.js'
+
+// A list of records with the one button that adds to it. The same table and the same forms
+// whether it is read as a panel on the page or as the inside of the requirement that asks for it -
+// only the frame differs, so there is one of each rather than two that drift.
+function Shell({ bare, title, add, children }) {
+  if (bare) {
+    return (
+      <div className="drawer">
+        {add && <div className="row draweradd">{add}</div>}
+        {children}
+      </div>
+    )
+  }
+  return (
+    <div className="card qualcard">
+      <div className="infotabs">
+        <h3>{title}</h3>
+        {add && <div className="row panelactions">{add}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
 
 // The same words the company and driver screens use, so the fleet reads as part of one
 // application rather than a second one bolted on. Never the database's own word: nobody says
@@ -21,46 +45,127 @@ const MARKS = {
   notapplicable: ['st-inactive', 'Not required'],
 }
 
-// What is asked of one vehicle, in the order the catalog puts it.
-export function VehicleRequirements({ id }) {
-  const [data, error] = useLoad(() => api.get(`/vehicles/${id}/requirements`), [id])
-  if (!data) {
-    return <div className="card qualcard"><h3>Requirements</h3><Loading error={error} /></div>
-  }
+// What is asked of one vehicle, in the order the catalog puts it - and, under each one, the
+// records that answer it. A requirement and its evidence were on opposite ends of the page: the
+// ask at the top, the inspection reports and the maintenance records in panels of their own
+// underneath, and nothing joining them. Opened here, a requirement IS its file - what is on
+// record against it, newest first, and the button that adds to it.
+//
+// One at a time. Eight requirements each holding a list of records is a page nobody can read, and
+// opening the one being worked on closes the one that was.
+export function VehicleRequirements({ id, credentials = [], onChanged }) {
+  const [data, error, reload] = useLoad(() => api.get(`/vehicles/${id}/requirements`), [id])
+  const [kinds] = useLoad(() => api.get('/credentialtypes'), [])
+  const [open, setOpen] = useState(null)
+  const [filing, setFiling] = useState(null)
+  const [viewing, setViewing] = useState(null)
+  if (!data) return <Shell title="Requirements"><Loading error={error} /></Shell>
+
   const live = data.items.filter((r) => r.applies !== false)
+  // Filing anything re-reads the requirement - its status is worked out from what is on file, so
+  // the row has to be told, not left showing the answer it gave before the record existed.
+  const changed = () => { reload(); onChanged?.() }
+
   return (
-    <div className="card qualcard">
-      <div className="infotabs"><h3>Requirements</h3></div>
-      <table className="residencetable recordtable">
-        <thead><tr><th>Requirement</th><th>Status</th><th>Where it stands</th></tr></thead>
+    <Shell title="Requirements">
+      {/* The last column is a sentence, not buttons. */}
+      <table className="residencetable recordtable lastisprose reqtable">
+        <thead><tr><th><span className="sr-only">Open</span></th><th>Requirement</th><th>Status</th>
+          <th>Where it stands</th></tr></thead>
         <tbody>
           {live.map((r) => {
             const [tone, says] = MARKS[r.status] || ['st-inactive', r.status]
+            const typeid = (data.types || {})[(r.evidencesource || '').replace('credential:', '')]
+            const shown = open === r.code
             return (
-              <tr key={r.code}>
-                <td>
-                  <b>{r.name}</b>
-                  {/* Context under the name, not a column of its own. Somebody acting on the row
-                      needs the sentence; the citation is there for the auditor who asks why. */}
-                  <div className="muted small">
-                    {[r.authority, r.citation].filter(Boolean).join(' · ')}
-                  </div>
-                </td>
-                <td className={tone}>{says}</td>
-                <td>{r.why}</td>
-              </tr>
+              <Fragment key={r.code}>
+                <tr className="click" onClick={() => setOpen(shown ? null : r.code)}>
+                  {/* Its own column, because it is the one thing on the row that says what will
+                      happen if it is clicked. Beside the name it read as punctuation. */}
+                  <td className="reqturn">
+                    <ChevronRight size={22} strokeWidth={3} className={shown ? 'turned' : undefined} />
+                  </td>
+                  <td>
+                    <b>{r.name}</b>
+                    {/* Context under the name, not a column of its own. Somebody acting on the row
+                        needs the sentence; the citation is there for the auditor who asks why. */}
+                    <div className="muted small">
+                      {[r.authority, r.citation].filter(Boolean).join(' · ')}
+                    </div>
+                  </td>
+                  <td className={tone}>{says}</td>
+                  <td>{r.why}</td>
+                </tr>
+                {shown && (
+                  <tr className="drawerrow">
+                    <td colSpan={4}>
+                      {r.evidencesource === 'dvir'
+                        ? <VehicleInspections bare id={id} onChanged={changed} />
+                        : r.evidencesource === 'maintenance'
+                          ? <VehicleMaintenance bare id={id} onChanged={changed} />
+                          : <CredentialRecords
+                              name={r.name} typeid={typeid}
+                              credentials={credentials.filter((c) => c.credentialtypeid === typeid)}
+                              onAdd={typeid ? () => setFiling({ typeid, name: r.name }) : null}
+                              onView={setViewing} />}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             )
           })}
-          {!live.length && <tr><td colSpan={3}>Nothing is asked of this vehicle.</td></tr>}
+          {!live.length && <tr><td colSpan={4}>Nothing is asked of this vehicle.</td></tr>}
         </tbody>
       </table>
-    </div>
+      {filing && (
+        <Modal title={filing.name} onClose={() => setFiling(null)} width={720}>
+          <CredentialForm inset subjectid={id}
+            types={(kinds || []).filter((t) => t.recordid === filing.typeid)}
+            onDone={(saved) => { setFiling(null); if (saved) changed() }} />
+        </Modal>
+      )}
+      {viewing && <DocumentViewer id={viewing.documentid} name={viewing.name}
+        onClose={() => setViewing(null)} />}
+    </Shell>
+  )
+}
+
+// What is on file for one requirement answered by a document: every one ever filed, newest first,
+// because a renewal does not erase the card it replaced - the old one still covers the trips it
+// covered, and an auditor asking about last March is asking about that one.
+function CredentialRecords({ name, typeid, credentials, onAdd, onView }) {
+  const held = [...credentials].sort(
+    (a, b) => String(b.issuedon || '').localeCompare(String(a.issuedon || '')))
+  return (
+    <Shell bare add={onAdd && (
+      <button type="button" onClick={onAdd}><Plus size={13} /> Add record</button>)}>
+      <table className="residencetable recordtable credtable">
+        <thead><tr><th>Issued</th><th>Expires</th><th>Number</th><th>Status</th><th /></tr></thead>
+        <tbody>
+          {held.map((c) => (
+            <tr key={c.recordid}>
+              <td>{date(c.issuedon)}</td>
+              <td>{c.expireson ? date(c.expireson) : '-'}</td>
+              <td>{c.number || '-'}</td>
+              <td><Badge state={c.state} /></td>
+              <td className="actions">
+                {c.documentid
+                  ? <button type="button" className="linkbtn edit"
+                      onClick={() => onView({ documentid: c.documentid, name })}>View</button>
+                  : <span className="muted small">No scan filed</span>}
+              </td>
+            </tr>
+          ))}
+          {!held.length && <tr><td colSpan={5}>Nothing on file for this requirement.</td></tr>}
+        </tbody>
+      </table>
+    </Shell>
   )
 }
 
 // 49 CFR 396.11. The reports themselves, and the one thing that stops the unit: a defect reported
 // and not yet put right.
-export function VehicleInspections({ id, onChanged }) {
+export function VehicleInspections({ id, bare, onChanged }) {
   const [data, error, reload] = useLoad(() => api.get(`/vehicles/${id}/dvirs`), [id])
   const [adding, setAdding] = useState(false)
   const [fixing, setFixing] = useState(null)
@@ -69,9 +174,7 @@ export function VehicleInspections({ id, onChanged }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
 
-  if (!data) {
-    return <div className="card qualcard"><h3>Inspection Reports</h3><Loading error={error} /></div>
-  }
+  if (!data) return <Shell bare={bare} title="Inspection Reports"><Loading error={error} /></Shell>
   const now = f ?? { reportedon: '', kind: 'pretrip', defects: false, defectnote: '',
     driverid: '', note: '', file: null }
 
@@ -92,13 +195,8 @@ export function VehicleInspections({ id, onChanged }) {
   }
 
   return (
-    <div className="card qualcard">
-      <div className="infotabs">
-        <h3>Inspection Reports</h3>
-        <div className="row panelactions">
-          <button type="button" onClick={() => setAdding(true)}><Plus size={13} /> Add report</button>
-        </div>
-      </div>
+    <Shell bare={bare} title="Inspection Reports" add={
+      <button type="button" onClick={() => setAdding(true)}><Plus size={13} /> Add report</button>}>
       {err && <div className="notice bad">{err}</div>}
       {data.open.length > 0 && (
         <div className="notice bad">
@@ -111,7 +209,7 @@ export function VehicleInspections({ id, onChanged }) {
         <thead><tr><th>Reported</th><th>Kind</th><th>By</th><th>Condition</th><th /></tr></thead>
         <tbody>
           {data.reports.map((r) => {
-            const open = r.defects && !r.correctedon
+            const open = Boolean(r.defects) && !r.correctedon
             return (
               <tr key={r.recordid}>
                 <td>{date(r.reportedon)}</td>
@@ -189,12 +287,12 @@ export function VehicleInspections({ id, onChanged }) {
                 </select>
               </label>
               {now.defects && (
-                <label className="field span-6">What was wrong
+                <label className="field span-6">What Was Wrong
                   <input value={now.defectnote}
                     onChange={(e) => setF({ ...now, defectnote: e.target.value })} />
                 </label>
               )}
-              <label className="field span-3">The report
+              <label className="field span-3">The Report
                 <input type="file"
                   onChange={(e) => setF({ ...now, file: e.target.files[0] || null })} />
               </label>
@@ -209,7 +307,7 @@ export function VehicleInspections({ id, onChanged }) {
       )}
       {viewing && <DocumentViewer id={viewing.documentid} name={viewing.filename}
         onClose={() => setViewing(null)} />}
-    </div>
+    </Shell>
   )
 }
 
@@ -243,16 +341,16 @@ function CertifyRepair({ id, report, onClose, onDone }) {
           Reported {date(report.reportedon)}: {report.defectnote}
         </div>
         <div className="profileform">
-          <label className="field span-3">Corrected on
+          <label className="field span-3">Corrected On
             <input type="date" value={f.correctedon} min="1900-01-01" max="2100-12-31"
               onChange={(e) => setF({ ...f, correctedon: e.target.value })} />
           </label>
-          <label className="field span-3">Corrected by
+          <label className="field span-3">Corrected By
             <input value={f.correctedby}
               onChange={(e) => setF({ ...f, correctedby: e.target.value })} />
           </label>
           <label className="field span-6">Note
-            <input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
+            <textarea value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
           </label>
         </div>
       </div>
@@ -261,7 +359,7 @@ function CertifyRepair({ id, report, onClose, onDone }) {
 }
 
 // 49 CFR 396.3(b): what was done, when, at what mileage and by whom.
-export function VehicleMaintenance({ id, onChanged }) {
+export function VehicleMaintenance({ id, bare, onChanged }) {
   const [data, error, reload] = useLoad(() => api.get(`/vehicles/${id}/maintenance`), [id])
   const [adding, setAdding] = useState(false)
   const [viewing, setViewing] = useState(null)
@@ -269,9 +367,7 @@ export function VehicleMaintenance({ id, onChanged }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
 
-  if (!data) {
-    return <div className="card qualcard"><h3>Maintenance</h3><Loading error={error} /></div>
-  }
+  if (!data) return <Shell bare={bare} title="Maintenance"><Loading error={error} /></Shell>
   const now = f ?? { performedon: '', kind: 'scheduled', summary: '', odometer: '', vendor: '',
     note: '', file: null }
 
@@ -292,13 +388,8 @@ export function VehicleMaintenance({ id, onChanged }) {
   }
 
   return (
-    <div className="card qualcard">
-      <div className="infotabs">
-        <h3>Maintenance</h3>
-        <div className="row panelactions">
-          <button type="button" onClick={() => setAdding(true)}><Plus size={13} /> Add record</button>
-        </div>
-      </div>
+    <Shell bare={bare} title="Maintenance" add={
+      <button type="button" onClick={() => setAdding(true)}><Plus size={13} /> Add record</button>}>
       {err && <div className="notice bad">{err}</div>}
       <table className="residencetable recordtable">
         <thead><tr><th>Performed</th><th>Kind</th><th>Odometer</th><th>What was done</th>
@@ -358,7 +449,7 @@ export function VehicleMaintenance({ id, onChanged }) {
                 <input type="number" min="0" value={now.odometer}
                   onChange={(e) => setF({ ...now, odometer: e.target.value })} />
               </label>
-              <label className="field span-6">What was done
+              <label className="field span-6">What Was Done
                 <input value={now.summary}
                   onChange={(e) => setF({ ...now, summary: e.target.value })} />
               </label>
@@ -366,7 +457,7 @@ export function VehicleMaintenance({ id, onChanged }) {
                 <input value={now.vendor}
                   onChange={(e) => setF({ ...now, vendor: e.target.value })} />
               </label>
-              <label className="field span-3">Invoice or work order
+              <label className="field span-3">Invoice Or Work Order
                 <input type="file"
                   onChange={(e) => setF({ ...now, file: e.target.files[0] || null })} />
               </label>
@@ -376,6 +467,6 @@ export function VehicleMaintenance({ id, onChanged }) {
       )}
       {viewing && <DocumentViewer id={viewing.documentid} name={viewing.filename}
         onClose={() => setViewing(null)} />}
-    </div>
+    </Shell>
   )
 }

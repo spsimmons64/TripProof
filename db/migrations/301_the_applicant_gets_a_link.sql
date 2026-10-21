@@ -1,0 +1,11 @@
+-- Where the driver goes to fill in their own details.
+--
+-- backgroundchecks.com takes an email address and nothing else: no name, no date of birth, no
+-- Social Security number. They email the applicant a link, the applicant follows it and enters
+-- their own details and their own FCRA authorisation. That is the right way round - the
+-- disclosure is the applicant's to give - but it leaves the office with a question it cannot
+-- currently answer: "I never got the email, where do I sign?"
+--
+-- Their 201 hands back that link beside the report key. Keeping it costs one column and means a
+-- dispatcher can read it down the telephone instead of ringing the vendor.
+ALTER TABLE driverreports ADD COLUMN IF NOT EXISTS inviteurl VARCHAR(400) NULL AFTER vendorref;

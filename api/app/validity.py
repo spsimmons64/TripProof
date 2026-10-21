@@ -184,30 +184,30 @@ EVIDENCE = {"signature": ("nosignature", "No passenger signature on this leg"),
             "gps": ("nogps", "No GPS verification on this leg")}
 
 
-def licence_class_verdict(needed: dict, held: str | None, endorsements: str | None) -> Verdict:
-    """Whether the licence this driver holds covers the vehicle they drove.
+def license_class_verdict(needed: dict, held: str | None, endorsements: str | None) -> Verdict:
+    """Whether the license this driver holds covers the vehicle they drove.
 
     The vehicle decides what is needed - more than 15 seats including the driver, or 26,001 lb and
     over. What cannot be judged is not failed: a vehicle whose capacity nobody has recorded, and a
-    driver whose licence class is not on file, are reported as unmatched rather than as breaches."""
+    driver whose license class is not on file, are reported as unmatched rather than as breaches."""
     if not needed.get("known"):
         return Verdict("nosubject", "vehicleunknown",
                        "The vehicle's seating capacity and weight rating are not on file", None, None)
     if not needed.get("cdl"):
         return Verdict("pass", None, None, None, None)
     if not held:
-        return Verdict("nosubject", "licenceunknown", "This driver's license class is not on file", None, None)
+        return Verdict("nosubject", "licenseunknown", "This driver's license class is not on file", None, None)
 
     held = held.strip().upper()[:1]
     carried = (endorsements or "").upper()
     if held not in ("A", "B", "C"):
-        return Verdict("fail", "licenceclass",
+        return Verdict("fail", "licenseclass",
                        f"{needed['summary']} is needed to drive this vehicle; this driver holds Class {held}",
                        None, None)
     # A heavier class covers a lighter one: A covers B, B covers C.
     order = {"C": 1, "B": 2, "A": 3}
     if order[held] < order[needed["cdl"]]:
-        return Verdict("fail", "licenceclass",
+        return Verdict("fail", "licenseclass",
                        f"Class {needed['cdl']} is needed to drive this vehicle; this driver holds Class {held}",
                        None, None)
     if needed.get("endorsement") == "P" and "P" not in carried:

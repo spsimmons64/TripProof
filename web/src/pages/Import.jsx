@@ -51,7 +51,6 @@ export default function Import() {
     <div className="stack">
       <div className="pagehead"><div>
         <h1>Import trips</h1>
-        <div className="muted">Upload the trip export from your dispatch system (CSV). Columns are matched automatically; you can correct any match before accepting.</div>
       </div></div>
 
       {result && (

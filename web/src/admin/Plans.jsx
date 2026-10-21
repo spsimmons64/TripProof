@@ -70,12 +70,12 @@ function PlanForm({ plan, onClose, onSaved }) {
       <form className="profileform" onSubmit={f.onSubmit}>
         <label className="field span-2">Code *<input required disabled={!!plan} value={v.code} onChange={f.set('code')} /></label>
         <label className="field span-4">Name *<input required value={v.name} onChange={f.set('name')} /></label>
-        <label className="field span-6">Short description<input value={v.description} onChange={f.set('description')} /></label>
-        <label className="field span-2">From vehicles *<input type="number" min="1" required value={v.minvehicles} onChange={f.set('minvehicles')} /></label>
-        <label className="field span-2">To vehicles<input type="number" min="1" value={v.maxvehicles} onChange={f.set('maxvehicles')} /></label>
-        <label className="field span-2">Sort order<input type="number" value={v.sortorder} onChange={f.set('sortorder')} /></label>
-        <label className="field span-2">Price per month ($)<input type="number" min="0" step="0.01" value={v.contact ? '' : v.monthlyprice} disabled={v.contact} onChange={f.set('monthlyprice')} /></label>
-        <label className="field span-2">Free trial (days)<input type="number" min="0" max="90" value={v.trialdays} onChange={f.set('trialdays')} /></label>
+        <label className="field span-6">Short Description<input value={v.description} onChange={f.set('description')} /></label>
+        <label className="field span-2">From Vehicles *<input type="number" min="1" required value={v.minvehicles} onChange={f.set('minvehicles')} /></label>
+        <label className="field span-2">To Vehicles<input type="number" min="1" value={v.maxvehicles} onChange={f.set('maxvehicles')} /></label>
+        <label className="field span-2">Sort Order<input type="number" value={v.sortorder} onChange={f.set('sortorder')} /></label>
+        <label className="field span-2">Price Per Month ($)<input type="number" min="0" step="0.01" value={v.contact ? '' : v.monthlyprice} disabled={v.contact} onChange={f.set('monthlyprice')} /></label>
+        <label className="field span-2">Free Trial (Days)<input type="number" min="0" max="90" value={v.trialdays} onChange={f.set('trialdays')} /></label>
         <label className="check span-2" style={{ alignSelf: 'end', height: 36 }}><input type="checkbox" checked={v.contact} onChange={f.set('contact')} /> Contact us (no online price)</label>
         <label className="field span-6">Features (one per line, shown on the plan card)<textarea value={v.features} onChange={f.set('features')} rows={4} /></label>
         <label className="check span-6"><input type="checkbox" checked={v.active} onChange={f.set('active')} /> Active (offered to new applicants)</label>

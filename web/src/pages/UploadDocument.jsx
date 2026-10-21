@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Check, ShieldCheck, Upload, X } from 'lucide-react'
 import { SsnInput } from '../components/MaskedInput.jsx'
-import { BLANK_LICENCE, FieldError, LicenseFields, licenceProblems, useFirstField }
+import { BLANK_LICENSE, FieldError, LicenseFields, licenseProblems, useFirstField }
   from '../components/LicenseDialog.jsx'
 import PublicShell from '../components/PublicShell.jsx'
 import SignHere from '../components/SignHere.jsx'
@@ -13,7 +13,7 @@ import SignHere from '../components/SignHere.jsx'
 // driver's is shown until they have proved who they are with the same date of birth and Social
 // Security number the application asks for, and nothing is filed until they send it.
 //
-// The page never says WHY the document is wanted. The reason is often the driver's own licence
+// The page never says WHY the document is wanted. The reason is often the driver's own license
 // history, and a page opened on a phone is read by whoever is standing behind them.
 
 const FONTS = [['modern', 'Modern'], ['signature', 'Inked'], ['quick', 'Quick'],
@@ -23,8 +23,8 @@ const FONTS = [['modern', 'Modern'], ['signature', 'Inked'], ['quick', 'Quick'],
 // sentence, and answering that with "that did not work" tells somebody staring at a typo nothing
 // at all about where the typo is.
 const PLAIN = { issuedon: 'issue date', expireson: 'expiry date', dob: 'date of birth',
-                ssn: 'Social Security number', file: 'document', front: 'front of the licence',
-                back: 'back of the licence' }
+                ssn: 'Social Security number', file: 'document', front: 'front of the license',
+                back: 'back of the license' }
 
 const saidWhat = (json, fallback = 'That did not work') => {
   if (typeof json?.detail === 'string') return json.detail
@@ -76,9 +76,9 @@ export default function UploadDocument() {
   const [q, setQ] = useState({ priorviolation: '', prioremployer: '', priortestdate: '',
                                priortesttype: '', priorrtd: '' })
   const [signed, setSigned] = useState(null)      // what they signed with, once they have
-  // A licence is a card with a number, a state, a class and two sides, so it is filled in
+  // A license is a card with a number, a state, a class and two sides, so it is filled in
   // rather than photographed - the same fields the office fills in, from the same component.
-  const [lic, setLic] = useState(BLANK_LICENCE)
+  const [lic, setLic] = useState(BLANK_LICENSE)
   const [front, setFront] = useState(null)
   const [back, setBack] = useState(null)
   const [bad, setBad] = useState({})
@@ -130,8 +130,8 @@ export default function UploadDocument() {
         body.append('fontkey', how.fontkey)
       }
       if (q.priorviolation === 'yes' && v.file) body.append('file', v.file)
-    } else if (asked.licence) {
-      const problems = licenceProblems(lic)
+    } else if (asked.license) {
+      const problems = licenseProblems(lic)
       if (!front && !back) problems.front = 'Send at least one side'
       setBad(problems)
       if (Object.keys(problems).length) return
@@ -157,7 +157,7 @@ export default function UploadDocument() {
     try {
       body.append('dob', v.dob)
       body.append('ssn', v.ssn)
-      if (!asked.licence && !asked.questionnaire) {
+      if (!asked.license && !asked.questionnaire) {
         if (v.exempt) {
           body.append('exempt', 'true')
         } else {
@@ -196,7 +196,7 @@ export default function UploadDocument() {
       {q.priorviolation === 'yes' && (
         <div className="profileform">
           <label className={`field span-3${bad.prioremployer ? ' bad' : ''}`}>
-            Employer you applied to *
+            Employer You Applied To *
             <input value={q.prioremployer} className="upper"
               onChange={(e) => {
                 setBad(({ prioremployer: _g, ...rest }) => rest)
@@ -204,10 +204,10 @@ export default function UploadDocument() {
               }} />
             <FieldError message={bad.prioremployer} />
           </label>
-          <label className="field span-3">Approximate test date
+          <label className="field span-3">Approximate Test Date
             <input type="date" value={q.priortestdate}
               onChange={(e) => setQ({ ...q, priortestdate: e.target.value })} /></label>
-          <label className="field span-3">What kind
+          <label className="field span-3">What Kind
             <select value={q.priortesttype}
               onChange={(e) => setQ({ ...q, priortesttype: e.target.value })}>
               <option value="">Choose</option>
@@ -230,7 +230,7 @@ export default function UploadDocument() {
           {/* Whatever they hold showing the process was done - the SAP's determination, the
               follow-up plan, a return-to-duty result. Never required: a driver may have disclosed
               a violation and have nothing in their hand. */}
-          <label className="field span-6">Return-to-duty or SAP paperwork
+          <label className="field span-6">Return-To-Duty Or SAP Paperwork
             <input type="file" accept="application/pdf,image/*"
               onChange={(e) => setV({ ...v, file: e.target.files[0] || null })} />
           </label>
@@ -250,7 +250,7 @@ export default function UploadDocument() {
     </>
   )
 
-  const licenceForm = (
+  const licenseForm = (
     <>
       <div className="profileform">
         <LicenseFields r={lic} setR={setLic} bad={bad} setBad={setBad} copies
@@ -306,11 +306,11 @@ export default function UploadDocument() {
           </div>
         ) : (
           <div className="stack">
-            {asked.questionnaire ? questionnaireForm : asked.licence ? licenceForm : (
+            {asked.questionnaire ? questionnaireForm : asked.license ? licenseForm : (
             <div className="profileform">
               {/* A driver who is exempt has nothing to send, and saying so is the answer rather
                   than a gap. It comes first because it decides whether any of the rest is asked.
-                  Not offered where there is no exemption to claim - a driver either holds a licence
+                  Not offered where there is no exemption to claim - a driver either holds a license
                   or does not drive. */}
               {asked.exemptable && (
                 <label className="field check span-6">
@@ -345,7 +345,7 @@ export default function UploadDocument() {
               </label>
             </div>
             )}
-            {!asked.licence && !asked.questionnaire && !v.exempt && (
+            {!asked.license && !asked.questionnaire && !v.exempt && (
               <p className="muted small">A clear photograph is fine. PDF or a photo, up to 20 MB.</p>
             )}
             {/* The questionnaire carries its own action row, with signing beside sending. */}

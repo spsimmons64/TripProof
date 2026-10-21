@@ -39,8 +39,8 @@ const COLUMNS = [
 export const driverState = (d) => ({ application: 'applicant', appcor: 'corrections', new: 'newdriver',
   pending: 'awaiting' }[d.status] || d.status || 'hired')
 
-// Commercial or not follows the licence they hold: nobody drives a vehicle that needs a CDL without
-// one. A driver whose licence class is not on file yet is neither, and says so.
+// Commercial or not follows the license they hold: nobody drives a vehicle that needs a CDL without
+// one. A driver whose license class is not on file yet is neither, and says so.
 const driverType = (d) => (!d.licenseclass ? '-'
   : ['A', 'B', 'C'].includes(String(d.licenseclass).toUpperCase()) ? 'Commercial' : 'Non-commercial')
 
@@ -99,12 +99,12 @@ export default function Drivers() {
 }
 
 export function DriverForm({ initial = {}, id, onDone }) {
-  const [f, setF] = useState({ firstname: '', lastname: '', externalid: '', dob: '', licensenumber: '', licensestate: 'FL', licensesince: '', email: '', phone: '', hiredon: '', terminatedon: '', ...initial })
+  const [f, setF] = useState({ firstname: '', lastname: '', externalid: '', dob: '', licensenumber: '', licensestate: 'FL', email: '', phone: '', hiredon: '', terminatedon: '', ...initial })
   const [error, setError] = useState(null)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
   const submit = async (e) => {
     e.preventDefault()
-    const keys = ['firstname', 'lastname', 'externalid', 'dob', 'licensenumber', 'licensestate', 'licensesince', 'email', 'phone', 'hiredon', 'terminatedon']
+    const keys = ['firstname', 'lastname', 'externalid', 'dob', 'licensenumber', 'licensestate', 'email', 'phone', 'hiredon', 'terminatedon']
     const body = Object.fromEntries(keys.map((k) => [k, f[k] === '' || f[k] === undefined ? null : f[k]]))
     try {
       if (id) { await api.put(`/drivers/${id}`, body); onDone() }
@@ -114,13 +114,12 @@ export function DriverForm({ initial = {}, id, onDone }) {
   return (
     <form className="card stack" onSubmit={submit}>
       <div className="form">
-        <label className="field">First name<input required value={f.firstname} onChange={set('firstname')} /></label>
-        <label className="field">Last name<input required value={f.lastname} onChange={set('lastname')} /></label>
+        <label className="field">First Name<input required value={f.firstname} onChange={set('firstname')} /></label>
+        <label className="field">Last Name<input required value={f.lastname} onChange={set('lastname')} /></label>
         <label className="field">Dispatch ID<input value={f.externalid || ''} onChange={set('externalid')} /></label>
-        <label className="field">License number<input value={f.licensenumber || ''} onChange={set('licensenumber')} /></label>
-        <label className="field">License state<input maxLength={2} value={f.licensestate || ''} onChange={set('licensestate')} /></label>
-        <label className="field">First licensed<input type="date" value={f.licensesince || ''} onChange={set('licensesince')} /></label>
-        <label className="field">Date of birth<input type="date" value={f.dob || ''} onChange={set('dob')} /></label>
+        <label className="field">License Number<input value={f.licensenumber || ''} onChange={set('licensenumber')} /></label>
+        <label className="field">License State<input maxLength={2} value={f.licensestate || ''} onChange={set('licensestate')} /></label>
+        <label className="field">Date Of Birth<input type="date" value={f.dob || ''} onChange={set('dob')} /></label>
         <label className="field">Email<input type="email" value={f.email || ''} onChange={set('email')} /></label>
         <label className="field">Phone<PhoneInput value={f.phone || ''} onChange={set('phone')} /></label>
         <label className="field">Hired<input type="date" value={f.hiredon || ''} onChange={set('hiredon')} /></label>

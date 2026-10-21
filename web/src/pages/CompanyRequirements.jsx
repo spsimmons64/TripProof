@@ -239,7 +239,7 @@ function PolicyDetail({ item, code, onClose, onChanged }) {
         {/* The two things in these pages that are the company's own. Everything else is the
             regulation, kept current by TripProof. */}
         <div className="profileform">
-          <label className="field span-3">Effective date
+          <label className="field span-3">Effective Date
             <input type="date" value={now.effectiveon} min="1900-01-01" max="2100-12-31"
               onChange={(e) => setF({ ...now, effectiveon: e.target.value })} />
           </label>
@@ -247,7 +247,7 @@ function PolicyDetail({ item, code, onClose, onChanged }) {
               says about consequences in its own words and has no blank for this. */}
           {code === 'DRUG_POLICY' && (
             <>
-              <label className="field span-6">After a DOT violation, this company
+              <label className="field span-6">After A DOT Violation, This Company
                 <select value={now.discipline}
                   onChange={(e) => setF({ ...now, discipline: e.target.value })}>
                   <option value="">Choose</option>
@@ -256,7 +256,7 @@ function PolicyDetail({ item, code, onClose, onChanged }) {
                 </select>
               </label>
               {now.discipline === 'other' && (
-                <label className="field span-9">In your own words
+                <label className="field span-9">In Your Own Words
                   <input value={now.other} className="upper"
                     onChange={(e) => setF({ ...now, other: e.target.value.toUpperCase() })} />
                 </label>
@@ -681,21 +681,21 @@ function MakeDetermination({ data, onClose, onDone }) {
           </div>
         )}
         <div className="profileform">
-          <label className="field span-2">Assessment date *
+          <label className="field span-2">Assessment Date *
             <input type="date" value={f.assessedon} max={today}
               onChange={(e) => setF({ ...f, assessedon: e.target.value })} />
           </label>
-          <label className="field span-2">Next review
+          <label className="field span-2">Next Review
             <input type="date" value={f.nextreview}
               onChange={(e) => setF({ ...f, nextreview: e.target.value })} />
           </label>
           <label className="field span-2" />
           {/* A row each. Both take a sentence, and half a row is not enough of one. */}
-          <label className="field span-6">Changes identified
+          <label className="field span-6">Changes Identified
             <input value={f.changes} className="upper"
               onChange={(e) => setF({ ...f, changes: e.target.value.toUpperCase() })} />
           </label>
-          <label className="field span-6">Corrective actions
+          <label className="field span-6">Corrective Actions
             <input value={f.corrective} className="upper"
               onChange={(e) => setF({ ...f, corrective: e.target.value.toUpperCase() })} />
           </label>
@@ -825,19 +825,19 @@ function AccidentRegister({ item, onClose, onChanged }) {
                 <input type="datetime-local" value={f.occurredon} max={now}
                   onChange={(e) => setF({ ...f, occurredon: e.target.value })} />
               </label>
-              <label className="field span-6">City or town, and State
+              <label className="field span-6">City Or Town, And State
                 <input value={f.location}
                   onChange={(e) => setF({ ...f, location: e.target.value.toUpperCase() })} />
               </label>
-              <label className="field span-2">People injured
+              <label className="field span-2">People Injured
                 <input type="number" min="0" value={f.injuries}
                   onChange={(e) => setF({ ...f, injuries: e.target.value })} />
               </label>
-              <label className="field span-2">People killed
+              <label className="field span-2">People Killed
                 <input type="number" min="0" value={f.fatalities}
                   onChange={(e) => setF({ ...f, fatalities: e.target.value })} />
               </label>
-              <label className="field span-2">Hazmat released
+              <label className="field span-2">Hazmat Released
                 <select value={f.hazmatreleased}
                   onChange={(e) => setF({ ...f, hazmatreleased: e.target.value })}>
                   <option value="">Not stated</option>
@@ -846,7 +846,7 @@ function AccidentRegister({ item, onClose, onChanged }) {
                 </select>
               </label>
               <label className="field span-6">Note
-                <input value={f.note}
+                <textarea value={f.note}
                   onChange={(e) => setF({ ...f, note: e.target.value.toUpperCase() })} />
               </label>
             </div>
@@ -912,7 +912,7 @@ function RandomSelections({ item, onClose, onChanged, extra = null, brief = null
         <div className="stack">
           {err && <div className="notice bad">{err}</div>}
           <div className="profileform">
-            <label className="field span-2">Drawn on
+            <label className="field span-2">Drawn On
               <input type="date" value={now.drawnon} min="1900-01-01" max="2100-12-31"
                 onChange={(e) => setF({ ...now, drawnon: e.target.value })} />
             </label>
@@ -924,16 +924,16 @@ function RandomSelections({ item, onClose, onChanged, extra = null, brief = null
                 ))}
               </select>
             </label>
-            <label className="field span-3">Drawn by
+            <label className="field span-3">Drawn By
               <input value={now.performedby} className="upper"
                 onChange={(e) => setF({ ...now, performedby: e.target.value.toUpperCase() })} />
             </label>
-            <label className="field span-3">The list of names it produced
+            <label className="field span-3">The List Of Names It Produced
               <input type="file"
                 onChange={(e) => setF({ ...now, file: e.target.files[0] || null })} />
             </label>
             <label className="field span-6">Note
-              <input value={now.note} className="upper"
+              <textarea value={now.note} className="upper"
                 onChange={(e) => setF({ ...now, note: e.target.value.toUpperCase() })} />
             </label>
           </div>
@@ -1121,14 +1121,14 @@ function MisReport({ item, typeid, onClose, onChanged }) {
         <div className="stack">
           {err && <div className="notice bad">{err}</div>}
           <div className="profileform">
-            <label className="field span-3">Sent on *
+            <label className="field span-3">Sent On *
               <input type="date" value={sent.on} min="1900-01-01" max="2100-12-31"
                 onChange={(e) => setSent({ ...sent, on: e.target.value })} />
             </label>
             {/* Wanted, not required. 382.401(b) asks the carrier to keep it for five years, so
                 the copy belongs here - but a report that went in on time went in on time
                 whether or not anybody has been to the scanner yet. */}
-            <label className="field span-9">Copy of what you sent
+            <label className="field span-9">Copy Of What You Sent
               <input type="file"
                 onChange={(e) => setSent({ ...sent, file: e.target.files[0] || null })} />
             </label>
@@ -1163,7 +1163,7 @@ function MisReport({ item, typeid, onClose, onChanged }) {
           </div>
         </div>
         <div className="profileform">
-          <label className="field span-2">Calendar year
+          <label className="field span-2">Calendar Year
             <select value={data.year} onChange={(e) => setYear(Number(e.target.value))}>
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
@@ -1306,7 +1306,7 @@ function ClearinghouseDetail({ item, onClose, onChanged }) {
           {data.where}{data.usdot ? `, under USDOT ${data.usdot}` : ''}. Record its state here.
         </div>
         <div className="profileform">
-          <label className="field span-3">Employer account registered
+          <label className="field span-3">Employer Account Registered
             <select value={now.registered}
               onChange={(e) => setF({ ...now, registered: e.target.value })}>
               <option value="">Choose</option>
@@ -1314,18 +1314,18 @@ function ClearinghouseDetail({ item, onClose, onChanged }) {
               <option value="false">No</option>
             </select>
           </label>
-          <label className="field span-3">Account confirmed on
+          <label className="field span-3">Account Confirmed On
             <input type="date" value={now.verifiedon} min="1900-01-01" max="2100-12-31"
               onChange={(e) => setF({ ...now, verifiedon: e.target.value })} />
           </label>
-          <label className="field span-3">Query plan bought
+          <label className="field span-3">Query Plan Bought
             <select value={String(now.queryplan)}
               onChange={(e) => setF({ ...now, queryplan: e.target.value === 'true' })}>
               <option value="false">No</option>
               <option value="true">Yes</option>
             </select>
           </label>
-          <label className="field span-3">A consortium or TPA acts for us
+          <label className="field span-3">A Consortium Or TPA Acts For Us
             <select value={String(now.ctpaused)}
               onChange={(e) => setF({ ...now, ctpaused: e.target.value === 'true' })}>
               <option value="false">No</option>
@@ -1338,11 +1338,11 @@ function ClearinghouseDetail({ item, onClose, onChanged }) {
                 onChange={(e) => setF({ ...now, ctpaname: e.target.value.toUpperCase() })} />
             </label>
           )}
-          <label className="field span-6">Account confirmation
+          <label className="field span-6">Account Confirmation
             <input type="file" onChange={(e) => setF({ ...now, file: e.target.files[0] || null })} />
           </label>
           <label className="field span-9">Note
-            <input value={now.note} className="upper"
+            <textarea value={now.note} className="upper"
               onChange={(e) => setF({ ...now, note: e.target.value.toUpperCase() })} />
           </label>
         </div>
@@ -1418,21 +1418,21 @@ function Mcs150Detail({ item, onClose, onChanged }) {
 
         <h3 className="formsection">Record A Filing</h3>
         <div className="profileform">
-          <label className="field span-2">Date filed
+          <label className="field span-2">Date Filed
             <input type="date" value={now.filedon} min="1900-01-01" max="2100-12-31"
               onChange={(e) => setF({ ...now, filedon: e.target.value })} />
           </label>
-          <label className="field span-3">How it was filed
+          <label className="field span-3">How It Was Filed
             <select value={now.method}
               onChange={(e) => setF({ ...now, method: e.target.value })}>
               {Object.entries(data.methods).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
-          <label className="field span-4">Proof of filing
+          <label className="field span-4">Proof Of Filing
             <input type="file" onChange={(e) => setF({ ...now, file: e.target.files[0] || null })} />
           </label>
           <label className="field span-9">Note
-            <input value={now.note} className="upper"
+            <textarea value={now.note} className="upper"
               onChange={(e) => setF({ ...now, note: e.target.value.toUpperCase() })} />
           </label>
         </div>

@@ -47,7 +47,7 @@ export default function TestDialog({ title, reason, locked, reasons, results, of
             <input type="date" value={f.collectedon} max={today}
               onChange={(e) => setF({ ...f, collectedon: e.target.value })} />
           </label>
-          <label className="field span-3">Tested for *
+          <label className="field span-3">Tested For *
             <select value={f.testtype}
               onChange={(e) => setF({ ...f, testtype: e.target.value })}>
               <option value="drug">Controlled substances</option>
@@ -64,7 +64,7 @@ export default function TestDialog({ title, reason, locked, reasons, results, of
           {/* Only where the answer is one. The MIS form counts each drug a specimen was
               positive for, so a test positive for two is two lines on it. */}
           {f.testtype === 'drug' && f.result === 'positive' && (
-            <label className="field span-3">Positive for *
+            <label className="field span-3">Positive For *
               <input value={f.substance} className="upper"
                 placeholder="MARIJUANA, COCAINE"
                 onChange={(e) => setF({ ...f, substance: e.target.value.toUpperCase() })} />
@@ -73,17 +73,17 @@ export default function TestDialog({ title, reason, locked, reasons, results, of
           {/* The number, not the band. 382.505 is 0.02 and 382.507 is 0.04, and a band cannot
               be re-banded if the form ever asks differently. */}
           {f.testtype === 'alcohol' && (
-            <label className="field span-3">Alcohol concentration
+            <label className="field span-3">Alcohol Concentration
               <input type="number" step="0.001" min="0" max="0.999" value={f.bac}
                 onChange={(e) => setF({ ...f, bac: e.target.value })} />
             </label>
           )}
-          <label className="field span-3">Laboratory report
+          <label className="field span-3">Laboratory Report
             <input type="file"
               onChange={(e) => setF({ ...f, file: e.target.files[0] || null })} />
           </label>
           <label className="field span-6">Note
-            <input value={f.note}
+            <textarea value={f.note}
               onChange={(e) => setF({ ...f, note: e.target.value.toUpperCase() })} />
           </label>
         </div>

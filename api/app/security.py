@@ -22,7 +22,14 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+    # A stored hash that bcrypt cannot read is a failed sign-in, not a crashed one. It should not
+    # happen - but a row edited by hand, truncated by a column change or written by an older
+    # scheme would otherwise turn every attempt to sign in into a 500, which tells an attacker
+    # that the address exists and tells the person it belongs to nothing at all.
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode())
+    except (ValueError, TypeError):
+        return False
 
 
 LAUNCH_MINUTES = 60

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Pager, { PAGE_SIZES } from './Pager.jsx'
 import SortHeader from './SortHeader.jsx'
@@ -19,7 +19,7 @@ import SortHeader from './SortHeader.jsx'
 //   A column may carry a NODE as its label, which is how a grid holds its own title and its own
 //   actions in the header band - see the driver's hours of service grid.
 export default function DataGrid({ columns, rows, rowKey, cells, sort, dir, onSort, onRowClick, rowClickable, loading, error,
-  empty = 'Nothing here yet.', pager, className = '' }) {
+  empty = 'Nothing here yet.', pager, subrow, className = '' }) {
   const card = useRef(null)
   // The header's spacer must be exactly as wide as the rows' scrollbar. Measure this grid's own rows
   // (offsetWidth - clientWidth) rather than trusting a page-wide guess: it varies by browser, zoom
@@ -34,8 +34,12 @@ export default function DataGrid({ columns, rows, rowKey, cells, sort, dir, onSo
     ro.observe(body)
     return () => ro.disconnect()
   }, [])
+  // With no rows the table must stop claiming the height, or it takes the whole card and leaves
+  // the message sitting at the bottom of a white expanse - which is where every empty grid on the
+  // site was putting it.
+  const bare = !rows || rows.length === 0
   return (
-    <div ref={card} className={`card gridcard ${className}`}>
+    <div ref={card} className={`card gridcard${bare ? ' isbare' : ''} ${className}`}>
       <div className="tablewrap">
         <table>
           <thead><tr>
@@ -54,14 +58,26 @@ export default function DataGrid({ columns, rows, rowKey, cells, sort, dir, onSo
           <tbody>{(rows || []).map((item) => {
             const values = cells(item)
             const opens = Boolean(onRowClick) && (!rowClickable || rowClickable(item))
+            // A second line under the row, spanning it. For the thing that will not fit in a
+            // column and should not be cut to fit one - an address, a route - where squeezing it
+            // into a cell means an ellipsis in the middle of a street name.
+            const under = subrow?.(item)
             return (
-              <tr key={rowKey(item)} className={opens ? 'click' : undefined}
-                  onClick={opens ? () => onRowClick(item) : undefined}>
-                {columns.map((c, i) => (
-                  <td key={c.id} className={[c.numeric && 'num', c.className].filter(Boolean).join(' ') || undefined}
-                    style={c.width ? { width: c.width } : undefined}>{values[i]}</td>
-                ))}
-              </tr>
+              <Fragment key={rowKey(item)}>
+                <tr className={[opens ? 'click' : null, under ? 'hassub' : null].filter(Boolean).join(' ') || undefined}
+                    onClick={opens ? () => onRowClick(item) : undefined}>
+                  {columns.map((c, i) => (
+                    <td key={c.id} className={[c.numeric && 'num', c.className].filter(Boolean).join(' ') || undefined}
+                      style={c.width ? { width: c.width } : undefined}>{values[i]}</td>
+                  ))}
+                </tr>
+                {under && (
+                  <tr className={`subrow${opens ? ' click' : ''}`}
+                      onClick={opens ? () => onRowClick(item) : undefined}>
+                    <td colSpan={columns.length + 1}>{under}</td>
+                  </tr>
+                )}
+              </Fragment>
             )
           })}</tbody>
         </table>

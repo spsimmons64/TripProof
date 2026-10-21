@@ -41,6 +41,10 @@ FONTS = ("modern", "signature", "quick", "hand", "cursive", "fine", "bold")
 
 DOC_TYPES = {
     "I9": "Form I-9, Employment Eligibility Verification",
+    # The office's half of the same form: somebody examined the employee's documents and
+    # certified Section 2. Filed against the DRIVER, like Section 1 - an I-9 is the driver's
+    # document - and under its own doctype so the two signatures stay apart.
+    "I9_SECTION2": "Form I-9, Section 2 employer certification",
     "W4": "Form W-4, Employee's Withholding Certificate",
     "FCRA_SUMMARY": "A Summary of Your Rights Under the Fair Credit Reporting Act",
     "FCRA_AUTH": "Background check disclosure and authorization",

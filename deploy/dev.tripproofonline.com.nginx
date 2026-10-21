@@ -11,7 +11,7 @@ server {
     access_log /var/log/nginx/dev.tripproofonline.com.access.log;
     error_log  /var/log/nginx/dev.tripproofonline.com.error.log;
 
-    client_max_body_size 50m;           # credential scans and licence photographs
+    client_max_body_size 50m;           # credential scans and license photographs
 
     # The application view is one large JSON document of HTML; over a domestic uplink the transfer
     # is the whole of the wait, so it is worth compressing.

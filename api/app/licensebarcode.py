@@ -1,17 +1,17 @@
 ###################################################################################################
-# Reading a driver's licence from the barcode on its back.
+# Reading a driver's license from the barcode on its back.
 #
-# Every US and Canadian licence carries a PDF417 barcode holding an AAMVA record: the licence
+# Every US and Canadian license carries a PDF417 barcode holding an AAMVA record: the license
 # number, the jurisdiction, the class, the endorsements and restrictions, the issue and expiry
 # dates, the name and the date of birth. That is the whole of what the application asks for, so an
-# applicant who can photograph the back of their licence should not have to type any of it.
+# applicant who can photograph the back of their license should not have to type any of it.
 #
 # This is best effort and nothing depends on it. A barcode that will not decode - and a photograph
 # taken at an angle, or with a flash across it, often will not - simply returns nothing, and the
 # applicant types what they always typed.
 #
 # Nothing here is trusted: what comes back is shown to the applicant to check and confirm before it
-# joins their application. A misread licence number is worse than a typed one.
+# joins their application. A misread license number is worse than a typed one.
 ###################################################################################################
 import io
 import logging
@@ -44,13 +44,13 @@ ENDORSEMENTS = {"H", "T", "N", "S", "P", "X"}
 
 
 def _text(blob: bytes) -> str | None:
-    """The barcode's contents, or None. Tries the frame as it came, then turned about - a licence
+    """The barcode's contents, or None. Tries the frame as it came, then turned about - a license
     photographed on a desk is as often upside down as not - then the lower band on its own, which is
     where the barcode sits on the back of the card."""
     try:
         import zxingcpp
     except ImportError:                                   # the reader is optional; typing still works
-        log.info("zxing-cpp is not installed, so licences cannot be read")
+        log.info("zxing-cpp is not installed, so licenses cannot be read")
         return None
     try:
         image = ImageOps.exif_transpose(Image.open(io.BytesIO(blob))).convert("L")
@@ -117,7 +117,7 @@ def _codes(value: str | None, allowed: set[str]) -> list[str]:
 
 
 def read(blob: bytes) -> dict | None:
-    """What the barcode says, in the shape the licence dialog uses. None when nothing could be read."""
+    """What the barcode says, in the shape the license dialog uses. None when nothing could be read."""
     text = _text(blob)
     if not text:
         return None

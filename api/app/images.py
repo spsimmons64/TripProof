@@ -22,8 +22,8 @@ from PIL import Image, ImageOps
 CONVERTS = ("image/jpeg", "image/jpg", "image/png", "image/gif", "image/bmp", "image/tiff",
             "image/webp")
 
-# A page no larger than this on its longest side. A licence photographed at 12 megapixels is not a
-# better record of a licence - it is the same record, eight times the size, on a sheet nobody can
+# A page no larger than this on its longest side. A license photographed at 12 megapixels is not a
+# better record of a license - it is the same record, eight times the size, on a sheet nobody can
 # print.
 MAX_EDGE = 2200
 
@@ -35,7 +35,7 @@ def is_image(mimetype: str | None) -> bool:
 def bind(parts: list[bytes]) -> bytes:
     """Several PDFs as one, in the order given - the front of a card and then its back.
 
-    A licence is one document photographed twice; filing it as two leaves whoever reads the file
+    A license is one document photographed twice; filing it as two leaves whoever reads the file
     opening them one after the other and holding them together in their head."""
     from pypdf import PdfReader, PdfWriter      # imported here: only binding needs it
     parts = [p for p in parts if p]

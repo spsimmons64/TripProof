@@ -27,7 +27,7 @@ from sqlalchemy.engine import Connection
 from app.db import newid, rows, run, run_many, utcnow
 from app import eligibility, vehicleclass
 from app.validity import (CredentialFact, annual_review_verdict, credential_as_of, driver_age_verdict,
-                          eligibility_verdict, licence_class_verdict, license_years_verdict,
+                          eligibility_verdict, license_class_verdict, license_years_verdict,
                           trip_evidence_verdict, vehicle_age_verdict, vehicle_mileage_verdict)
 
 ENGINE_VERSION = "1.1"
@@ -161,17 +161,17 @@ def check(q: dict, leg: dict, facts: Facts):
         return subjectid, driver_age_verdict(facts.drivers.get(subjectid, {}).get("dob"), at, int(p["minyears"]))
     if kind == "licenseyears":
         return subjectid, license_years_verdict(facts.drivers.get(subjectid, {}).get("licensesince"), at, int(p["minyears"]))
-    if kind == "licenceclass":
-        # The vehicle says what licence it takes; the driver says what they hold. Neither is a
+    if kind == "licenseclass":
+        # The vehicle says what license it takes; the driver says what they hold. Neither is a
         # judgement about the company's program - only about the seat that was filled.
         if leg["vehicleid"] is None:
             return subjectid, None
         driver = facts.drivers.get(subjectid, {})
-        needed = vehicleclass.licence_for(facts.vehicles.get(leg["vehicleid"], {}))
-        return subjectid, licence_class_verdict(needed, driver.get("licenseclass"), driver.get("endorsements"))
+        needed = vehicleclass.license_for(facts.vehicles.get(leg["vehicleid"], {}))
+        return subjectid, license_class_verdict(needed, driver.get("licenseclass"), driver.get("endorsements"))
     if kind == "eligibility":
         # Part 382 reaches commercial drivers, and what counts as one is settled in one place:
-        # the company's own answer where they have given it, the licence class otherwise.
+        # the company's own answer where they have given it, the license class otherwise.
         if not eligibility.covered(facts.drivers.get(subjectid, {})):
             return subjectid, None
         held = [b for b in facts.barred.get(subjectid, []) if b[0] <= at.date()

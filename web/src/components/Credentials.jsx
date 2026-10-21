@@ -72,7 +72,9 @@ export default function Credentials({ subject, subjectid, credentials, onChange,
   )
 }
 
-function CredentialForm({ types, subjectid, renew, onDone }) {
+// Exported so a requirement can open it directly: the row that asks for a document is the
+// right place to file one, and a second form for the same job would drift from this one.
+export function CredentialForm({ types, subjectid, renew, onDone, inset = false }) {
   const [f, setF] = useState({ credentialtypeid: renew?.credentialtypeid || types[0]?.recordid || '', issuedon: '', expireson: '', number: '', issuer: renew?.issuer || '', amount: '', notes: '' })
   const [file, setFile] = useState(null)
   const [error, setError] = useState(null)
@@ -91,8 +93,11 @@ function CredentialForm({ types, subjectid, renew, onDone }) {
     try { await api.post('/credentials', fd); onDone(true) } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
   return (
-    <form className="stack" onSubmit={submit} style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-      <h3>{renew ? `Renew ${renew.typename}` : 'New credential'}</h3>
+    // `inset`: already inside a dialog that has named the thing being filed, so the rule and
+    // the heading above the fields would be a second title under the first.
+    <form className="stack" onSubmit={submit}
+      style={inset ? undefined : { borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+      {!inset && <h3>{renew ? `Renew ${renew.typename}` : 'New credential'}</h3>}
       <div className="form">
         <label className="field">Type
           <select value={f.credentialtypeid} onChange={set('credentialtypeid')} disabled={!!renew}>
@@ -103,14 +108,13 @@ function CredentialForm({ types, subjectid, renew, onDone }) {
             ))}
           </select>
         </label>
-        <label className="field">Issued / completed on *<input type="date" required value={f.issuedon} onChange={set('issuedon')} /></label>
-        <label className="field">Expires on<input type="date" value={f.expireson} onChange={set('expireson')} /></label>
+        <label className="field">Issued / Completed On *<input type="date" required value={f.issuedon} onChange={set('issuedon')} /></label>
+        <label className="field">Expires On<input type="date" value={f.expireson} onChange={set('expireson')} /></label>
         <label className="field">Number<input value={f.number} onChange={set('number')} /></label>
         <label className="field">Issuer<input value={f.issuer} onChange={set('issuer')} /></label>
-        {type?.hasamount ? <label className="field">Coverage limit ($)<input type="number" min="0" step="1000" value={f.amount} onChange={set('amount')} /></label> : null}
-        <label className="field">Scan or photo<input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files[0])} /></label>
+        {type?.hasamount ? <label className="field">Coverage Limit ($)<input type="number" min="0" step="1000" value={f.amount} onChange={set('amount')} /></label> : null}
+        <label className="field">Scan Or Photo<input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files[0])} /></label>
       </div>
-      {type?.description && <div className="small muted">{type.description}. Leave “Expires on” blank if nothing is printed; broker age limits still apply.</div>}
       {error && <div className="error">{error}</div>}
       <div className="row"><button className="primary" disabled={busy}>{busy ? 'Saving…' : 'Save and re-check trips'}</button><button type="button" onClick={() => onDone(false)}>Cancel</button></div>
     </form>
@@ -131,7 +135,7 @@ function RevokeForm({ credential, onDone }) {
       <h3>Revoke {credential.typename}</h3>
       <div className="small muted">Trips before this moment stay covered; trips at or after it will fail.</div>
       <div className="form">
-        <label className="field">Revoked at *<input type="datetime-local" required value={at} onChange={(e) => setAt(e.target.value)} /></label>
+        <label className="field">Revoked At *<input type="datetime-local" required value={at} onChange={(e) => setAt(e.target.value)} /></label>
         <label className="field">Reason *<input required value={reason} onChange={(e) => setReason(e.target.value)} /></label>
       </div>
       {error && <div className="error">{error}</div>}

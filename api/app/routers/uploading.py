@@ -2,7 +2,7 @@
 # Asking a driver for a document they hold, and taking it when it comes.
 #
 # Some requirements can only be answered by paper the driver has and the company does not - the
-# notice a state sent when a licence was acted against, a certificate from a course taken before
+# notice a state sent when a license was acted against, a certificate from a course taken before
 # they arrived. The office's alternatives were to stand over the driver or to wait, and in the
 # meantime nothing recorded that anybody had asked.
 #
@@ -18,7 +18,7 @@
 #
 # WHAT THE PAGE DOES NOT SAY
 #
-# The reason a document is wanted is often the driver's own licence history, and a page opened on a
+# The reason a document is wanted is often the driver's own license history, and a page opened on a
 # phone is read by whoever is standing behind them. So the page names the company and the document
 # and stops there - no requirement, no citation, no explanation of why it is being asked.
 ###################################################################################################
@@ -46,7 +46,7 @@ VALID_DAYS = 14
 MAX_BYTES = 20 * 1024 * 1024
 ACCEPTS = ("application/pdf", "image/jpeg", "image/png", "image/heic", "image/heif", "image/webp")
 
-# What there is no exemption from. A driver either holds a licence or does not drive, so offering
+# What there is no exemption from. A driver either holds a license or does not drive, so offering
 # "I am exempt" against one is offering an answer that cannot be true.
 NO_EXEMPTION = ("DRIVER_LICENSE", "PREEMP_DA_QUESTIONNAIRE")
 
@@ -65,8 +65,12 @@ def create(conn: Connection, accountid: str, driverid: str, code: str,
 
     Two live links for the same document is two ways to lose track of which was used, and a driver
     with two emails cannot tell which one the company meant."""
+    # The license is kept in driverlicenses and the questionnaire's answers in their own table, not
+    # the catalog, so their catalog rows being switched off (220) says nothing about whether a
+    # driver can be asked for one.
     kind = row(conn, "SELECT recordid, code, name FROM credentialtypes "
-                     "WHERE code = :c AND subject = 'driver' AND active = 1", c=code)
+                     "WHERE code = :c AND subject = 'driver' "
+                     "AND (active = 1 OR code IN ('DRIVER_LICENSE', :q))", c=code, q=QUESTIONNAIRE)
     if not kind:
         raise HTTPException(400, "That is not a document a driver can be asked for")
     run(conn, """
@@ -124,7 +128,7 @@ def what_is_being_asked(token: str, conn: Connection = Depends(get_conn)):
     held = _open_request(conn, token)
     return {"accountname": held["accountname"], "document": held["document"],
             "firstname": (held["firstname"] or "").title(),
-            "licence": held["credentialcode"] == "DRIVER_LICENSE",
+            "license": held["credentialcode"] == "DRIVER_LICENSE",
             "questionnaire": held["credentialcode"] == QUESTIONNAIRE,
             "exemptable": held["credentialcode"] not in NO_EXEMPTION}
 
@@ -146,7 +150,7 @@ def open_it(token: str, body: Prove, conn: Connection = Depends(get_conn)):
     sig = signatures.current(conn, held["accountid"], "driver", held["driverid"])
     return {"accountname": held["accountname"], "document": held["document"],
             "firstname": (held["firstname"] or "").title(),
-            "licence": held["credentialcode"] == "DRIVER_LICENSE",
+            "license": held["credentialcode"] == "DRIVER_LICENSE",
             "questionnaire": held["credentialcode"] == QUESTIONNAIRE,
             "signature": ({"typedname": sig["typedname"], "fontkey": sig["fontkey"]}
                           if sig else None),
@@ -246,11 +250,11 @@ async def _one_side(side: UploadFile | None) -> bytes | None:
     return page
 
 
-async def _take_licence(conn: Connection, request: Request, held: dict, number, state,
+async def _take_license(conn: Connection, request: Request, held: dict, number, state,
                         classification, endorsements, issued, expires, front, back):
-    """The licence the driver typed in, and the copy of it, filed the way the office files one.
+    """The license the driver typed in, and the copy of it, filed the way the office files one.
 
-    The front and the back become one PDF - see app/images.py - so what ends up on the licence is
+    The front and the back become one PDF - see app/images.py - so what ends up on the license is
     the card, not two snapshots that have to be read together."""
     number = (number or "").strip().upper()
     state = (state or "").strip().upper()[:2]
@@ -266,7 +270,7 @@ async def _take_licence(conn: Connection, request: Request, held: dict, number, 
 
     documentid = storage.keep(conn, held["accountid"], "documents", images.bind(pages),
                               "License.pdf", "application/pdf", None, origin=storage.DRIVER)
-    # The same licence typed in twice is the same licence, so it is corrected rather than doubled.
+    # The same license typed in twice is the same license, so it is corrected rather than doubled.
     already = row(conn, """
         SELECT recordid FROM driverlicenses
         WHERE accountid = :a AND driverid = :d AND state = :s AND number = :n
@@ -286,8 +290,8 @@ async def _take_licence(conn: Connection, request: Request, held: dict, number, 
         """, id=lid, a=held["accountid"], d=held["driverid"], n=number, s=state,
             c=(classification or None), e=(endorsements or None), i=issued, x=expires,
             doc=documentid)
-    # The first licence on file is the one they drive on until somebody says otherwise. A driver
-    # sending one in does not get to decide that, so an existing active licence is left alone.
+    # The first license on file is the one they drive on until somebody says otherwise. A driver
+    # sending one in does not get to decide that, so an existing active license is left alone.
     if not row(conn, "SELECT 1 AS x FROM driverlicenses WHERE accountid = :a AND driverid = :d"
                      " AND active = 1", a=held["accountid"], d=held["driverid"]):
         run(conn, "UPDATE driverlicenses SET active = 1 WHERE recordid = :id", id=lid)
@@ -327,7 +331,7 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
     _prove(held, dob, ssn)
     if exempt and held["credentialcode"] in NO_EXEMPTION:
         raise HTTPException(400, "There is no exemption from this one")
-    # A licence is not a document that happens to be a licence. It is a card with a number, a state,
+    # A license is not a document that happens to be a license. It is a card with a number, a state,
     # a class and two sides, and the file is the copy OF it - so the whole card is taken here, the
     # same as the office takes it, rather than a photograph with nothing recorded about what it is.
     if held["credentialcode"] == QUESTIONNAIRE:
@@ -335,7 +339,7 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
                                          priortestdate, priortesttype, priorrtd, signature,
                                          fontkey, file)
     if held["credentialcode"] == "DRIVER_LICENSE":
-        return await _take_licence(conn, request, held, number, state, classification,
+        return await _take_license(conn, request, held, number, state, classification,
                                    endorsements, issuedon, expireson, front, back)
     data = None
     if not exempt:
@@ -366,8 +370,8 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
         doc=documentid, on=issuedon, ends=expireson, ex=1 if exempt else 0,
         by=name[:128] or None,
         n="The driver says they are exempt" if exempt else "Sent by the driver")
-    # A licence copy is not a credential filed beside the licence - it is the copy OF the licence,
-    # and the requirement reads it off the licence row. Sent any other way it would land on the file
+    # A license copy is not a credential filed beside the license - it is the copy OF the license,
+    # and the requirement reads it off the license row. Sent any other way it would land on the file
     # and the requirement would go on saying nothing is on file.
     if documentid and held["credentialcode"] == "DRIVER_LICENSE":
         run(conn, """

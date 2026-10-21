@@ -1,5 +1,5 @@
-import { Fragment, useLayoutEffect, useRef, useState } from 'react'
-import { Loader2, MoreHorizontal, Plus } from 'lucide-react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { Loader2, Plus } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { Loading, useLoad } from '../components/ui.jsx'
 import { Modal } from '../admin/common.jsx'
@@ -39,90 +39,8 @@ function standing(x) {
   return ['st-active', 'In force']
 }
 
-// The answers, built from the payer types rather than written out - so a new type appears
-// here the day it is added, at both scopes, with nothing else touched.
-//
-// Whole groups first, then the named subsets, with a rule between. Interleaving them put
-// "All Commercial Payers" between the two broker lines, so choosing a scope meant reading
-// every other line to find its pair.
-function applyOptions(categories, plural) {
-  const many = (c) => (plural && plural[c]) || `${categories[c]}s`
-  return [
-    [['private', 'Private Pay'],
-     ...Object.keys(categories).map((c) => [`all:${c}`, `All ${many(c)}`])],
-    Object.keys(categories).map((c) => [`select:${c}`, `Select ${many(c)}`]),
-  ]
-}
-
-// Which of them a saved schedule already is.
-function applyOf(held, payers) {
-  // Read off the coverage, not off whether it has been saved - a copy carries the coverage
-  // and no record id, and keying on the id made every copy come back as private pay.
-  if (held.privatepay) return 'private'
-  const kinds = String(held.payerkinds || '').split(',').filter(Boolean)
-  if (kinds.length) return `all:${kinds[0]}`
-  const ids = held.payerids || []
-  if (!ids.length) return 'private'
-  const payer = payers.find((p) => p.recordid === ids[0])
-  return `select:${payer ? payer.category : 'broker'}`
-}
-
-// Choosing which payers a schedule covers. One list, the house grid, paged - a company
-// with two hundred payers gets the same dialog as one with four.
-//
-// The paging is local state, NOT useGridParams: that keeps page and sort in the address bar,
-// which is right for a page's own grid and wrong here - this dialog opens on top of the fee
-// schedule grid, and the two would be reading and writing the same ?page.
-function PayerChoice({ title, options, chosen, onClose, onDone }) {
-  const [picked, setPicked] = useState(chosen)
-  const [page, setPage] = useState(1)
-  // The same number the pager's own control starts on - mine said 10 while the box said 25,
-  // which is one setting with two values.
-  const [pagesize, setPagesize] = useState(25)
-  const [dir, setDir] = useState('asc')
-  const toggle = (id) => setPicked(picked.includes(id)
-    ? picked.filter((x) => x !== id) : [...picked, id])
-  const sorted = [...options].sort(
-    (a, b) => a[1].localeCompare(b[1]) * (dir === 'desc' ? -1 : 1))
-  const slice = sorted.slice((page - 1) * pagesize, page * pagesize)
-  const all = options.map(([id]) => id)
-  // Not `tall`: a list of twelve in a dialog held at 90vh is mostly empty floor. It takes
-  // the height it needs, and the grid is capped so a long list scrolls instead.
-  return (
-    <Modal title={title} onClose={onClose} width={760} flush
-      footer={<>
-        <div className="footactions">
-          <button type="button"
-            onClick={() => setPicked(picked.length === all.length ? [] : all)}>
-            {picked.length === all.length ? 'Clear All' : 'Select All'}
-          </button>
-        </div>
-        <button type="button" onClick={onClose}>Cancel</button>
-        <button type="button" className="primary" onClick={() => onDone(picked)}>Done</button>
-      </>}>
-      <DataGrid className="pickgrid"
-        columns={[{ id: 'pick', label: '', width: 54, sortable: false },
-                  { id: 'name', label: 'Payer' }]}
-        rows={slice}
-        rowKey={(r) => r[0]}
-        sort="name" dir={dir}
-        onSort={(_id, next) => { setDir(next); setPage(1) }}
-        pager={{ total: options.length, page, pagesize, noun: 'payer',
-                 onPage: setPage,
-                 onPageSize: (n) => { setPagesize(n); setPage(1) } }}
-        onRowClick={(r) => toggle(r[0])}
-        empty="No payers of this type yet."
-        cells={(r) => [
-          // Read-only: the row is what toggles, so the box must not take the click twice.
-          <input type="checkbox" checked={picked.includes(r[0])} readOnly tabIndex={-1} />,
-          r[1],
-        ]} />
-    </Modal>
-  )
-}
-
 const BLANK = {
-  name: '', applyto: 'private', payerids: [],
+  name: '', payertype: '',
   effectivefrom: '',
   effectiveto: '', note: '', active: true,
 }
@@ -218,12 +136,7 @@ export default function FeeSchedules() {
     // the whole page scrolling and the pager drifting off.
     <div className="fill">
       <div className="pagehead">
-        <div>
-          <h1>Fee Schedules</h1>
-          <div className="muted">
-            What this company charges, and what each payer contracts to pay it.
-          </div>
-        </div>
+        <div><h1>Fee Schedules</h1></div>
         {/* No seeded rate line. It made sense when a line was edited in the grid; now the
             line is written in a dialog, the seed just put a nameless $0.00 row in a table
             whose own rule is that every line has a name. */}
@@ -259,10 +172,7 @@ export default function FeeSchedules() {
         onRowClick={async (x) => setEditing(await api.get(`/company/rates/${x.recordid}`))}
         empty="No fee schedule yet. Until one exists a booked trip carries no price."
         cells={(x) => [
-          <b>{x.name}<span className="muted"> · {x.privatepay ? 'Private Pay'
-            : x.payerkinds
-              ? `All ${(data.categoryplural || {})[x.payerkinds] || x.payerkinds}`
-              : x.payernames || 'nobody yet'}</span></b>,
+          <b>{x.name}</b>,
           data.billing[x.billingmethod] || '',
           `${date(x.effectivefrom)} - ${x.effectiveto ? date(x.effectiveto) : 'open'}`,
           ((([cls, word]) => <span className={cls}>{word}</span>)(standing(x))),
@@ -270,7 +180,9 @@ export default function FeeSchedules() {
           <span className="rowacts">
             <button type="button" className="linkbtn edit"
               onClick={(e) => { e.stopPropagation(); start(x, 'copy') }}>Copy</button>
-            <button type="button" className="linkbtn edit"
+            {/* Nothing to hand over from a schedule that governs nothing. Copy still
+                works - its rates are worth reusing whether or not it is in use. */}
+            <button type="button" className="linkbtn edit" disabled={!x.active}
               onClick={(e) => { e.stopPropagation(); start(x, 'supersede') }}>
               Supersede
             </button>
@@ -309,12 +221,8 @@ export default function FeeSchedules() {
 function ScheduleEditor({ data, held, onClose, onSaved }) {
   const [f, setF] = useState({
     ...BLANK, ...held,
-    // Which of the three this schedule already is, read off the record.
-    // Which of the seven this schedule already is. "All Transportation Brokers" and
-    // "Select Transportation Brokers" are one payer type at two scopes, which is why they
-    // are one choice rather than two questions.
-    applyto: applyOf(held, data.payers || []),
-    payerids: held.payerids || [],
+    // Its payer type: the passenger, or one kind of payer.
+    payertype: held.privatepay ? 'private' : (held.payerkinds || '').split(',')[0] || '',
     effectivefrom: String(held.effectivefrom || '').slice(0, 10) || today(),
     effectiveto: String(held.effectiveto || '').slice(0, 10),
     note: held.note || '',
@@ -339,7 +247,6 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
   // the dialog is the gate: there is no half-finished row to leave lying in the grid, so
   // nothing has to be disabled to stop a stack of them building up.
   const [writing, setWriting] = useState(null)
-  const [choosing, setChoosing] = useState(false)
   // The header's spacer has to be exactly as wide as the rows' scrollbar, or every heading
   // sits a few pixels left of its column. Measured from this table's own body rather than
   // guessed: it differs by browser, by zoom, and is 0 where scrollbars float over content.
@@ -365,10 +272,8 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
     setWriting(null)
   }
 
-  const missing = [!f.name.trim() && 'a name',
-                   !f.effectivefrom && 'the date it takes effect',
-                   f.applyto.startsWith('select:') && !f.payerids.length
-                     && 'at least one payer']
+  const missing = [!f.name.trim() && 'a name', !f.payertype && 'the payer type',
+                   !f.effectivefrom && 'the date it takes effect']
     .filter(Boolean)
 
   const save = async () => {
@@ -379,9 +284,7 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
         name: f.name.trim(),
         // Set only by Supersede. The API ends that schedule the day before this one starts.
         supersedes: held.supersedes || null,
-        privatepay: f.applyto === 'private',
-        payerkinds: f.applyto.startsWith('all:') ? [f.applyto.slice(4)] : [],
-        payerids: f.applyto.startsWith('select:') ? f.payerids : [],
+        payertype: f.payertype,
         effectivefrom: f.effectivefrom || null, effectiveto: f.effectiveto || null,
         active: f.active,
         rates: lines.filter((l) => l.amount !== '').map((l) => ({
@@ -436,93 +339,29 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
           {/* Active is not a field of a schedule - it is an act on one, and it lives on
               the grid row beside Copy and Supersede. Here it would be a toggle somebody can
               flip while editing rates. */}
-          <label className="field span-6">Name *
+          {/* A price list of one payer type. Which payer pays under it is set on the payer, and
+              a payer is offered only the schedules of its own type. */}
+          <label className="field span-3">Name *
             <input value={f.name} className="upper"
               onChange={(e) => setF({ ...f, name: e.target.value.toUpperCase() })} />
           </label>
-          {/* Who this applies to. A rule, not a list: "all brokers" is one choice that
-              covers seventy-five of them and covers the seventy-sixth the day it is added.
-              Naming payers is the exception, and it wins over the kind. */}
-          <label className="field span-2">Applies To
-            <div className="withpick">
-            <select value={f.applyto} onChange={(e) => {
-              const applyto = e.target.value
-              setF({ ...f, applyto,
-                // Switching type drops payers of the old one - they are not offered any
-                // more, and a saved schedule should not hold names its own dropdown cannot
-                // show.
-                payerids: f.payerids.filter((id) => (data.payers || []).some(
-                  (p) => p.recordid === id && `select:${p.category}` === applyto)),
-              })
-            }}>
-              {applyOptions(data.categories, data.categoryplural)
-                .map((group, n) => (
-                  <Fragment key={n}>
-                    {n > 0 && <hr />}
-                    {group.map(([v, label]) => (
-                      <option key={v} value={v}>{label}</option>
-                    ))}
-                  </Fragment>
-                ))}
+          <label className="field span-3">Payer Type *
+            <select value={f.payertype} onChange={set('payertype')}>
+              <option value="">Choose</option>
+              <option value="private">Private Pay</option>
+              {Object.entries(data.categories).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
-            {/* Always there, off where there is nothing to choose - "All Transportation
-                Brokers" has already answered it. A control that appears and disappears
-                moves the fields beside it; one that greys out does not. */}
-            <button type="button" className="pickbtn" title="Choose payers"
-              disabled={!f.applyto.startsWith('select:')}
-              onClick={() => setChoosing(true)}>
-              <MoreHorizontal size={16} />
-            </button>
-            </div>
           </label>
-          {/* On the same row as who it applies to, and the same width whatever is chosen -
-              they shrank to make room for Billed as, which no longer exists.
-              They are how one price list replaces another: a schedule is not edited when
-              prices change, the old one is given an end date and a new one starts the next
-              day, so a trip carried in February keeps February's price for ever. */}
-          <label className="field span-2">Takes effect *
+          {/* How one price list replaces another: a schedule is not edited when prices change,
+              the old one is given an end date and a new one starts the next day, so a trip
+              carried in February keeps February's price for ever. */}
+          <label className="field span-3">Takes Effect *
             <input type="date" value={f.effectivefrom} onChange={set('effectivefrom')} />
           </label>
-          <label className="field span-2">Runs until
+          <label className="field span-3">Runs Until
             <input type="date" value={f.effectiveto} onChange={set('effectiveto')} />
           </label>
         </div>
-
-        {/* Always, once a "Select ..." is chosen. A section that appears only after the
-            first payer is added leaves the dialog saying nothing about a choice that has
-            not been made yet. */}
-        {f.applyto.startsWith('select:') && (
-          <section>
-            {/* Headed like Rates below it, because it is the same kind of thing: a short
-                list the schedule carries. The choosing happens in the dialog behind the
-                ellipsis; this is only what came back. */}
-            <h3 className="formsection">Payers</h3>
-            {f.payerids.length === 0 && (
-              <p className="needpayers">Please Select The Connected Payers</p>
-            )}
-            {f.payerids.length > 0 && (
-            <table className="residencetable recordtable coverstable">
-              <tbody>
-                {f.payerids.map((id) => {
-                  const payer = (data.payers || []).find((p) => p.recordid === id)
-                  return (
-                    <tr key={id}>
-                      <td className="growcol">{payer ? payer.name : id}</td>
-                      <td className="actions">
-                        <button type="button" className="linkbtn"
-                          onClick={() => setF({ ...f,
-                            payerids: f.payerids.filter((x) => x !== id) })}>
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-            )}
-          </section>
-        )}
 
         {/* One grid. Service is a column on the line, not a heading above a table of its
             own - the rows are the same shape whatever they price, and splitting them into
@@ -535,7 +374,7 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
             {/* Read, not edited. A row of pickers and boxes for every line made a schedule of
                 twenty charges a wall of controls, and the figures - the thing somebody opens
                 this to check - were the hardest part of it to see. The line is written in a
-                dialog and read here, the way a licence is. */}
+                dialog and read here, the way a license is. */}
             <table className="residencetable recordtable ratetable">
               {/* Amount, unit and loaded are one column, because they are one sentence:
                   "$3.50 per loaded mile" is the rate, and split across three cells it has to
@@ -580,14 +419,6 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
       </Modal>
       {/* Beside the schedule dialog, not inside its body: a second backdrop that is a sibling
           of the first stacks above it by document order, with no z-index argument to have. */}
-      {choosing && (
-        <PayerChoice title="Choose Payers" chosen={f.payerids}
-          options={(data.payers || [])
-            .filter((p) => `select:${p.category}` === f.applyto)
-            .map((p) => [p.recordid, p.name])}
-          onClose={() => setChoosing(false)}
-          onDone={(payerids) => { setF({ ...f, payerids }); setChoosing(false) }} />
-      )}
       {writing && (
         <RateDialog data={data} line={writing.line} isnew={writing.at === null}
           onClose={() => setWriting(null)} onKeep={keep} />
@@ -596,7 +427,7 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
   )
 }
 
-// One rate line, written in a dialog. The same shape as the licence dialog: the fields in a
+// One rate line, written in a dialog. The same shape as the license dialog: the fields in a
 // profileform, Cancel and the finishing action in the footer, and the cursor already in the
 // first field because Modal puts it there.
 function RateDialog({ data, line, isnew, onClose, onKeep }) {

@@ -38,7 +38,7 @@ const STEPS = [
 ]
 
 // The Clearinghouse is queried about commercial drivers, and a commercial driver is one holding a
-// commercial licence. The card decides it: nobody drives a vehicle that needs a CDL without one, and
+// commercial license. The card decides it: nobody drives a vehicle that needs a CDL without one, and
 // an applicant cannot know what the company runs, so asking them was never the better evidence.
 function willDriveCmv(state) {
   const two = state.data?.steps?.['2'] || {}
@@ -47,7 +47,7 @@ function willDriveCmv(state) {
 
 const applies = (s, state) => !s.appliesif || s.appliesif(state)
 
-// The licence in force: the one issued most recently, which is what a commercial driver is judged on.
+// The license in force: the one issued most recently, which is what a commercial driver is judged on.
 const COMMERCIAL = ['A', 'B', 'C']
 const currentLicense = (licenses) => [...licenses].sort((a, b) => (b.issued || '').localeCompare(a.issued || ''))[0] || {}
 
@@ -107,11 +107,11 @@ const REQUIRED = {
   ],
 }
 
-// A driver who holds the licence and will actually drive a commercial vehicle: the medical card
+// A driver who holds the license and will actually drive a commercial vehicle: the medical card
 // questions only apply to them.
 const cmvDriver = (v) => (v.licenses || []).some((l) => COMMERCIAL.includes((l.classification || '').toUpperCase()))
 
-// What a licence can be issued as, and the endorsements that can sit on it.
+// What a license can be issued as, and the endorsements that can sit on it.
 
 
 
@@ -361,7 +361,7 @@ function Wizard({ token, state, setState }) {
       }
       // And the application itself is signed before anything else is asked.
       if (step === 1 && !state.signed?.APPLICATION) problems.signature = 'The application must be signed'
-      // The licence itself, and a copy of both sides of it, before the licence step is left behind.
+      // The license itself, and a copy of both sides of it, before the license step is left behind.
       if (step === 2) {
         if (!state.uploads?.license_front) problems.license_front = 'A copy of the front is required'
         if (!state.uploads?.license_back) problems.license_back = 'A copy of the back is required'
@@ -834,7 +834,7 @@ function AnswerStep({ step, v, setV, bad, setBad, call, state, refresh, token })
             </div>
           </div>
 
-          {/* The medical card is asked of a commercial driver, and the licences above say whether
+          {/* The medical card is asked of a commercial driver, and the licenses above say whether
               this is one - so it appears as soon as a commercial class is listed. */}
           <SlideDown open={cmvDriver(v)} className="span-6">
             <hr className="formrule" />

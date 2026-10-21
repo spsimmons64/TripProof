@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
-import { AlertTriangle, Building2, Car, CreditCard, DollarSign, FileCheck2, FileText, FlaskConical, Gauge, Handshake, ListChecks, Route as RouteIcon, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
+import { AlertTriangle, Building2, CalendarClock, Car, CreditCard, DollarSign, FileCheck2, FileText, FlaskConical, Gauge, Handshake, ListChecks, Route as RouteIcon, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
 import { api, auth } from './lib/api.js'
 import { setDisplayTimeZone } from './lib/format.js'
 import TopBar from './components/TopBar.jsx'
@@ -15,8 +15,11 @@ import SignDocument from './pages/SignDocument.jsx'
 import UploadDocument from './pages/UploadDocument.jsx'
 import EmployerReply from './pages/EmployerReply.jsx'
 import RoadTest from './pages/RoadTest.jsx'
+import { typedInUpperCase } from './lib/casing.js'
 import Dashboard from './pages/Dashboard.jsx'
 import Trips from './pages/Trips.jsx'
+import Dispatch from './pages/Dispatch.jsx'
+import DriverApp from './driver/DriverApp.jsx'
 import TripDetail from './pages/TripDetail.jsx'
 import Import from './pages/Import.jsx'
 import Drivers from './pages/Drivers.jsx'
@@ -41,7 +44,7 @@ function Shell({ user, children }) {
   const nav = [
     [null, [
       ['/', Gauge, 'Dashboard'],
-      ['/trips', RouteIcon, 'Trips'],
+      ['/dispatch', CalendarClock, 'Dispatch'],
       ['/drivers', Users, 'Drivers'],
       ['/vehicles', Car, 'Vehicles'],
     ]],
@@ -58,10 +61,10 @@ function Shell({ user, children }) {
       // What the company charges and what each payer pays it. Named "Fee Schedules" here
       // and `payerrates` in the schema, because the table called feeschedule is TripProof's
       // own charges to its customers and the two must never be taken for one another.
-      // Who the company bills, then what it bills them. The payers come first
-      // because a schedule has to name one.
-      ['/payers', Handshake, 'Payers'],
+      // The price lists first, then who pays under them: a payer's state line names its
+      // schedule, so the schedule has to exist before it can be chosen.
       ['/rates', DollarSign, 'Fee Schedules'],
+      ['/payers', Handshake, 'Payers'],
       ...(billingAccess ? [['/users', Users, 'Users']] : []),
     ]],
   ]
@@ -139,8 +142,21 @@ function StaffBanner({ user }) {
 }
 
 export default function App() {
+  // The driver's app is a different application that happens to be served from the same place:
+  // its own session, its own API, no office shell around it. Answered before anything else is
+  // decided, so a phone never loads the dispatcher's world to throw it away.
+  const path = window.location.pathname
+  if (path === '/drive' || path.startsWith('/drive/')) return <DriverApp />
   const [user, setUser] = useState(undefined)
   const [token, setToken] = useState(auth.get())
+
+  // Free text is typed and stored UPPER CASE and email addresses lower case, in every form there
+  // is. Listened for at the document in the capture phase, so the value is already cased by the
+  // time it reaches the field's own onChange - one rule, rather than one per field.
+  useEffect(() => {
+    document.addEventListener('input', typedInUpperCase, true)
+    return () => document.removeEventListener('input', typedInUpperCase, true)
+  }, [])
 
   useEffect(() => {
     if (!token) { setUser(null); return }
@@ -227,6 +243,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/review" element={<ToReview />} />
           <Route path="/users" element={<AccountUsers />} />
+          <Route path="/dispatch" element={<Dispatch />} />
           <Route path="/trips" element={<Trips />} />
           <Route path="/trips/:id" element={<TripDetail />} />
           <Route path="/import" element={<Import />} />

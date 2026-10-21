@@ -13,7 +13,7 @@ export default function CredentialTypes() {
   return (
     <div className="stack">
       <div className="pagehead">
-        <div><h1>Credential types</h1></div>
+        <div><h1>Document Types</h1></div>
         {editable && <button className="primary" onClick={() => setEditing({})}><Plus size={14} /> New type</button>}
       </div>
       {['driver', 'vehicle', 'company'].map((s) => (
@@ -53,21 +53,21 @@ function TypeForm({ type, onClose, onSaved }) {
     onSaved()
   })
   return (
-    <Modal title={type ? `Edit ${type.name}` : 'New Credential Type'} onClose={onClose}
+    <Modal title={type ? `Edit ${type.name}` : 'New Document Type'} onClose={onClose}
       footer={<><button onClick={onClose}>Cancel</button><button className="primary" onClick={f.onSubmit} disabled={f.busy}>Save</button></>}>
       <form className="form" onSubmit={f.onSubmit}>
         <label className="field">Code *<input required disabled={!!type} value={f.values.code} onChange={f.set('code')} /></label>
         <label className="field">Name *<input required value={f.values.name} onChange={f.set('name')} /></label>
-        <label className="field">Held by
+        <label className="field">Held By
           <select disabled={!!type} value={f.values.subject} onChange={f.set('subject')}>
             <option value="driver">Driver</option><option value="vehicle">Vehicle</option><option value="company">Company</option>
           </select>
         </label>
         <label className="field">Category<input value={f.values.category} onChange={f.set('category')} /></label>
-        <label className="field">Age limit (days)<input type="number" min="1" value={f.values.maxagedays} onChange={f.set('maxagedays')} /></label>
-        <label className="field">Good for (days) when no expiry printed<input type="number" min="1" value={f.values.defaultvaliddays} onChange={f.set('defaultvaliddays')} /></label>
+        <label className="field">Age Limit (Days)<input type="number" min="1" value={f.values.maxagedays} onChange={f.set('maxagedays')} /></label>
+        <label className="field">Good For (Days) When No Expiry Printed<input type="number" min="1" value={f.values.defaultvaliddays} onChange={f.set('defaultvaliddays')} /></label>
       </form>
-      <label className="field">Description (shown when entering a credential)<input value={f.values.description} onChange={f.set('description')} /></label>
+      <label className="field">Description (Shown When Entering A Credential)<input value={f.values.description} onChange={f.set('description')} /></label>
       <div className="row">
         <label className="check"><input type="checkbox" checked={f.values.hasamount} onChange={f.set('hasamount')} /> Carries a dollar limit (insurance)</label>
         <label className="check"><input type="checkbox" checked={f.values.active} onChange={f.set('active')} /> Active</label>

@@ -7,6 +7,7 @@
 #              finished an online application, imports waiting to be accepted, drivers/vehicles seen
 #              only in trips, audit requests coming due
 ###################################################################################################
+import json
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends
@@ -14,12 +15,17 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app import events
+from app.routers import driverapp
 from app.db import get_conn, localnow, rows, run_many, utcnow
 from app.security import current_user
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 MAX_ITEMS = 50
+
+# How often an unacknowledged problem asks again, in minutes. Short enough that a dispatcher who
+# looked away cannot lose it; long enough that it is not the reason they stop listening.
+NAG = 5
 
 
 def _note(key, level, title, detail=None, link=None, at=None) -> dict:
@@ -65,6 +71,36 @@ def _customer(conn: Connection, user: dict) -> list[dict]:
     today = localnow(user["timezone"]).date()
     out = []
 
+    # FIRST, above everything else on this list, because it is the only one with somebody standing
+    # at the side of a road waiting for an answer. A credential lapsing in three weeks can be read
+    # after lunch; a driver who has just reported a flat tyre on the way to a pickup cannot.
+    now = utcnow()
+    for i in rows(conn, """
+        SELECT i.recordid, i.kind, i.note, i.raisedon, i.acknowledgedon, t.externalid, t.passenger,
+               TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername
+        FROM tripissues i
+        JOIN trips t ON t.recordid = i.tripid AND t.deleted IS NULL
+        LEFT JOIN drivers d ON d.recordid = i.driverid
+        WHERE i.accountid = :a AND i.resolvedon IS NULL
+        ORDER BY i.raisedon DESC LIMIT 25
+    """, a=acct):
+        who = (i["drivername"] or "A driver").strip()
+        waiting = int(max(0, (now - i["raisedon"]).total_seconds()) // 60)
+        # It goes on asking until somebody says they have seen it. Every notification else on this
+        # list is read once and done with, because nothing is waiting on it; this one has a person
+        # at the side of a road, so its key moves on every NAG minutes and the bell rings again.
+        # Pressing Seen It stops the noise - which is what acknowledging a thing is for.
+        key = (f"issue:{i['recordid']}" if i["acknowledgedon"]
+               else f"issue:{i['recordid']}:{waiting // NAG}")
+        since = ("just now" if waiting < 2 else f"{waiting} minutes ago" if waiting < 90
+                 else f"{waiting // 60} hours ago")
+        out.append(_note(key, "bad",
+                         f"{who}: {driverapp.ISSUES.get(i['kind'], 'a problem')}",
+                         " · ".join(x for x in (i["note"],
+                                                f"{i['externalid']} · {i['passenger']}",
+                                                f"reported {since}") if x),
+                         "/dispatch?state=attention", i["raisedon"]))
+
     risk = rows(conn, """
         SELECT COUNT(*) AS n, COALESCE(SUM(billedamount), 0) AS amt FROM tripexposure
         WHERE accountid = :a AND billingstatus = 'unbilled'
@@ -95,6 +131,72 @@ def _customer(conn: Connection, user: dict) -> list[dict]:
         out.append(_note(f"expiring:{c['recordid']}", "warn" if days > 7 else "bad",
                          f"{c['holder']}: {c['typename']} expires {'today' if days == 0 else f'in {days} days'}",
                          f"Expires {c['expireson']:%m/%d/%Y}. Trips after that will fail until it is renewed.", link))
+
+    # A screening that has come back and not been read.
+    #
+    # It arrives on its own - fetched by the sweep, or by a webhook - so nobody in the office knows
+    # unless they are told. Until somebody reads it the driver stays blocked by a requirement that
+    # has in fact been met, which is the worst kind of waiting: the work is done and nothing
+    # happens because of it.
+    for r in rows(conn, """
+        SELECT r.recordid, r.driverid, r.receivedon, r.tier, r.outcome,
+               TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername
+        FROM driverreports r
+        JOIN drivers d ON d.recordid = r.driverid AND d.deleted IS NULL
+        WHERE r.accountid = :a AND r.code = 'BACKGROUND_SCREENING'
+          AND r.receivedon IS NOT NULL AND r.reviewstate = 'pending'
+        ORDER BY r.receivedon DESC LIMIT 25
+    """, a=acct):
+        name = (r["drivername"] or "A driver").strip().title()
+        out.append(_note(f"screening:{r['recordid']}", "info",
+                         f"{name}: the background check has come back",
+                         "Nobody has read it yet. The driver stays short of this requirement "
+                         "until somebody does.",
+                         f"/drivers/{r['driverid']}", r["receivedon"]))
+
+    # An assigned trip in the coming week whose driver no longer qualifies for it, by the newest
+    # check on that leg. Something lapsed or came back since it was booked, and the trip is still
+    # on the board with their name on it.
+    for e in rows(conn, """
+        SELECT e.legid, e.blockers, e.evaluatedfor, t.externalid,
+               TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername
+        FROM tripeligibility e
+        JOIN (SELECT legid, MAX(evaluatedon) AS latest FROM tripeligibility
+              WHERE accountid = :a AND legid IS NOT NULL GROUP BY legid) m
+          ON m.legid = e.legid AND m.latest = e.evaluatedon
+        JOIN triplegs l ON l.recordid = e.legid AND l.driverid = e.driverid
+        JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL AND t.cancelledon IS NULL
+        LEFT JOIN drivers d ON d.recordid = e.driverid
+        WHERE e.accountid = :a AND e.decision = 'notqualified'
+          AND l.pickupat BETWEEN UTC_TIMESTAMP() AND UTC_TIMESTAMP() + INTERVAL 7 DAY
+        ORDER BY l.pickupat LIMIT 25
+    """, a=acct):
+        why = (json.loads(e["blockers"] or "[]") or [{}])[0]
+        out.append(_note(f"tripcheck:{e['legid']}:{e['evaluatedfor']:%Y%m%d}", "bad",
+                         f"Trip {e['externalid']}: {(e['drivername'] or 'the driver').title()} "
+                         f"no longer qualifies",
+                         " - ".join(x for x in (why.get("name"), why.get("reason")) if x),
+                         "/dispatch", e["evaluatedfor"]))
+
+    # A driving record that has come back and not been read. The same reason as the screening above:
+    # until somebody reads it, the driver stays short of the requirement it answers.
+    for m in rows(conn, """
+        SELECT m.recordid, m.driverid, m.receivedon, l.state, l.number,
+               TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername
+        FROM drivermvrs m
+        JOIN drivers d ON d.recordid = m.driverid AND d.deleted IS NULL
+        LEFT JOIN driverlicenses l ON l.recordid = m.licenseid
+        WHERE m.accountid = :a AND m.receivedon IS NOT NULL AND m.cancelledon IS NULL
+          AND m.norecord = 0 AND m.reviewstate = 'pending'
+        ORDER BY m.receivedon DESC LIMIT 25
+    """, a=acct):
+        name = (m["drivername"] or "A driver").strip().title()
+        lic = f' for {m["state"]} {m["number"]}' if m["state"] else ""
+        out.append(_note(f"mvr:{m['recordid']}", "info",
+                         f"{name}: the motor vehicle record{lic} has come back",
+                         "Nobody has read it yet. The driver stays short of this requirement "
+                         "until somebody does.",
+                         f"/drivers/{m['driverid']}", m["receivedon"]))
 
     # A driver who has finished their online application and is waiting for the office to look.
     for d in rows(conn, """

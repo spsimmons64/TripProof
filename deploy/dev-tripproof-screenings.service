@@ -1,0 +1,25 @@
+# Collecting background screenings that have finished.
+#
+# backgroundchecks.com publishes no way to register a callback through their API, so TripProof
+# asks rather than waits. Without this the only thing that moves a finished report onto a driver's
+# file is somebody opening the driver and pressing a button - and a report can sit complete at the
+# vendor for a week while the office believes it is still running.
+[Unit]
+Description=TripProof background screening collection (dev.tripproofonline.com)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=spsimmons
+Group=www-data
+UMask=0027
+WorkingDirectory=/applications/dev.tripproofonline.com/api
+EnvironmentFile=/applications/dev.tripproofonline.com/.env
+ExecStart=/applications/dev.tripproofonline.com/venv/bin/python -m app.cli collect-screenings
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/applications/dev.tripproofonline.com/storage

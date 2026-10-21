@@ -92,7 +92,7 @@ function PayerDialog({ payer, categories, editable, onClose, onSaved }) {
             <label className="field span-2">ZIP<input value={f.values.zip} onChange={f.set('zip')} /></label>
             <label className="field span-2">Phone<input value={f.values.phone} onChange={f.set('phone')} /></label>
             <label className="field span-2">Fax<input value={f.values.fax} onChange={f.set('fax')} /></label>
-            <label className="field span-6">Contact email<input value={f.values.contactemail} onChange={f.set('contactemail')} /></label>
+            <label className="field span-6">Contact Email<input value={f.values.contactemail} onChange={f.set('contactemail')} /></label>
             <label className="field span-6">Notes<textarea value={f.values.notes} onChange={f.set('notes')} rows={3} /></label>
             <label className="check span-6"><input type="checkbox" checked={f.values.active} onChange={f.set('active')} /> Active</label>
           </form>

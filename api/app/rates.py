@@ -13,8 +13,11 @@ somebody deliberately re-prices it.
 
 from datetime import date
 
+from decimal import Decimal
+
 from sqlalchemy.engine import Connection
 
+from app import payerlines
 from app.db import newid, row, rows, run, utcnow
 from app.dispatch import SERVICE
 
@@ -88,28 +91,22 @@ def billed_as(schedule: dict) -> str:
     """How this schedule is billed. One answer, every time, from who it applies to."""
     if schedule.get("privatepay"):
         return BILLED_AS[None]
-    kind = (schedule.get("payerkinds") or "").split(",")[0] or schedule.get("payercategory")
+    kind = schedule.get("payercategory")
     return BILLED_AS.get(kind, "invoice")
 
 
 def schedules(conn: Connection, accountid: str) -> list[dict]:
     """Every schedule this company holds, newest contract first."""
     out = rows(conn, """
-        SELECT s.recordid, s.name, s.privatepay, s.payerkinds, s.contractref,
+        SELECT s.recordid, s.name, s.contractref,
                s.effectivefrom,
                s.effectiveto, s.note, s.active, s.updated,
-               -- Who it prices, read as names. A schedule covering four facilities should
-               -- say so in the list without the list opening four things.
-               (SELECT GROUP_CONCAT(p.name ORDER BY p.name SEPARATOR ', ')
-                  FROM schedulepayers sp JOIN payers p ON p.recordid = sp.payerid
-                 WHERE sp.scheduleid = s.recordid) AS payernames,
-               (SELECT COUNT(*) FROM schedulepayers sp
-                 WHERE sp.scheduleid = s.recordid) AS payercount,
-               -- The payers on a schedule are all of one type, which is what the screen
-               -- offers; this is that type, for working out how it is billed.
-               (SELECT MIN(p.category) FROM schedulepayers sp
-                  JOIN payers p ON p.recordid = sp.payerid
-                 WHERE sp.scheduleid = s.recordid) AS payercategory,
+               -- How many payers, and state lines, are paid under it.
+               (SELECT COUNT(*) FROM accountpayers ap
+                 WHERE ap.scheduleid = s.recordid) + (SELECT COUNT(*) FROM companycontracts c
+                 WHERE c.scheduleid = s.recordid) AS payercount,
+               -- Its payer type, which is also how it is billed.
+               s.privatepay, s.payerkinds AS payercategory,
                (SELECT COUNT(*) FROM payerrates r WHERE r.scheduleid = s.recordid) AS rates
         FROM payerschedules s
         WHERE s.accountid = :a
@@ -126,16 +123,8 @@ def schedule(conn: Connection, accountid: str, scheduleid: str) -> dict | None:
     """, i=scheduleid, a=accountid)
     if not got:
         return None
-    got["payercategory"] = row(conn, """
-        SELECT MIN(p.category) AS category FROM schedulepayers sp
-        JOIN payers p ON p.recordid = sp.payerid WHERE sp.scheduleid = :i
-    """, i=scheduleid)["category"]
+    got["payercategory"] = got["payerkinds"]
     got["billingmethod"] = billed_as(got)
-    got["payerids"] = [r["payerid"] for r in rows(conn, """
-        SELECT sp.payerid FROM schedulepayers sp
-        JOIN payers p ON p.recordid = sp.payerid
-        WHERE sp.scheduleid = :i ORDER BY p.name
-    """, i=scheduleid)]
     got["rates"] = rows(conn, """
         SELECT * FROM payerrates WHERE scheduleid = :i ORDER BY sortorder, ratetype
     """, i=scheduleid)
@@ -143,113 +132,141 @@ def schedule(conn: Connection, accountid: str, scheduleid: str) -> dict | None:
 
 
 def in_force(conn: Connection, accountid: str, *, payerid: str | None = None,
-             on=None) -> dict | None:
+             on=None, state: str | None = None) -> dict | None:
     """The schedule that governs a trip on a given day.
 
-    Keyed on the payer, and on nothing else. No payer means the passenger is paying, which is
-    why private pay needs no special case: it is the schedule with nobody else on it.
-
-    One answer, not a list: two schedules covering the same payer on the same day is a
-    contradiction, and the most recently effective one wins rather than the question being
-    left open at the moment somebody needs a price.
+    Read off the payer's line for the state the trip is picked up in - no payer is the passenger,
+    whose line is private pay. Where the pickup does not say, the company's home state stands in.
+    The schedule is the line's own where that state is paid differently, otherwise the payer's.
+    Where that schedule replaces another and has not started yet, the one it replaces prices the
+    day.
     """
-    if payerid is None:
-        return row(conn, """
-            SELECT s.* FROM payerschedules s
-            WHERE s.accountid = :a AND s.active = 1 AND s.privatepay = 1
-              AND s.effectivefrom <= :on
-              AND (s.effectiveto IS NULL OR s.effectiveto >= :on)
-            ORDER BY s.effectivefrom DESC LIMIT 1
-        """, a=accountid, on=on)
-    # Named first, then the payer's kind. One query, ranked, so the override and the default
-    # are compared on the same dates rather than fetched separately and reconciled.
-    return row(conn, """
-        SELECT s.*,
-               EXISTS (SELECT 1 FROM schedulepayers sp
-                        WHERE sp.scheduleid = s.recordid AND sp.payerid = p.recordid)
-                 AS named
-        FROM payerschedules s
-        JOIN payers p ON p.recordid = :p
-        WHERE s.accountid = :a AND s.active = 1
-          AND (EXISTS (SELECT 1 FROM schedulepayers sp
-                        WHERE sp.scheduleid = s.recordid AND sp.payerid = p.recordid)
-               OR FIND_IN_SET(p.category, s.payerkinds) > 0)
-          AND s.effectivefrom <= :on
-          AND (s.effectiveto IS NULL OR s.effectiveto >= :on)
-        ORDER BY named DESC, s.effectivefrom DESC
-        LIMIT 1
-    """, a=accountid, p=payerid, on=on)
+    state = (state or (row(conn, "SELECT state FROM accounts WHERE recordid = :a",
+                           a=accountid) or {}).get("state") or "").upper()[:2] or None
+    line = row(conn, f"""
+        SELECT c.scheduleid FROM companycontracts c
+        WHERE c.accountid = :a AND c.payerid <=> :p AND c.status = 'active'
+          AND {payerlines.live("c")}
+          AND (c.state IS NULL OR c.state = :st)
+          AND (c.effectivefrom IS NULL OR c.effectivefrom <= :on)
+          AND (c.effectiveto IS NULL OR c.effectiveto >= :on)
+        ORDER BY c.state IS NOT NULL DESC LIMIT 1
+    """, a=accountid, p=payerid, st=state, on=on)
+    if not line:
+        return None                 # the payer is not carried for in that state
+    sid = line["scheduleid"] or (row(conn, """
+        SELECT scheduleid FROM accountpayers WHERE accountid = :a AND payerid = :p
+    """, a=accountid, p=payerid or PRIVATE) or {}).get("scheduleid")
+    seen = set()
+    while sid and sid not in seen:
+        seen.add(sid)
+        card = row(conn, "SELECT s.* FROM payerschedules s WHERE s.recordid = :i AND s.accountid = :a",
+                   i=sid, a=accountid)
+        if not card or not card["active"]:
+            return None
+        if card["effectivefrom"] <= on and (card["effectiveto"] is None or card["effectiveto"] >= on):
+            return card
+        # Not started yet: the schedule it replaces still prices the day.
+        sid = card["supersedes"] if card["effectivefrom"] > on else None
+    return None
+
+
+def quote(conn: Connection, accountid: str, *, payerid: str | None, servicelevel: str,
+           on, legs: int = 1, miles=None, state: str | None = None) -> dict:
+    """What this trip comes to under the schedule in force for its payer.
+
+    Honest about what it does not know. At booking nobody has driven anywhere, so mileage cannot
+    be priced and is left out of the figure with the omission stated - a number presented as the
+    whole of a fare, which later grows by thirty dollars of mileage, is worse than no number.
+
+    A flat rate wins outright where one is set for the service: that is what a flat rate means.
+    """
+    card = in_force(conn, accountid, payerid=payerid, on=on, state=state)
+    if not card:
+        return {"scheduleid": None, "schedulename": None, "amount": None, "lines": [],
+                "complete": False,
+                "why": "No fee schedule is set for this payer, or it is not carried for in "
+                       "that state, on that date - so there is no price."}
+    lines = rows(conn, "SELECT * FROM payerrates WHERE scheduleid = :i ORDER BY sortorder, ratetype",
+                 i=card["recordid"])
+    # A line for this service, or one that names no service and therefore covers them all.
+    mine = [r for r in lines if (r["servicelevel"] or "") in ("", servicelevel)]
+    said, total = [], Decimal("0")
+
+    flat = next((r for r in mine if r["ratetype"] == "flat"), None)
+    if flat:
+        each = Decimal(str(flat["amount"] or 0))
+        count = legs if (flat["unit"] == "leg") else 1
+        total = each * count
+        said.append({"name": flat["name"], "amount": float(each * count)})
+        return {"scheduleid": card["recordid"], "schedulename": card["name"],
+                "amount": float(total), "lines": said, "complete": True,
+                "why": "A flat rate covers the whole trip."}
+
+    base = next((r for r in mine if r["ratetype"] == "base"), None)
+    if base:
+        each = Decimal(str(base["amount"] or 0))
+        count = legs if (base["unit"] == "leg") else 1
+        total += each * count
+        said.append({"name": base["name"], "amount": float(each * count)})
+
+    mileage = next((r for r in mine if r["ratetype"] == "mileage"), None)
+    complete = True
+    if mileage:
+        if miles is None:
+            complete = False
+        else:
+            free = Decimal(str(mileage["includedunits"] or 0))
+            chargeable = max(Decimal("0"), Decimal(str(miles)) - free)
+            amount = chargeable * Decimal(str(mileage["amount"] or 0))
+            total += amount
+            said.append({"name": mileage["name"], "amount": float(amount)})
+    why = ("The base fare. Mileage is added when the trip has been driven."
+           if mileage and miles is None else
+           "Base fare and mileage." if mileage else
+           "The base fare." if base else
+           "This schedule prices nothing for that service level.")
+    return {"scheduleid": card["recordid"], "schedulename": card["name"],
+            "amount": float(total) if said else None, "lines": said,
+            "complete": complete and bool(said), "why": why}
 
 
 FOREVER = "9999-12-31"
+# Private pay has no payer row; its fee schedule is kept under this key.
+PRIVATE = "privatepay"
 
 
-def clashes(conn: Connection, accountid: str, *, privatepay: bool, payerkinds: list[str],
-            payerids: list[str], effectivefrom, effectiveto,
-            scheduleid: str | None = None) -> dict | None:
-    """Another live schedule competing with this one at the same level, if there is one.
+def kind_of(schedule: dict) -> str | None:
+    """A schedule's payer type: 'private', or one payer category."""
+    return "private" if schedule.get("privatepay") else (schedule.get("payerkinds") or None)
 
-    Compared level for level, because the levels are a precedence and not a conflict:
 
-      * two cards for the passenger      - a contradiction
-      * two cards for brokers            - a contradiction
-      * two cards naming ModivCare       - a contradiction
-      * a card for brokers AND a card naming ModivCare - the point of the design
-
-    Without that distinction the override would be refused as a clash and the whole scheme
-    would collapse back into ticking payers one at a time.
-    """
-    window = """
-        s.accountid = :a AND s.active = 1 AND (:i IS NULL OR s.recordid <> :i)
-        AND :from <= COALESCE(s.effectiveto, :forever)
-        AND COALESCE(:to, :forever) >= s.effectivefrom
-    """
-    args = dict(a=accountid, i=scheduleid, forever=FOREVER,
-                **{"from": effectivefrom, "to": effectiveto or None})
-
-    if privatepay:
-        other = row(conn, f"""
-            SELECT s.recordid, s.name, s.effectivefrom, s.effectiveto
-            FROM payerschedules s WHERE {window} AND s.privatepay = 1
-            ORDER BY s.effectivefrom LIMIT 1
-        """, **args)
-        if other:
-            return {**other, "over": "the passenger"}
-
-    for kind in payerkinds or []:
-        other = row(conn, f"""
-            SELECT s.recordid, s.name, s.effectivefrom, s.effectiveto
-            FROM payerschedules s
-            WHERE {window} AND FIND_IN_SET(:k, s.payerkinds) > 0
-            ORDER BY s.effectivefrom LIMIT 1
-        """, k=kind, **args)
-        if other:
-            return {**other, "over": CATEGORIES.get(kind, kind).lower()}
-
-    for payerid in payerids or []:
-        other = row(conn, f"""
-            SELECT s.recordid, s.name, s.effectivefrom, s.effectiveto
-            FROM payerschedules s
-            WHERE {window}
-              AND EXISTS (SELECT 1 FROM schedulepayers sp
-                           WHERE sp.scheduleid = s.recordid AND sp.payerid = :p)
-            ORDER BY s.effectivefrom LIMIT 1
-        """, p=payerid, **args)
-        if other:
-            name = row(conn, "SELECT name FROM payers WHERE recordid = :i", i=payerid)
-            return {**other, "over": name["name"] if name else "that payer"}
-    return None
+def set_payer_schedule(conn: Connection, accountid: str, payerid: str, kind: str,
+                       scheduleid: str | None, userid: str | None) -> None:
+    """The fee schedule this company is paid under by a payer - one of its own type, and active."""
+    if scheduleid:
+        held = row(conn, "SELECT privatepay, payerkinds, active FROM payerschedules "
+                         "WHERE recordid = :i AND accountid = :a", i=scheduleid, a=accountid)
+        if not held or not held["active"]:
+            raise ValueError("No such active fee schedule")
+        if kind_of(held) != kind:
+            raise ValueError("That fee schedule is for a different payer type")
+    run(conn, """
+        INSERT INTO accountpayers (accountid, payerid, scheduleid, updated, updatedby)
+        VALUES (:a, :p, :s, :now, :u)
+        ON DUPLICATE KEY UPDATE scheduleid = :s, updated = :now, updatedby = :u
+    """, a=accountid, p=payerid, s=scheduleid or None, now=utcnow(), u=userid)
 
 
 def save_schedule(conn: Connection, accountid: str, userid: str, body: dict,
                   scheduleid: str | None = None) -> str:
     fields = dict(
         name=body["name"].strip()[:120],
-        # The passenger, a kind of payer, or named payers. Exactly one of the three is
-        # meant, and the screen enforces that; here the others are simply written empty.
-        privatepay=1 if body.get("privatepay") else 0,
-        payerkinds=",".join(k for k in (body.get("payerkinds") or []) if k in CATEGORIES)
-                   or None,
+        # Its payer type: private pay, or one kind of payer. A payer is offered only schedules
+        # of its own type; which payer pays under it is said on the payer.
+        privatepay=1 if body.get("payertype") == "private" else 0,
+        payerkinds=body.get("payertype") if body.get("payertype") in CATEGORIES else None,
+        supersedes=body.get("supersedes") or None,
         contractref=(body.get("contractref") or "").strip()[:64] or None,
         # The screen no longer asks when a schedule starts - it starts when it is written.
         # The column stays: superseding a contract on a date is a real thing a carrier does,
@@ -261,45 +278,29 @@ def save_schedule(conn: Connection, accountid: str, userid: str, body: dict,
     )
     if scheduleid:
         run(conn, """
-            UPDATE payerschedules SET name=:name, privatepay=:privatepay,
-                   payerkinds=:payerkinds, contractref=:contractref, effectivefrom=:effectivefrom,
+            UPDATE payerschedules SET name=:name, privatepay=:privatepay, payerkinds=:payerkinds,
+                   contractref=:contractref, effectivefrom=:effectivefrom,
                    effectiveto=:effectiveto, note=:note,
                    active=:active, updated=:now
             WHERE recordid = :i AND accountid = :a
-        """, i=scheduleid, a=accountid, now=utcnow(), **fields)
-        _set_payers(conn, accountid, scheduleid, body.get("payerids") or [])
+        """, i=scheduleid, a=accountid, now=utcnow(),
+            **{k: v for k, v in fields.items() if k != "supersedes"})
         return scheduleid
     scheduleid = newid()
     run(conn, """
-        INSERT INTO payerschedules (recordid, accountid, name, privatepay, payerkinds,
+        INSERT INTO payerschedules (recordid, accountid, name, privatepay, payerkinds, supersedes,
                                     contractref, effectivefrom, effectiveto,
                                     note, active, addedby)
-        VALUES (:i, :a, :name, :privatepay, :payerkinds, :contractref, :effectivefrom,
+        VALUES (:i, :a, :name, :privatepay, :payerkinds, :supersedes, :contractref, :effectivefrom,
                 :effectiveto, :note, :active, :by)
     """, i=scheduleid, a=accountid, by=userid, **fields)
-    _set_payers(conn, accountid, scheduleid, body.get("payerids") or [])
+    # A replacement takes over the lines of the schedule it replaces. Until it starts, pricing
+    # follows `supersedes` back to the old one, so no day is left without a price.
+    if fields["supersedes"]:
+        for table in ("companycontracts", "accountpayers"):
+            run(conn, f"UPDATE {table} SET scheduleid = :n WHERE scheduleid = :o "
+                      "AND accountid = :a", n=scheduleid, o=fields["supersedes"], a=accountid)
     return scheduleid
-
-
-def _set_payers(conn: Connection, accountid: str, scheduleid: str,
-                payerids: list[str]) -> None:
-    """Replace who this schedule prices.
-
-    Replaced wholesale rather than reconciled: the screen edits a list of ticks and sends the
-    list back, and a payer removed from it has to come off. Only payers this company may use
-    are accepted - the shared catalogue and its own.
-    """
-    run(conn, "DELETE FROM schedulepayers WHERE scheduleid = :i", i=scheduleid)
-    for payerid in dict.fromkeys(payerids):
-        if not row(conn, """
-            SELECT 1 AS x FROM payers
-            WHERE recordid = :i AND (accountid IS NULL OR accountid = :a)
-        """, i=payerid, a=accountid):
-            continue
-        run(conn, """
-            INSERT INTO schedulepayers (scheduleid, payerid, accountid)
-            VALUES (:s, :p, :a)
-        """, s=scheduleid, p=payerid, a=accountid)
 
 
 def save_rates(conn: Connection, accountid: str, scheduleid: str, lines: list[dict]) -> int:
@@ -370,21 +371,39 @@ def remove(conn: Connection, accountid: str, scheduleid: str) -> bool:
 # same way wherever it appears.
 ADDRESS = ("address1", "address2", "city", "state", "zip", "phone", "fax", "contactname",
            "contactemail")
+# The part of it that is the company's own rather than the payer's.
+CONTACT = ("contactname", "contactemail")
 
 
 def payers(conn: Connection, accountid: str) -> list[dict]:
     """Everyone this company can bill: the shared catalogue, and its own."""
     return rows(conn, f"""
         SELECT p.recordid, p.code, p.name, p.category, p.payerid, p.website, p.notes,
-               p.active, p.accountid IS NULL AS shared,
-               {", ".join("p." + c for c in ADDRESS)},
+               -- Whether THIS company works with it: its own say about a shared payer first.
+               COALESCE(ap.active, p.active) AS active, ap.active IS NOT NULL AS decided,
+               ap.scheduleid,
+               p.accountid IS NULL AS shared,
+               -- A company's own broker that is also on the master list reads its address and
+               -- contact from the master, so there is one copy of where a broker is.
+               m.recordid IS NOT NULL AS mastered,
+               {", ".join(f"CASE WHEN m.recordid IS NULL THEN p.{c} ELSE m.{c} END AS {c}"
+                          for c in ADDRESS if c not in CONTACT)},
+               -- Who the company deals with there is its own, at a shared payer as at its own.
+               {", ".join(f"CASE WHEN p.accountid IS NULL THEN COALESCE(ap.{c}, p.{c}) "
+                          f"ELSE p.{c} END AS {c}" for c in CONTACT)},
                (SELECT COUNT(*) FROM payerdocuments d
                  WHERE d.payerid = p.recordid AND d.accountid = :a) AS documents,
-               -- Through the membership list now: a schedule prices several payers, so
-               -- the link is a row in schedulepayers rather than a column on the schedule.
-               (SELECT COUNT(*) FROM schedulepayers sp
-                 WHERE sp.accountid = :a AND sp.payerid = p.recordid) AS schedules
+               -- The fee schedules its lines name.
+               (SELECT COUNT(DISTINCT c.scheduleid) FROM companycontracts c
+                 WHERE c.accountid = :a AND c.payerid = p.recordid
+                   AND c.scheduleid IS NOT NULL) AS schedules
         FROM payers p
+        LEFT JOIN accountpayers ap ON ap.payerid = p.recordid AND ap.accountid = :a
+        LEFT JOIN payers m ON m.recordid = (
+            SELECT m2.recordid FROM payers m2
+            WHERE p.accountid IS NOT NULL AND p.category = 'broker'
+              AND m2.accountid IS NULL AND m2.category = 'broker' AND UPPER(m2.name) = UPPER(p.name)
+            LIMIT 1)
         WHERE p.accountid IS NULL OR p.accountid = :a
         ORDER BY p.accountid IS NULL DESC, p.category, p.name
     """, a=accountid)
@@ -452,11 +471,10 @@ def save_payer(conn: Connection, accountid: str | None, body: dict,
 
 
 def payer_in_use(conn: Connection, accountid: str, payerrecordid: str) -> int:
-    """Schedules and trips that would be orphaned by removing this payer."""
+    """Schedules, trips and payer lines that would be orphaned by removing this payer."""
     return row(conn, """
-        SELECT (SELECT COUNT(*) FROM schedulepayers
-                 WHERE accountid = :a AND payerid = :i)
-             + (SELECT COUNT(*) FROM trips WHERE accountid = :a AND brokerid = :i) AS n
+        SELECT (SELECT COUNT(*) FROM trips WHERE accountid = :a AND brokerid = :i)
+             + (SELECT COUNT(*) FROM companycontracts WHERE accountid = :a AND payerid = :i) AS n
     """, a=accountid, i=payerrecordid)["n"]
 
 

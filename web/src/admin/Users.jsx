@@ -147,7 +147,7 @@ function StaffForm({ staff, onClose, onSaved, onInvited }) {
         <label className="field span-6">Name *<input required value={v.name} onChange={f.set('name')} /></label>
         <label className="field span-6">Email<input value={staff.email} disabled /></label>
         <label className="field span-6">Time zone<TimeZoneSelect value={v.timezone} onChange={f.set('timezone')} /></label>
-        <label className="field span-3">Admin role
+        <label className="field span-3">Admin Role
           <select value={v.platformrole} onChange={f.set('platformrole')} disabled={self}>
             <option value="superadmin">Super admin</option><option value="support">Support (read-only)</option><option value="">No admin access</option>
           </select>

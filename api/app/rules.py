@@ -22,7 +22,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.engine import Connection
 
-from app import employers, mvr as mvrs, validity
+from app import employers, mvr as mvrs, payerlines, validity
 from app.facts import UNANSWERED
 from app.db import row, rows
 
@@ -34,7 +34,7 @@ from app.db import row, rows
 #   {"fact": "fleet.cmv_federal", "is": true}
 #   {"fact": "company.state", "eq": "FL"}
 #   {"fact": "fleet.heaviest_gvwr", "lt": 26001}     also gt, lte, gte
-#   {"fact": "driver.licenceclass", "in": ["A", "B", "C"]}
+#   {"fact": "driver.licenseclass", "in": ["A", "B", "C"]}
 # ------------------------------------------------------------------------------------------------
 
 
@@ -86,6 +86,8 @@ def applies(expr: dict | None, facts: dict) -> bool | None:
         return value == expr["eq"]
     if "in" in expr:
         return value in expr["in"]
+    if "has" in expr:                    # the fact is a list, and holds this value
+        return expr["has"] in (value or [])
     for op, test in (("lt", lambda a, b: a < b), ("lte", lambda a, b: a <= b),
                      ("gt", lambda a, b: a > b), ("gte", lambda a, b: a >= b)):
         if op in expr:
@@ -94,6 +96,39 @@ def applies(expr: dict | None, facts: dict) -> bool | None:
             except TypeError:
                 return None
     return None
+
+
+# What a fact is called when a rule says why it does not reach somebody.
+FACT_LABELS = {
+    "company.medicaid": "Medicaid trips", "company.samgov": "SAM.gov screening required",
+    "company.hipaa": "HIPAA covered", "company.transit": "transit contract",
+    "company.exposure": "exposure duties", "company.state": "company state",
+    "company.operatingstates": "operating states", "operation.interstate": "interstate operation",
+    "driver.cmv": "operates a commercial motor vehicle", "driver.cdl": "operates a CDL vehicle",
+    "driver.heavy": "operates 26,001 lb or more", "driver.chapter1490": "Chapter 14-90 operation",
+    "driver.employee": "employee", "fleet.wheelchair": "wheelchair vehicles in the fleet",
+    "fleet.cmv_federal": "FMCSA-covered vehicles in the fleet",
+}
+
+
+def explain_false(expr: dict | None, facts: dict) -> list[str]:
+    """The facts that made a rule not apply, said plainly - "Medicaid trips: No"."""
+    if not expr:
+        return []
+    if "all" in expr:
+        return [x for e in expr["all"] if applies(e, facts) is False for x in explain_false(e, facts)]
+    if "any" in expr:
+        return [x for e in expr["any"] for x in explain_false(e, facts)]
+    if "not" in expr:
+        name = (expr["not"] or {}).get("fact")
+        return [f"{FACT_LABELS.get(name, name)}: Yes"] if name else []
+    name = expr.get("fact")
+    if not name:
+        return []
+    value = facts.get(name)
+    shown = ("Yes" if value else "No") if isinstance(value, bool) else (
+        ", ".join(value) if isinstance(value, list) else str(value) if value is not None else "-")
+    return [f"{FACT_LABELS.get(name, name)}: {shown or 'none'}"]
 
 
 def unanswered(expr: dict | None, facts: dict) -> list[str]:
@@ -124,8 +159,10 @@ def unanswered(expr: dict | None, facts: dict) -> list[str]:
 ANSWERED_BY = {
     "credential:DOT_MEDICAL_CARD": "Answered by the medical certificate held for the federal "
                                    "requirement.",
-    "licencecopy": "Answered by the commercial licence on file, in place of a road test "
+    "licensecopy": "Answered by the commercial license on file, in place of a road test "
                    "(49 CFR 391.33).",
+    "credential:WHEELCHAIR_SECUREMENT": "Answered by the combined passenger assistance and "
+                                        "securement certificate.",
 }
 
 PROVING = ("qualified", "clear", "negative", "reviewed", "certified", "excepted", "endorsed",
@@ -143,20 +180,21 @@ FAILING = ("disqualified", "flagged", "positive", "refusal", "adulterated", "sub
            "prohibited", "notcertified", "conflict", "missing", "notage21", "notenglish",
            "notregistered", "noqueryplan", "shorttraining", "opendefect",
            "nodraws", "hoursexceeded", "registershort", "noauthority",
-           "nolicence", "licenceinactive", "wrongclass")
+           "nolicense", "licenseinactive", "wrongclass", "newermvr", "removal",
+           "awaitingretraining", "inexperienced")
 
 # What a determination MEANS, where "the record came back <word>" would not say it. Only the ones
 # that need their own sentence are here; everything else reads perfectly well as the word itself.
 SAYS = {
-    "nolicence": "No licence is on file for this driver. 49 CFR 391.11(b)(5): a driver is not "
-                 "qualified unless they hold a currently valid licence for the vehicle they "
+    "nolicense": "No license is on file for this driver. 49 CFR 391.11(b)(5): a driver is not "
+                 "qualified unless they hold a currently valid license for the vehicle they "
                  "operate, and nothing here says they hold one.",
-    "licenceinactive": "The only licence on file for this driver has been marked not active. A "
-                       "licence that is no longer held does not qualify anybody to drive "
+    "licenseinactive": "The only license on file for this driver has been marked not active. A "
+                       "license that is no longer held does not qualify anybody to drive "
                        "(49 CFR 391.11(b)(5)).",
-    "wrongclass": "The licence on file is not of a class that permits the work this driver is "
-                  "assigned. 49 CFR 391.11(b)(5) asks for a licence valid for the VEHICLE "
-                  "OPERATED, so a licence that is current but of the wrong class qualifies "
+    "wrongclass": "The license on file is not of a class that permits the work this driver is "
+                  "assigned. 49 CFR 391.11(b)(5) asks for a license valid for the VEHICLE "
+                  "OPERATED, so a license that is current but of the wrong class qualifies "
                   "nobody - see 49 CFR 383.91 for what each class covers.",
     "untested": "The proficiency testing has not been recorded. F.A.C. 14-90.004(3)(d) asks for "
                 "training AND testing demonstrating adequate skills before the driver operates "
@@ -202,17 +240,6 @@ SAYS = {
                    "days from the day it was issued.",
 }
 
-# Who made the thing, in the words somebody reading a queue needs. "From outside" is true of a
-# laboratory result and of a driver's photograph of their licence, and what to do next is not the
-# same for the two. `office` is the only one that is not waiting on a reading.
-CAME_FROM = {
-    "driver": "Came in from the driver, waiting to be checked.",
-    "examiner": "Came in from the examiner, waiting to be checked.",
-    "employer": "Came in from a previous employer, waiting to be checked.",
-    "thirdparty": "Came in from a third party, waiting to be checked.",
-}
-
-
 def _employer_standing(asked: list[dict]) -> tuple[str, str]:
     """Where the safety performance inquiries stand as one mark.
 
@@ -225,7 +252,9 @@ def _employer_standing(asked: list[dict]) -> tuple[str, str]:
     # and may say the driver was dismissed or has accidents on their record.
     unread = [i["employer"] for i in asked if i["state"] == "toreview"]
     if unread:
-        return "review", f'Answered by {", ".join(unread)}, waiting to be read.'
+        # Nothing to add to the mark: the eye already says a reply is waiting to be read, and the
+        # dialog names whose.
+        return "review", None
     unasked = [i["employer"] for i in asked if i["state"] == "notasked"]
     if unasked:
         return "pending", f'Not asked yet: {", ".join(unasked)}.'
@@ -274,7 +303,7 @@ def already_read(conn: Connection, accountid: str, driverid: str) -> set[tuple[s
     """Every evidence record somebody in this office has said they have read, as (table, id).
 
     One place, whatever the record is. A reading is the same act whether what was read is a
-    laboratory result, a medical certificate, a licence copy or a federal database answer, and
+    laboratory result, a medical certificate, a license copy or a federal database answer, and
     giving each kind its own flag is how one of them ends up without one.
 
     A signed document is the exception that proves the point. Its reading is recorded against the
@@ -347,11 +376,11 @@ def answered_unread(conn: Connection, accountid: str, driverid: str) -> set[str]
     This is the general form of the rule, and the rule is simple: anything sent in by somebody who
     is not in this office - the driver, a previous employer, an agency - is unread until a person
     here says they read it. It does not matter whether it arrived as a document, as an answer typed
-    onto an application, or as a licence card with two photographs of it.
+    onto an application, or as a license card with two photographs of it.
 
     Keyed on what was ASKED FOR rather than on the document that came back, because the record the
-    requirement reads is not always the document that arrived: a driver sends a new licence, the
-    rule reads whichever licence is active, and matching documents would quietly let the new one
+    requirement reads is not always the document that arrived: a driver sends a new license, the
+    rule reads whichever license is active, and matching documents would quietly let the new one
     through unread."""
     out = {r["credentialcode"] for r in rows(conn, """
         SELECT credentialcode FROM uploadrequests
@@ -379,11 +408,11 @@ def _asked_code(rule: dict) -> str:
     """What this rule is asked for BY - the code an upload request would carry for it.
 
     The evidence source says where the answer lives; this says what the office would ask the driver
-    for to get one. They differ in exactly the places that have caused trouble: a licence is asked
+    for to get one. They differ in exactly the places that have caused trouble: a license is asked
     for as DRIVER_LICENSE and read from `driverlicenses`, and the questionnaire is asked for by its
     own code and read from an answer on the application."""
     kind, _, which = (rule.get("evidencesource") or "").partition(":")
-    if kind == "licencecopy":
+    if kind == "licensecopy":
         return "DRIVER_LICENSE"
     if kind.startswith("applicationanswer"):
         for code, facts_ in ANSWERS.items():
@@ -408,6 +437,12 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
                    -- skill has to be demonstrated, a record with no testing date is a record of
                    -- attendance, and attendance is not what F.A.C. 14-90.004(3)(d) asks for.
                    CASE WHEN t.requirestesting = 1 AND c.testedon IS NULL THEN 'untested'
+                        -- A screen that came back positive, or was refused, is not one passed.
+                        WHEN c.result IN ('positive', 'refusal') THEN 'positive'
+                        -- A screening that must say where it came from, and does not, or came
+                        -- from a vendor rather than the authority itself.
+                        WHEN t.requiresprovenance = 1
+                             AND COALESCE(c.provenance, 'vendor') = 'vendor' THEN 'noprovenance'
                         END AS determination,
                    c.testedon, c.testedby
             FROM credentials c JOIN credentialtypes t ON t.recordid = c.credentialtypeid
@@ -430,20 +465,20 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
             ORDER BY (finding = 'disqualified') DESC, issuedon DESC, receivedon DESC LIMIT 1
         """, a=accountid, d=driverid)
 
-    if kind == "licence":
-        # The licence itself, not a copy of it. 391.11(b)(5) asks whether the driver holds one
+    if kind == "license":
+        # The license itself, not a copy of it. 391.11(b)(5) asks whether the driver holds one
         # and whether it is valid FOR THE VEHICLE THEY OPERATE - a question the record answers
         # whether or not anybody has photographed the card.
         #
         # This used to hand back "qualified" as a literal in the SELECT, whatever it found. So a
-        # driver assigned Class B heavy CDL work passed with a Class E operator licence, passed
-        # with a licence marked not active, and passed with no licence on file at all - because
+        # driver assigned Class B heavy CDL work passed with a Class E operator license, passed
+        # with a license marked not active, and passed with no license on file at all - because
         # the comparison the regulation is ABOUT was never made. The only thing being checked was
         # the expiry date of whatever row came back first.
         held = row(conn, """
             SELECT recordid, issued AS effectiveon, expires AS expireson, 0 AS exempt,
                    copydocumentid AS documentid, 'driverlicenses' AS sourcetable,
-                   classification, active
+                   classification, active, number, state
             FROM driverlicenses
             WHERE accountid = :a AND driverid = :d
             ORDER BY active DESC, expires DESC LIMIT 1
@@ -451,10 +486,14 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
         if not held:
             # No row at all. Said as a determination rather than by returning None, because None
             # means "nothing filed yet" and reads as an errand; this is a driver who may not drive.
-            return {"recordid": f"{driverid}:licence", "effectiveon": None, "expireson": None,
+            return {"recordid": f"{driverid}:license", "effectiveon": None, "expireson": None,
                     "exempt": 0, "documentid": None, "sourcetable": "driverlicenses",
-                    "determination": "nolicence"}
-        return {**held, "determination": _licence_verdict(held, facts or {})}
+                    "determination": "nolicense"}
+        verdict = _license_verdict(held, facts or {})
+        if verdict == "wrongclass":
+            return {**held, "determination": verdict,
+                    "said": _wrong_class_says(conn, accountid, driverid, held, facts or {})}
+        return {**held, "determination": verdict}
 
     if kind == "driverfact":
         # A requirement answered by something already known rather than by a document. Age is the
@@ -471,15 +510,15 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
                 "exempt": 0, "documentid": None, "sourcetable": "drivers",
                 "determination": "qualified" if said else f"not{which.rpartition('.')[2]}"}
 
-    if kind == "licencematch":
+    if kind == "licensematch":
         # Not a document and nothing to file. The answer is a comparison between two things already
-        # on the record: what this work needs, and what the licence carries. An endorsement the
+        # on the record: what this work needs, and what the license carries. An endorsement the
         # driver does not hold cannot be uploaded - it is obtained from the licensing State - so the
-        # requirement is answered by the licence changing, not by paper arriving.
+        # requirement is answered by the license changing, not by paper arriving.
         held = row(conn, """
             SELECT d.recordid, d.endorsementsneeded,
                    COALESCE(l.endorsements, d.endorsements) AS endorsements,
-                   l.recordid AS licenceid, l.issued AS effectiveon, l.expires AS expireson
+                   l.recordid AS licenseid, l.issued AS effectiveon, l.expires AS expireson
             FROM drivers d
             LEFT JOIN driverlicenses l ON l.driverid = d.recordid AND l.accountid = d.accountid
                  AND l.active = 1
@@ -534,12 +573,21 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
         return {**got, **_cdlis_reading(got, date.today())}
 
     if kind == "annualreview":
-        return row(conn, """
+        got = row(conn, """
             SELECT recordid, reviewedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
                    'annualreviews' AS sourcetable, finding AS determination
             FROM annualreviews WHERE accountid = :a AND driverid = :d AND reviewedon IS NOT NULL
-            ORDER BY reviewedon DESC, createdon DESC LIMIT 1
+            ORDER BY reviewedon DESC, COALESCE(completedon, createdon) DESC, createdon DESC LIMIT 1
         """, a=accountid, d=driverid)
+        # A driving record received since this review was made has been reviewed by nobody, so
+        # the review stops answering until another is completed against it.
+        if got:
+            from app import annualreview
+            newer = annualreview.newer_record(conn, accountid, driverid, got["recordid"],
+                                              got["effectiveon"])
+            if newer:
+                got = {**got, "determination": "newermvr", "newer": newer["receivedon"]}
+        return got
 
     if kind == "report":
         return row(conn, """
@@ -647,9 +695,9 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
             -- A lifted exclusion stops outranking. The row stays exactly as it was - what the
             -- file held the day a trip ran is the question an auditor asks - it just no longer
             -- describes where this driver stands today.
-            ORDER BY FIELD(CASE WHEN result = 'confirmed' AND liftedon IS NOT NULL THEN 'clear'
-                                ELSE result END,
-                           'confirmed', 'potential', 'clear'), checkedon DESC LIMIT 1
+            -- The latest screening, always. The office's own rule: the requirement shows what the
+            -- most recent check returned, and every earlier one is in the History.
+            ORDER BY checkedon DESC LIMIT 1
         """, a=accountid, d=driverid, code=which)
 
     if kind == "dutyhours":
@@ -685,7 +733,70 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
             ORDER BY joinedon DESC LIMIT 1
         """, a=accountid, d=driverid)
 
-    if kind == "licencecopy":
+    if kind == "atfaultcount":
+        # DCH 914.2.5: two at-fault moving violations and/or accidents on NEMT work, and the driver
+        # comes off. Counted from the accident register (where the driver was at fault) and the
+        # moving violations recorded against them (where convicted and at fault). Nothing to file:
+        # the answer is the count.
+        hits = rows(conn, """
+            SELECT DATE(occurredon) AS whenon, 'Accident' AS what FROM driveraccidents
+            WHERE accountid = :a AND driverid = :d AND withdrawn IS NULL AND atfault = 1
+            UNION ALL
+            SELECT occurredon, violation FROM drivermovingviolations
+            WHERE accountid = :a AND driverid = :d AND withdrawn IS NULL AND atfault = 1
+              AND onnemt = 1 AND convictedon IS NOT NULL
+            ORDER BY whenon DESC
+        """, a=accountid, d=driverid)
+        return {"recordid": f"{driverid}:atfault", "effectiveon": None, "expireson": None,
+                "exempt": 0, "documentid": None, "sourcetable": "drivers",
+                "determination": "removal" if len(hits) >= 2 else "withinlimit",
+                "count": len(hits), "hits": hits}
+
+    if kind == "drivingexperience":
+        # Years of driving, read off the licenses on file. An issue date is usually the latest
+        # renewal, so it proves the driver was licensed by then and no earlier: old enough settles
+        # it, but a recent one may be a renewal and proves nothing either way. An original issue
+        # date - printed on some cards, or given on the application - is the real start.
+        # Nothing recorded is nothing on file - not a driver too new to drive.
+        held = rows(conn, """
+            SELECT issued, originalissued FROM driverlicenses WHERE accountid = :a AND driverid = :d
+        """, a=accountid, d=driverid)
+        declared = (row(conn, "SELECT licensesince FROM drivers WHERE recordid = :d AND accountid = :a",
+                        d=driverid, a=accountid) or {}).get("licensesince")
+        original = [x for x in [l["originalissued"] for l in held] + [declared] if x]
+        every = original + [l["issued"] for l in held if l["issued"]]
+        if not every:
+            return None
+        since = min(every)
+        years = (date.today() - since).days / 365.25
+        return {"recordid": f"{driverid}:experience", "effectiveon": since, "expireson": None,
+                "exempt": 0, "documentid": None, "sourcetable": "driverlicenses",
+                "determination": ("experienced" if years >= 3 else
+                                  "inexperienced" if original else "unproven"),
+                "licensesince": since}
+
+    if kind == "securementclear":
+        # DCH 907.16: one confirmed failure to secure a wheelchair takes the driver off until they
+        # are retrained. Answered by securement training dated after the latest confirmed failure.
+        failed = row(conn, """
+            SELECT MAX(occurredon) AS lastfailed FROM driversecurementincidents
+            WHERE accountid = :a AND driverid = :d AND confirmed = 1 AND withdrawn IS NULL
+        """, a=accountid, d=driverid) or {}
+        last = failed.get("lastfailed")
+        trained = row(conn, """
+            SELECT MAX(c.issuedon) AS trainedon FROM credentials c
+            JOIN credentialtypes t ON t.recordid = c.credentialtypeid
+            WHERE c.accountid = :a AND c.subject = 'driver' AND c.subjectid = :d
+              AND t.code = 'WHEELCHAIR_SECUREMENT' AND c.deleted IS NULL AND c.revokedon IS NULL
+              AND (:last IS NULL OR c.issuedon > :last)
+        """, a=accountid, d=driverid, last=last) or {}
+        return {"recordid": f"{driverid}:securement", "effectiveon": None, "expireson": None,
+                "exempt": 0, "documentid": None, "sourcetable": "drivers",
+                "determination": "noincident" if not last
+                else "retrained" if trained.get("trainedon") else "awaitingretraining",
+                "lastfailed": last, "trainedon": trained.get("trainedon")}
+
+    if kind == "licensecopy":
         return row(conn, """
             SELECT recordid, issued AS effectiveon, expires AS expireson, 0 AS exempt,
                    copydocumentid AS documentid, 'driverlicenses' AS sourcetable,
@@ -710,7 +821,7 @@ EVIDENCE_TABLES = {
     "credential": "credentials", "mvr": "drivermvrs", "annualreview": "annualreviews",
     "report": "driverreports", "transitmedical": "transitmedicals", "roadtest": "roadtests",
     "drugtest": "drugtests", "signature": "documentsignatures", "exclusioncheck": "exclusionchecks",
-    "licencecopy": "driverlicenses", "licence": "driverlicenses",
+    "licensecopy": "driverlicenses", "license": "driverlicenses",
     "employerhistory": "employerinquiries",
     # Two that live on the driver row itself rather than in a table of their own. Missing here,
     # their history rows came back with no sourcetable, and the reading could not be recorded
@@ -725,7 +836,7 @@ def needs_reading(rule: dict, evidence: dict | None, read: set,
 
     The one test, written once. `for_driver` asks it to decide the status and the requirement
     screen asks it to decide whether to offer the reading, so the eye on the list and the button
-    behind it can never disagree - which is exactly how a licence copy came to sit in review with
+    behind it can never disagree - which is exactly how a license copy came to sit in review with
     nowhere to review it.
 
     A record somebody has already judged counts as read, whatever the judgement was: a query marked
@@ -744,10 +855,10 @@ def history(conn: Connection, accountid: str, driverid: str, source: str | None)
     if not source:
         return []
     kind, _, which = source.partition(":")
-    # A comparison has no history. There is one answer and it is the state of the licence now, so
+    # A comparison has no history. There is one answer and it is the state of the license now, so
     # the detail screen is handed exactly what the engine read rather than a table of past answers
     # that were never recorded.
-    if kind in ("licencematch", "cdlismedical"):
+    if kind in ("licensematch", "cdlismedical"):
         got = _evidence(conn, accountid, driverid, source)
         return [got] if got else []
     args = {"a": accountid, "d": driverid, "code": which, "reason": which}
@@ -760,7 +871,7 @@ def history(conn: Connection, accountid: str, driverid: str, source: str | None)
                    NULL AS determination, c.notes AS note, c.added AS recordedon,
                    -- When the skill was demonstrated, and to whom. Blank on everything that is
                    -- not training that has to be shown.
-                   c.testedon, c.testedby,
+                   c.testedon, c.testedby, c.screentype, c.result, c.provenance,
                    -- Who gave it. On a training record this is the whole point: no federal rule
                    -- names a trainer, so "trained by whom" is a fact only the record can answer.
                    c.issuer
@@ -773,13 +884,13 @@ def history(conn: Connection, accountid: str, driverid: str, source: str | None)
                    m.documentid,
                    CASE WHEN m.reviewstate = 'reviewed' THEN 'reviewed' ELSE NULL END AS determination,
                    m.note, COALESCE(m.receivedon, m.orderedon) AS recordedon,
-                   -- Which licence it was pulled on, because that is what a driving record is about,
+                   -- Which license it was pulled on, because that is what a driving record is about,
                    -- and the two dates, because sent-for and received are different states.
                    -- Withdrawn as well as sent-for and received. A request somebody cancelled is
                    -- part of the record and stays in the history, but it is NOT outstanding: a
                    -- screen that sees only a date and no receipt would offer to fill it, and the
                    -- answer it tried to file would have nothing to attach to.
-                   CONCAT(l.state, ' ', l.number) AS licence, m.licenseid AS licenceid,
+                   CONCAT(l.state, ' ', l.number) AS license, m.licenseid AS licenseid,
                    m.orderedon, m.receivedon, m.cancelledon
             FROM drivermvrs m LEFT JOIN driverlicenses l ON l.recordid = m.licenseid
             WHERE m.accountid = :a AND m.driverid = :d
@@ -788,7 +899,7 @@ def history(conn: Connection, accountid: str, driverid: str, source: str | None)
             SELECT recordid, reviewedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
                    finding AS determination, note, createdon AS recordedon
             FROM annualreviews WHERE accountid = :a AND driverid = :d
-            ORDER BY reviewedon DESC, createdon DESC""",
+            ORDER BY reviewedon DESC, COALESCE(completedon, createdon) DESC, createdon DESC""",
         "report": """
             SELECT recordid, issuedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
                    COALESCE(outcome, reviewstate) AS determination, note,
@@ -824,7 +935,7 @@ def history(conn: Connection, accountid: str, driverid: str, source: str | None)
             FROM documentsignatures WHERE accountid = :a AND ownertype = 'driver' AND ownerid = :d
               AND doctype = :code
             ORDER BY signedon DESC""",
-        # A comparison has no history: there is one answer, which is the state of the licence now.
+        # A comparison has no history: there is one answer, which is the state of the license now.
         # Handled in history() itself rather than as SQL - see below.
         # Every driving record that carried medical certification information, newest first. The
         # same records the driving-record requirement lists, read for what else is on them.
@@ -851,12 +962,17 @@ def history(conn: Connection, accountid: str, driverid: str, source: str | None)
                         WHEN result = 'confirmed' THEN 'flagged'
                         ELSE 'review' END AS determination,
                    namessearched AS note, checkedon AS recordedon,
-                   candidates AS candidatesjson, source, liftedon, liftreason
+                   candidates AS candidatesjson, source, liftedon, liftreason,
+                   -- Which published list the check was run against, and who settled it.
+                   (SELECT x.datasetstamp FROM exclusionruns x WHERE x.recordid = e.runid)
+                     AS datasetstamp,
+                   e.performedby, e.verifiedon, e.verifymethod,
+                   (SELECT u.name FROM users u WHERE u.recordid = e.verifiedby) AS verifiedbyname
             -- Every list, not only the one the rule is named after. A check recorded against SAM
             -- or Florida is part of this driver's screening history and would otherwise vanish the
             -- moment it was filed.
-            FROM exclusionchecks WHERE accountid = :a AND driverid = :d
-            ORDER BY checkedon DESC""",
+            FROM exclusionchecks e WHERE e.accountid = :a AND e.driverid = :d
+            ORDER BY e.checkedon DESC""",
         "poolmember": """
             SELECT recordid, joinedon AS effectiveon, leftpoolon AS expireson, 0 AS exempt,
                    NULL AS documentid, NULL AS determination,
@@ -866,7 +982,7 @@ def history(conn: Connection, accountid: str, driverid: str, source: str | None)
             FROM randompoolmembership
             WHERE accountid = :a AND driverid = :d
             ORDER BY joinedon DESC, added DESC""",
-        "licencecopy": """
+        "licensecopy": """
             SELECT recordid, issued AS effectiveon, expires AS expireson, 0 AS exempt,
                    copydocumentid AS documentid, NULL AS determination,
                    CONCAT(state, ' ', number) AS note, added AS recordedon
@@ -884,7 +1000,7 @@ def history(conn: Connection, accountid: str, driverid: str, source: str | None)
 def _credential_life(got):
     """The expiry a credential actually has, which is not always the one printed on it.
 
-    A licence or an insurance certificate carries its own date. A training certificate usually
+    A license or an insurance certificate carries its own date. A training certificate usually
     does not, and what limits it is the TYPE: HIPAA privacy training is good for a year, CPR for
     two, defensive driving for three. Those limits have always been on credentialtypes as
     maxagedays and defaultvaliddays, and app/validity.py has always known how to read them - the
@@ -912,23 +1028,23 @@ def _credential_life(got):
     return out
 
 
-# What each class of licence permits, as 49 CFR 383.91 divides them. A and B are the heavy
+# What each class of license permits, as 49 CFR 383.91 divides them. A and B are the heavy
 # commercial classes; C is commercial but under 26,001 lb (16 or more passengers, or placarded
-# hazardous materials); D and E are ordinary operator licences and M is a motorcycle.
+# hazardous materials); D and E are ordinary operator licenses and M is a motorcycle.
 #
 # Kept here rather than read off a "is it commercial" flag because the question is not whether
-# the licence is commercial - it is whether it covers the work. A Class C CDL is a commercial
-# licence and does not permit a 26,001 lb vehicle.
+# the license is commercial - it is whether it covers the work. A Class C CDL is a commercial
+# license and does not permit a 26,001 lb vehicle.
 HEAVY_CLASSES = ("A", "B")
 CDL_CLASSES = ("A", "B", "C")
 
 
-def _licence_verdict(held: dict, facts: dict) -> str:
-    """Whether this licence qualifies this driver for the work they are assigned.
+def _license_verdict(held: dict, facts: dict) -> str:
+    """Whether this license qualifies this driver for the work they are assigned.
 
     Expiry is NOT decided here - `expireson` is on the record and the engine's own date
     arithmetic reads it, the same way it does for every other credential. What is decided here
-    is the pair of questions that arithmetic cannot answer: is the licence still held, and is it
+    is the pair of questions that arithmetic cannot answer: is the license still held, and is it
     of a class that covers the vehicle.
 
     Read off the same two facts the rest of the engine uses, so there is one answer to "does
@@ -936,14 +1052,52 @@ def _licence_verdict(held: dict, facts: dict) -> str:
     Three-valued: where nobody has said what the driver operates, the class is not asserted to
     be wrong - an unanswered question is not a failure."""
     if not held.get("active"):
-        return "licenceinactive"
+        return "licenseinactive"
     carried = (held.get("classification") or "").upper()
     if facts.get("driver.heavy") is True:
-        # 26,001 lb or more. A Class C CDL is a commercial licence and does not cover it.
+        # 26,001 lb or more. A Class C CDL is a commercial license and does not cover it.
         return "qualified" if carried in HEAVY_CLASSES else "wrongclass"
     if facts.get("driver.cdl") is True:
         return "qualified" if carried in CDL_CLASSES else "wrongclass"
     return "qualified"
+
+
+# What each class covers, in the words somebody at the desk would use.
+CLASS_COVERS = {"A": "combination vehicles of 26,001 lb or more",
+                "B": "single vehicles of 26,001 lb or more",
+                "C": "vehicles under 26,001 lb carrying 16 or more people or placarded hazmat",
+                "D": "ordinary vehicles - not a commercial license",
+                "E": "ordinary vehicles - not a commercial license"}
+
+
+def _wrong_class_says(conn: Connection, accountid: str, driverid: str, held: dict,
+                      facts: dict) -> str:
+    """Why this license does not fit the work, naming the license, what the work needs and why, and
+    the way out - including a license already on file that would fit, if there is one."""
+    heavy = facts.get("driver.heavy") is True
+    fits = HEAVY_CLASSES if heavy else CDL_CLASSES
+    carried = (held.get("classification") or "").upper()
+    which = " ".join(x for x in (held.get("state"), f"Class {carried}" if carried else None) if x)
+    covers = CLASS_COVERS.get(carried)
+    ticked = "26,001 lb or more" if heavy else "requires a CDL"
+    number = f" ({held['number']})" if held.get("number") else ""
+    out = (f"The active license is {which or 'on file'}{number}"
+           f"{f', which covers {covers}' if covers else ''}. Company Information says this driver "
+           f"will operate a vehicle that {'is rated ' if heavy else ''}{ticked}, which needs a "
+           f"Class {' or '.join(fits) if len(fits) == 2 else 'A, B or C'} license. ")
+    other = row(conn, f"""
+        SELECT number, state, classification FROM driverlicenses
+        WHERE accountid = :a AND driverid = :d AND recordid <> :r
+          AND UPPER(classification) IN ({", ".join(repr(c) for c in fits)})
+          AND (expires IS NULL OR expires >= CURDATE())
+        ORDER BY expires DESC LIMIT 1
+    """, a=accountid, d=driverid, r=held["recordid"])
+    if other:
+        out += (f"A {other['state']} Class {other['classification'].upper()} ({other['number']}) is on "
+                f"file but not marked active - open it under Licenses and press Make Active")
+    else:
+        out += "Add the license that covers this work under Licenses"
+    return out + f", or untick \"{ticked}\" if this driver will not operate such a vehicle."
 
 
 def _filed(conn: Connection, accountid: str, driverid: str, ruleid: str,
@@ -1199,9 +1353,40 @@ def stand(rule: dict, evidence: dict | None, today: date,
         names = ", ".join(f"{c} ({ENDORSEMENT_NAMES.get(c, c)})" for c in miss)
         one = len(miss) == 1
         return "failed", (
-            f"The licence on file does not carry the {names} endorsement{'' if one else 's'} this "
+            f"The license on file does not carry the {names} endorsement{'' if one else 's'} this "
             f"work requires. It has to be obtained from the licensing State; a first P, S or H "
             f"endorsement needs entry-level driver training first - 49 CFR Part 380 Subpart F.")
+    if finding == "experienced":
+        return "satisfied", f'Licensed since {evidence["licensesince"]:%m/%d/%Y}.'
+    if finding == "inexperienced":
+        return "failed", (f'Licensed since {evidence["licensesince"]:%m/%d/%Y} - less than three '
+                          f'years of driving experience.')
+    if finding == "unproven":
+        return "review", (f'The oldest license on file was issued '
+                          f'{evidence["licensesince"]:%m/%d/%Y}, which may be a renewal. Enter the '
+                          f'original issue date on the license if the card shows one.')
+    if finding == "noincident":
+        return "satisfied", "No confirmed wheelchair securement failure on record."
+    if finding == "retrained":
+        return "satisfied", (f'Retrained in securement on {evidence["trainedon"]:%m/%d/%Y}, after the '
+                             f'failure on {evidence["lastfailed"]:%m/%d/%Y}.')
+    if finding == "awaitingretraining":
+        return "failed", (f'A wheelchair securement failure was confirmed on '
+                          f'{evidence["lastfailed"]:%m/%d/%Y}. The driver is removed from service '
+                          f'until securement training dated after it is on file.')
+    if finding == "withinlimit":
+        n = evidence.get("count") or 0
+        return "satisfied", ("No at-fault moving violation or accident on record." if not n else
+                             "One at-fault moving violation or accident on record. A second "
+                             "removes the driver from service.")
+    if finding == "removal":
+        listed = "; ".join(f'{h["what"]} {h["whenon"]:%m/%d/%Y}' for h in (evidence.get("hits") or [])[:4])
+        return "failed", (f'{evidence.get("count")} at-fault moving violations and/or accidents on '
+                          f'record ({listed}). The driver must be removed from service.')
+    if finding == "newermvr":
+        came = evidence.get("newer")
+        return "failed", (f"A newer driving record came in{f' on {came:%m/%d/%Y}' if came else ''}. "
+                          "The last review does not cover it - complete a new annual review.")
     if finding == "hoursexceeded":
         over = evidence.get("breaches") or []
         said = "; ".join(f'{b["dutydate"]:%m/%d/%Y} - {b["why"]}' for b in over[:3])
@@ -1246,7 +1431,7 @@ def stand(rule: dict, evidence: dict | None, today: date,
             f"selection was drawn {when:%m/%d/%Y}." if when else
             "A random testing programme is on file.")
     if finding == "endorsed":
-        return "satisfied", ("The licence carries every endorsement this work requires: "
+        return "satisfied", ("The license carries every endorsement this work requires: "
                              + ", ".join(evidence.get("needed") or []) + ".")
     # Trained but not yet tested. Not a failure - nobody has done anything wrong - and not
     # satisfied either. The training is on file and the one thing still owed is named.
@@ -1256,11 +1441,12 @@ def stand(rule: dict, evidence: dict | None, today: date,
             (f"Training recorded {when:%m/%d/%Y}. " if when else "Training recorded. ")
             + SAYS["untested"])
     if finding in FAILING:
-        return "failed", SAYS.get(finding, f"The record on file came back {finding}.")
+        return "failed", evidence.get("said") or SAYS.get(finding, f"The record on file came back {finding}.")
     if finding in REVIEWING:
         return "review", SAYS.get(finding, "A possible match was found - somebody has to settle it.")
     if rule.get("reviewrequired") and finding not in PROVING:
-        return "review", "On file, and waiting to be reviewed."
+        # Nothing to add to the mark itself: the eye already says it is waiting to be read.
+        return "review", None
 
     expires = horizon(rule, evidence, usdot)
     if expires:
@@ -1617,7 +1803,7 @@ def for_company(conn: Connection, accountid: str, facts: dict,
 
     The same catalog, the same stages, the same gates and the same expiry arithmetic as a driver's
     requirements - only the subject differs. Written as its own function rather than a parameter on
-    for_driver because almost nothing in there applies: a company has no hire date, no licence, no
+    for_driver because almost nothing in there applies: a company has no hire date, no license, no
     drug and alcohol standing and nobody to send a document to. What it shares is the part that
     matters, which is how a rule becomes a status.
     """
@@ -1776,6 +1962,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
     out = []
     for rule in rows(conn, """
         SELECT recordid, code, name, authoritytype, authority, citation, applieswhen, evidencekind,
+               qualificationcode, authoritycategory, enforcement, legalreview, program,
                accountid, evidencesource, origin, extendable, extendnote, offered,
                alternatesource, alternatewhen, reviewrequired, determination,
                violationresets,
@@ -1787,7 +1974,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
           -- other one, and our migrations never touch it.
           AND (accountid IS NULL OR accountid = :acct)
         ORDER BY sortorder, name
-    """, acct=accountid):
+    """, acct=accountid) + contract_rules(conn, accountid):
         expr = condition(rule["applieswhen"])
         reaches = applies(expr, facts)
         # A rule TripProof offers rather than imposes. No regulation puts it in force, so it
@@ -1816,9 +2003,11 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
             reaches, because, asking = True, "company", choice.get("reason")
         if reaches is False:
             status = "notapplicable"
+            said = "; ".join(dict.fromkeys(explain_false(expr, facts)))
             why = ("Offered as a company requirement. Nothing asks it of this driver until this "
                    "company adopts it (Company - Driver Qualifications)."
-                   if rule.get("offered") else "Does not reach this driver.")
+                   if rule.get("offered") else
+                   f"Does not reach this driver - {said}." if said else "Does not reach this driver.")
             evidence = None
         elif reaches is None:
             status = "unknown"
@@ -1849,6 +2038,12 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                 evidence, instead = None, None
             waiting_on = None if evidence else _ordered(conn, accountid, driverid, rule["evidencesource"])
             status, why = stand(rule, evidence, today, waiting_on)
+            # On file and in date, but nobody can say where the screening came from. It stands
+            # under review until somebody records that it came from the authority itself.
+            if (evidence or {}).get("determination") == "noprovenance" and status in (
+                    "satisfied", "expiring"):
+                status, why = "review", ("On file, but it does not say it came from the FDLE or "
+                                         "the AHCA Clearinghouse. Record where it came from.")
             # ANYTHING FROM OUTSIDE IS UNREAD UNTIL SOMEBODY HERE READS IT.
             #
             # One rule, applied once, rather than a special case per kind of thing. Whatever else a
@@ -1866,13 +2061,12 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
             # A record carrying its own reading already counts as read - an MVR with a finding, a
             # report with an outcome, a road test with a result - so nothing that already had a way
             # of being marked read needs a second one.
-            whose = rule.get("origin") or "thirdparty"
             outside = needs_reading(rule, evidence, read, readdocs)
             arrived = (evidence and evidence.get("documentid") in unchecked) \
                 or _asked_code(rule) in unread or outside
             if arrived and status in ("satisfied", "expiring", "pending", "failed", "expired"):
                 status = "review"
-                why = CAME_FROM.get(whose, CAME_FROM["thirdparty"])
+                why = None          # the eye already says it is waiting to be read
             # A requirement ABOUT somebody's fitness for safety-sensitive work cannot read as
             # met while that person is barred from safety-sensitive work. The records exist and
             # the tests were done - which is why the evidence says satisfied - but the question
@@ -1895,7 +2089,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
             # or an adverse finding is not made better by having asked for a new one.
             if status in ("pending", "satisfied", "expiring"):
                 kind_, _, which_ = (rule["evidencesource"] or "").partition(":")
-                code_ = "DRIVER_LICENSE" if kind_ == "licencecopy" else which_
+                code_ = "DRIVER_LICENSE" if kind_ == "licensecopy" else which_
                 waiting_for = chased.get(code_)
                 if waiting_for:
                     asked_on = f'{waiting_for["askedon"]:%m/%d/%Y}'
@@ -1904,8 +2098,8 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                            else f'Asked of the driver on {asked_on}, not back yet.')
                     status = "ordered"
             # 49 CFR 391.23(a)(1) and 391.25(a) both ask for a record from EVERY licensing authority
-            # the driver held a licence in - so a rule answered by one record is not answered until
-            # every state is covered. Without this a driver with a Delaware licence and a Florida
+            # the driver held a license in - so a rule answered by one record is not answered until
+            # every state is covered. Without this a driver with a Delaware license and a Florida
             # one reads as complete on the Florida record alone.
             # Answered by what the applicant said on their own application, under their own
             # signature. Two different questions are being asked of such an answer, and they are
@@ -1940,10 +2134,11 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                 else:
                     status, why = "failed", "The driver says this is not complete."
                 # An answer that came down a link is no more read than a document that did. It
-                # behaves exactly as a medical certificate or a licence does coming back from the
+                # behaves exactly as a medical certificate or a license does coming back from the
                 # driver: on file, waiting on us, and not green until somebody says they read it.
                 if status == "satisfied" and fact_ in unreadfacts:
-                    status, why = "review", "Sent in from outside, waiting to be checked."
+                    # Nothing to add to the mark: the eye already says it is waiting to be read.
+                    status, why = "review", None
             if (rule["evidencesource"] or "").startswith("mvr"):
                 # How long one of these stands is the rule's own arithmetic - the same sum stand()
                 # does above, asked once per state. A record pulled once under 391.23(a)(1) has no
@@ -1982,7 +2177,8 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
             # Not outstanding: owed, and not yet. The date is the whole of what there is to say.
             why = f"Due by {dueon:%m/%d/%Y}."
         out.append({**{k: rule[k] for k in ("code", "name", "authoritytype", "authority", "citation",
-                                            "accountid",
+                                            "accountid", "qualificationcode", "authoritycategory",
+                                            "enforcement", "legalreview", "program",
                                             "duestage", "duedays", "duetext", "blocking", "gate",
                                             "grouping",
                                             "note", "evidencekind",
@@ -1991,6 +2187,12 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                     # red when it lapses; it just does not belong on a screen of exceptions.
                     "scheduled": bool(rule.get("scheduled")),
                     "applies": reaches, "status": status, "why": why,
+                    # Where the company has said another requirement's evidence answers this one
+                    # (14-90.0041(1)(b): its own medical standard in place of FDOT's form), the two
+                    # are one thing to keep on file, and the row folds into that one.
+                    "foldinto": (rule["alternatesource"] if rule.get("alternatesource")
+                                 and applies(condition(rule["alternatewhen"]), facts) is True
+                                 else None),
                     # Which authority is behind this requirement for THIS driver, and the contract
                     # or policy named where it is the company's own. A screen that printed a
                     # federal citation beside a requirement the regulation does not impose would
@@ -2009,4 +2211,147 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                     # When it falls due, for the stage that counts from the hire date rather than
                     # from the document.
                     "dueon": dueon})
-    return _derive_file_rules(out)
+    return _by_qualification(conn, _fold_alternates(_derive_file_rules(out)))
+
+
+# When a thing falls due, earliest first.
+STAGES = ("prehire", "predrive", "athire", "ongoing")
+
+# Worst first. Where two rules are shown as one, the row says the worse of the two.
+WORST_FIRST = ("failed", "expired", "overdue", "pending", "ordered", "review", "unknown",
+               "expiring", "satisfied")
+
+
+def contract_rules(conn: Connection, accountid: str) -> list[dict]:
+    """What each reviewed, current broker contract asks of drivers, as rules.
+
+    A contract requirement points at a catalog qualification. It reads the same evidence as the
+    platform rule behind that qualification and carries the contract's own renewal, so it is one
+    more source on the same row - never a second copy of the license or the screening. Where the
+    contract requires its drivers to be approved, it reaches only approved drivers and the trips
+    billed to it; otherwise every driver."""
+    out = []
+    for c in rows(conn, f"""
+        SELECT r.recordid AS reqid, r.qualificationcode, r.renewaldays, r.clause,
+               k.recordid AS contractid, k.broker, k.state, k.contractref, k.program,
+               k.requiresapproval
+        FROM contractrequirements r
+        JOIN companycontracts k ON k.recordid = r.contractid AND k.accountid = r.accountid
+        WHERE r.accountid = :a AND r.endedon IS NULL AND k.reviewed = 1 AND k.status = 'active'
+          AND {payerlines.live("k")}
+          AND (k.effectivefrom IS NULL OR k.effectivefrom <= CURDATE())
+          AND (k.effectiveto IS NULL OR k.effectiveto >= CURDATE())
+    """, a=accountid):
+        base = row(conn, """
+            SELECT * FROM compliancerules
+            WHERE subject = 'driver' AND effectiveto IS NULL AND accountid IS NULL
+              AND qualificationcode = :q AND evidencesource IS NOT NULL
+            ORDER BY (authoritycategory = 'FEDERAL_GENERAL') DESC, sortorder LIMIT 1
+        """, q=c["qualificationcode"])
+        if not base:
+            continue
+        cid = c["contractid"]
+        out.append({**base,
+                    "code": f'CONTRACT:{c["reqid"]}', "name": base["name"],
+                    "authoritytype": "contract", "authoritycategory": "CONTRACT_COMPANY",
+                    "authority": " ".join(x for x in (c["broker"], c["state"]) if x),
+                    "citation": " ".join(x for x in (c["contractref"], c["clause"]) if x) or None,
+                    "applieswhen": None if not c["requiresapproval"] else json.dumps({"any": [
+                        {"fact": "driver.contracts", "has": cid},
+                        {"fact": "trip.contract", "eq": cid}]}),
+                    "offered": 0, "extendable": 0, "program": c["program"],
+                    "enforcement": "dispatch", "legalreview": "approved",
+                    "recurrence": "days" if c["renewaldays"] else base["recurrence"],
+                    "recurrencedays": c["renewaldays"] or base["recurrencedays"],
+                    "grouping": "company"})
+    return out
+
+
+def _fold_alternates(out: list[dict]) -> list[dict]:
+    """A rule the company has said is answered by another requirement's evidence joins that
+    requirement's row, as one more source behind it. With the condition false, it stands alone."""
+    owner = {i["evidencesource"]: i.get("qualificationcode") for i in out
+             if i.get("evidencesource") and i.get("qualificationcode") and not i.get("foldinto")}
+    for i in out:
+        target = owner.get(i.get("foldinto"))
+        if target:
+            i["qualificationcode"], i["folded"] = target, True
+    return out
+
+
+def _by_qualification(conn: Connection, out: list[dict]) -> list[dict]:
+    """One row per qualification, with every source behind it.
+
+    Rules are the WHY and the catalog is the WHAT. Several rules may ask for the same qualification
+    - the license under FMCSA and again under Medicaid, the pre-employment test under Part 382, the
+    Florida intrastate statute and the CTD - and the driver's file shows the thing once. Each source
+    is still evaluated on its own; the row takes the worse state among those that reach the driver,
+    and lists them all, so nothing a stricter source asks is lost by being merged.
+
+    The row keeps the code of its worst source, which is the one its dialog opens on. Sources that
+    point at one qualification read the same evidence, so any of them opens the same record.
+
+    An HR obligation never stops dispatch. It is still shown, chased and dated - it is simply not
+    a reason to keep a driver off a trip."""
+    names = {r["code"]: r["name"] for r in rows(conn, "SELECT code, name FROM qualificationcatalog")}
+    rank = lambda o: (WORST_FIRST.index(o["status"])  # noqa: E731
+                      if o["status"] in WORST_FIRST else len(WORST_FIRST))
+    groups: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for item in out:
+        if item.get("enforcement") == "hr":
+            item["blocking"], item["gate"] = 0, "deficiency"
+        key = item.get("qualificationcode") or f'rule:{item["code"]}'
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(item)
+    merged = []
+    for key in order:
+        group = groups[key]
+        reaching = [i for i in group if i["applies"] is True]
+        pool = reaching or [i for i in group if i["applies"] is None] or group
+        # Among equals, the requirement's own rule rather than one folded into it: it is the one
+        # whose dialog shows the record the row is about.
+        primary = dict(min(pool, key=lambda o: (rank(o), bool(o.get("folded")))))
+        # A contract source may be the worst, but its dialog is the qualification's own rule.
+        if primary["code"].startswith("CONTRACT:"):
+            real = next((i for i in group if not i["code"].startswith("CONTRACT:")), None)
+            if real:
+                primary["code"] = real["code"]
+        primary["sources"] = [{"code": i["code"], "authority": i["authority"],
+                               "citation": i["citation"], "category": i.get("authoritycategory"),
+                               "because": i.get("because"), "status": i["status"],
+                               "legalreview": i.get("legalreview"), "program": i.get("program"),
+                               "applies": i["applies"], "why": i.get("why")} for i in pool]
+        if len(pool) > 1:
+            primary["blocking"] = int(any(i.get("blocking") for i in pool))
+            if any(i.get("gate") == "hardstop" for i in pool):
+                primary["gate"] = "hardstop"
+            stages = [i.get("duestage") or "prehire" for i in pool]
+            primary["duestage"] = min(stages, key=lambda x: STAGES.index(x) if x in STAGES else 9)
+        # General if any source behind it is general: the license counts toward every program,
+        # even though one of its sources is Medicaid's.
+        if any(i.get("program") is None for i in pool):
+            primary["program"] = None
+        if key in names:
+            primary["name"] = names[key]
+        merged.append(primary)
+    return merged
+
+
+def for_program(item: dict, program: str) -> dict | None:
+    """The row as one program sees it: only the sources that are general or belong to that program,
+    and the worse state among them. A merged row takes the worst of every source, which is right for
+    the file and wrong for a badge - a shortfall only one program asks about must not count against
+    another. None where nothing behind the row belongs to this program."""
+    srcs = [s for s in (item.get("sources") or []) if s.get("program") in (None, program)]
+    if not item.get("sources"):
+        return item if item.get("program") in (None, program) else None
+    if not srcs:
+        return None
+    rank = lambda s: (WORST_FIRST.index(s["status"])  # noqa: E731
+                      if s["status"] in WORST_FIRST else len(WORST_FIRST))
+    worst = min(srcs, key=rank)
+    return {**item, "status": worst["status"], "why": worst.get("why") or item.get("why"),
+            "applies": worst.get("applies", item["applies"]), "program": program}

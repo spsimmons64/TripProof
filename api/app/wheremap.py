@@ -46,7 +46,10 @@ def style_url() -> str | None:
 def _maptiler(address: str) -> tuple[float, float, str] | None:
     """Ask MapTiler where an address is. None where there is no key or no answer."""
     from app.config import settings
-    key = (settings.maptiler_key or "").strip()
+    # The server-only key first. The browser key is locked to our origin in the MapTiler account
+    # and a server sends no Referer, so it is refused 403 - which is why every address booked
+    # before this was stored without coordinates.
+    key = (settings.maptiler_server_key or settings.maptiler_key or "").strip()
     if not key or not address:
         return None
     url = (MAPTILER_GEOCODE.format(q=urllib.parse.quote(address))
@@ -224,6 +227,44 @@ def trail_miles(conn: Connection, accountid: str, driverid: str, start, end) -> 
     return {"miles": round(miles, 2), "fixes": len(fixes), "gaps": skipped}
 
 
+CENSUS = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
+
+
+def _census(address: str) -> tuple[float, float] | None:
+    """Ask the US Census Bureau where an address is.
+
+    This is the one that actually answers. MapTiler holds the only key this installation has, and
+    that key is locked to our own origin in the MapTiler account - correctly, because it ships
+    inside the browser bundle where anyone can read it. A server sends no Referer, so every
+    server-side geocode was refused 403 and silently fell through. OpenStreetMap, the fallback,
+    simply does not know most residential US streets: it failed on an address in Trinity, Florida
+    that the Census matched to the house number.
+
+    No key, no origin, no quota to leak - and it is the address range database the post office and
+    everybody else is ultimately quoting. For a product that geocodes American street addresses
+    and nothing else, it is a better source than either.
+
+    `benchmark` is which vintage of the address file to match against; Public_AR_Current is the
+    one that is kept up to date.
+    """
+    if not (address or "").strip():
+        return None
+    url = CENSUS + "?" + urllib.parse.urlencode(
+        {"address": address, "benchmark": "Public_AR_Current", "format": "json"})
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": AGENT})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as answer:      # noqa: S310
+            got = json.loads(answer.read().decode())
+    except Exception as e:                                                # noqa: BLE001
+        log.warning("census geocode failed for %r: %s", address, e)
+        return None
+    for match in (got.get("result") or {}).get("addressMatches") or []:
+        at = match.get("coordinates") or {}
+        if at.get("y") is not None and at.get("x") is not None:
+            return float(at["y"]), float(at["x"])
+    return None
+
+
 def place(address: str) -> tuple[float, float] | None:
     """Where an address is, for a trip that is being booked.
 
@@ -234,9 +275,15 @@ def place(address: str) -> tuple[float, float] | None:
     """
     if not (address or "").strip():
         return None
-    found = _maptiler(address)
+    # The Census first: it is free, needs no key, and knows American street addresses better than
+    # either of the others. MapTiler second, for the day a server-side key exists. OpenStreetMap
+    # last, because it is the one most likely to answer with the middle of a town.
+    found = _census(address)
     if found:
-        return found[0], found[1]
+        return found
+    better = _maptiler(address)
+    if better:
+        return better[0], better[1]
     plain = _ask(q=address, countrycodes="us")
     return plain if plain else None
 

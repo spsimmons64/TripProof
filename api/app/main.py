@@ -4,8 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import (admin, apply, audits, auth, billing, dashboard, driverapply, gps,
-                         employerreply, live, notifications, roadtestreply, rules, signing, trips,
+from app.routers import (admin, apply, audits, auth, billing, dashboard, driverapp,
+                         driverapply, gps,
+                         employerreply, live, notifications, operating, roadtestreply, rules,
+                         signing, trips,
                          uploading,
                          vault)
 
@@ -23,7 +25,8 @@ app.add_middleware(
 )
 
 for r in (auth, vault, trips, dashboard, audits, rules, admin, notifications, apply, billing,
-          driverapply, signing, uploading, employerreply, roadtestreply, live, gps):
+          driverapply, driverapp, signing, uploading, employerreply, roadtestreply,
+          live, gps, operating):
     app.include_router(r.router)
 
 

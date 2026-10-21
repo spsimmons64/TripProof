@@ -25,14 +25,14 @@ export default function Audits() {
   return (
     <div className="stack">
       <div className="pagehead">
-        <div><h1>Audits</h1><div className="muted">Record each records request, then answer it with an evidence packet.</div></div>
+        <div><h1>Audits</h1></div>
         <button className="primary" onClick={() => setAdding(true)}><Plus size={14} /> New request</button>
       </div>
       {adding && (
         <form className="card stack" onSubmit={submit}>
           <div className="form">
-            <label className="field">Requested by *<input required value={f.requester} onChange={set('requester')} /></label>
-            <label className="field">Their reference<input value={f.reference} onChange={set('reference')} /></label>
+            <label className="field">Requested By *<input required value={f.requester} onChange={set('requester')} /></label>
+            <label className="field">Their Reference<input value={f.reference} onChange={set('reference')} /></label>
             <label className="field">Received *<input type="date" required value={f.receivedon} onChange={set('receivedon')} /></label>
             <label className="field">Due<input type="date" value={f.dueon} onChange={set('dueon')} /></label>
           </div>

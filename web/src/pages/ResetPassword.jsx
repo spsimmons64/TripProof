@@ -58,7 +58,7 @@ export default function ResetPassword() {
             <label className="field">New password (at least {MIN} characters)
               <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </label>
-            <label className="field">Confirm password
+            <label className="field">Confirm Password
               <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
             </label>
             {error && <div className="error">{error}</div>}

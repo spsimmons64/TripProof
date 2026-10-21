@@ -91,6 +91,14 @@ h1::before { content: ''; flex: none; width: 6px; height: 28px; border-radius: 3
 h2 { font-size: 16px; margin: 0 0 12px; }
 h3 { font-size: 14px; margin: 0 0 8px; color: var(--teal-900); }
 .muted { color: var(--text-2); }
+
+/* What a vehicle's measurements add up to, read directly under them. Text only - a background
+   here would make a banner of something that is part of the heading. */
+.licenseread { font-size: 13px; line-height: 1.45; margin-top: 4px; font-weight: 600; }
+.licenseread div + div { font-weight: 500; }
+.licenseread.good { color: var(--good); }
+.licenseread.warn { color: var(--warn); }
+.licenseread.info { color: var(--info); }
 .small { font-size: 12px; }
 .mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12px; }
 :focus-visible { outline: 2px solid var(--teal-500); outline-offset: 2px; }
@@ -198,6 +206,10 @@ input:not([type=checkbox]):not([type=radio]):not([type=file]), select { height: 
 select { padding-top: 0; padding-bottom: 0; font-weight: 400; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--teal-500); box-shadow: 0 0 0 3px rgb(74 158 180 / 25%); }
 textarea { width: 100%; min-height: 90px; }
+/* A note is a note, everywhere: the same box, the same height, and no handle to drag.
+   A field somebody can stretch is a field that ends up a different size on every screen it is
+   filled in on, and these sit in grids whose other cells cannot follow it. */
+.profileform textarea, .infoform textarea { height: 100px; min-height: 100px; resize: none; }
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); font-weight: 500; }
 /* Label text sits 2px in from the field's edge; the control itself stays flush. */
 label.field { text-indent: 2px; }
@@ -368,6 +380,8 @@ details summary { cursor: pointer; color: var(--text-2); }
 .dialogbrief.docbrief { margin: 0; padding: 10px 18px; border-left: 0; border-radius: 0;
                         border-bottom: 1px solid var(--teal-100); }
 .modal footer { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; background: var(--teal-50); }
+/* A footer button says its whole name on one line; the dialog widens to fit them (Modal). */
+.modal footer button, .modal footer .btn { white-space: nowrap; flex: none; }
 /* Typed in capitals and stored in capitals - what is on the screen is what goes in the record. */
 input.upper { text-transform: uppercase; }
 /* A link meant to be read out or copied, not clicked. */
@@ -401,6 +415,11 @@ input.upper { text-transform: uppercase; }
    not two buttons stranded at opposite corners. */
 .sendrow { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
 .sendrow > .pushright { margin-left: auto; }
+/* The thing to DO about a warning sits at the end of its line, away from the words - and keeps
+   its own width. A notice is a flex row, so without this the action is squeezed by whatever text
+   is beside it until its label wraps a word at a time and the button closes up into a disc. */
+.notice > .pushright { margin-left: auto; flex: none; }
+.notice > .pushright > button, .notice > button { white-space: nowrap; }
 /* What a typed name looks like once it is a signature. */
 .signhere { display: block; font-family: 'Ms Madi', 'Segoe Script', cursive; font-size: 30px;
             line-height: 1.6; color: var(--teal-950); border-bottom: 1px solid var(--border);
@@ -524,12 +543,46 @@ main:has(> .fill) { padding-bottom: 24px; }   /* same gap below the grid as abov
    grid. The rows are fixed-layout, so a column has a width to truncate against. */
 .gridcard th, .gridcard td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gridempty { padding: 40px 16px; text-align: center; color: var(--text-2); }
+/* An empty grid: the table keeps its header and nothing more, and the message sits in the middle
+   of what is left. Without this the table still claims `flex: 1` with no rows in it, so the words
+   end up at the foot of the card with the whole panel empty above them. */
+/* Choosing a driver and a vehicle for one leg: two lists side by side, because the pair is one
+   decision and reading them one above the other makes it two. */
+/* What the trip comes to, beside the fields that decide it. Not a field - nothing is typed
+   here - so it does not wear a field's border and does not look editable. */
+.quoted { display: flex; flex-direction: column; gap: 2px; justify-content: flex-end; }
+.quotelabel { font-size: 12px; color: var(--text-2); }
+.quoteamount { font-size: 18px; font-weight: 700; color: var(--teal-900); line-height: 1.1; }
+.quotewhy { font-size: 11px; color: var(--text-2); line-height: 1.3; }
+
+.pickpair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.picklist { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.pickrow { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+           text-align: left; padding: 8px 12px; border: 1px solid var(--border);
+           border-radius: 10px; background: var(--surface); }
+.pickrow:hover:not(:disabled) { border-color: var(--teal-500); }
+.pickrow.on { border-color: var(--teal-900); box-shadow: inset 0 0 0 1px var(--teal-900); }
+/* Listed, named, and not choosable. A blocked driver is shown because "why is Tim not here" is
+   the first thing asked; what is not shown is a way to pick them anyway. */
+.pickrow.barred { opacity: .62; cursor: not-allowed; background: var(--surface-2, #f7f7f6); }
+.pickname { font-weight: 600; font-size: 14px; color: var(--text); }
+.pickwhy { font-size: 12px; color: var(--text-2); line-height: 1.35; white-space: normal; }
+.pickrow.barred .pickwhy { color: var(--bad); }
+@media (max-width: 900px) { .pickpair { grid-template-columns: 1fr; } }
+
+.gridcard.isbare table { flex: 0 0 auto; }
+.gridcard.isbare .gridempty { flex: 1; min-height: 0; display: flex;
+                              align-items: center; justify-content: center; }
 .pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
          padding: 10px 16px; border-top: 1px solid var(--border); background: var(--surface); }
 /* A section heading that also carries what acts on the section. The band is already there and
    its right-hand end is empty, so the action goes in it rather than floating above the rows. */
-h3.withact { display: flex; align-items: center; justify-content: space-between;
-             gap: 16px; padding-top: 10px; padding-bottom: 10px; }
+/* Laid out from the left, like every panel head: the orange marker, then the title beside it, and
+   the actions pushed to the right end. Spread with space-between, the marker took the left edge on
+   its own and the title floated to the middle. */
+h3.withact { display: flex; align-items: center; justify-content: flex-start;
+             gap: 8px; padding-top: 10px; padding-bottom: 10px; }
+h3.withact > :last-child { margin-left: auto; }
 h3.withact button { text-transform: none; letter-spacing: 0; font-size: 13px; }
 .pager select { height: 32px; padding: 0 8px; }
 .pages { display: flex; gap: 4px; align-items: center; }
@@ -556,13 +609,15 @@ h3.withact button { text-transform: none; letter-spacing: 0; font-size: 13px; }
 
 /* Customer profile: a 6-column form so City / State / ZIP and the contact fields share rows. */
 .profileform { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+/* A full-width row of four equal fields inside the six-column form. */
+.profileform .fourup { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 /* A field in this grid looks like a field whatever element it is. The typography above is
    written for `label.field`, which is right for anything wrapping one control - but a field
    holding a picker AND a table cannot be a label without putting a table inside one, so it
    is a div, and it was rendering in body text beside its neighbours' small grey labels. */
-.profileform > .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px;
-                        color: var(--text-2); font-weight: 500; text-indent: 2px; }
-.profileform > .field > * { text-indent: 0; }
+.profileform > .field, .profilegrid > .field { display: flex; flex-direction: column; gap: 4px;
+                        font-size: 12px; color: var(--text-2); font-weight: 500; text-indent: 2px; }
+.profileform > .field > *, .profilegrid > .field > * { text-indent: 0; }
 /* The width is written on the END - `auto / span N`, not the bare `span N`. The shorthand
    `grid-column: span 2` puts the span on the START and leaves the end auto, so anything that
    later sets grid-column-start (.startrow below) silently takes the width away with the
@@ -580,6 +635,7 @@ h3.withact button { text-transform: none; letter-spacing: 0; font-size: 13px; }
 .kv.profile dt { padding-top: 1px; }
 @media (max-width: 800px) {
   .profileform { grid-template-columns: 1fr 1fr; }
+  .profileform .fourup { grid-template-columns: 1fr 1fr; }
   .profileform .span-1, .profileform .span-2 { grid-column: auto / span 1; }
   .profileform .span-3, .profileform .span-4, .profileform .span-6 { grid-column: auto / span 2; }
   .profileform.fiveup { grid-template-columns: 1fr 1fr; }
@@ -618,7 +674,7 @@ button.launch:hover { background: #f29100; border-color: #f29100; }
 .modal footer button.launch { margin-right: auto; }
 /* Where a footer carries the ways out to somewhere else as well as the ways out of the dialog, the
    first group sits left and the dialog's own buttons stay right. */
-.modal footer .footactions { margin-right: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.modal footer .footactions { margin-right: auto; display: flex; gap: 8px; flex: none; }
 /* A footer can hold one thing that claims the slack, not two. Where a left-hand group has
    already taken it, the note that follows sits beside the finishing buttons it belongs to
    rather than splitting the gap with it and ending up adrift in the middle. */
@@ -774,6 +830,9 @@ label.check.agree.disabled { opacity: .55; }
 .appviewhead h2 { margin: 0; padding: 0; border: none; min-height: 0; font-size: 16px; color: var(--teal-950); }
 /* A row of filters above a grid: the one in force is filled in. */
 .filterrow { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
+/* A page that fills its height is a flex column with no gap, so each band carries its own, the
+   way .filterrow above does. Without it a warning sits welded to the top of the table. */
+.fill > .notice { margin: 0 0 16px; }
 .chip { border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
         border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
         /* Buttons are flex boxes here, so the label is centred by the box, not by text-align. */
@@ -803,11 +862,19 @@ dd.bad { color: var(--bad); }
 .rownote.bad { color: var(--bad); }
 /* A grid that IS the dialog: header band straight under the title bar, pager as the footer. */
 .modal.flush .body { padding: 0; gap: 0; }
+/* A third party's page, living inside one of our dialogs. It fills the body and does its
+   own scrolling - the frame cannot grow to its contents, because what is in it belongs to
+   another origin and its height is not ours to read. */
+.modal .widgetframe { height: 100%; min-height: 0; }
+.modal .widgetframe > iframe { display: block; width: 100%; height: 100%; border: 0; }
 .gridcard.bare { border-radius: 0; box-shadow: none; border: 0; }
 .gridcard.bare th { border-radius: 0; }
 .gridcard.bare .pager { background: var(--teal-50); padding: 12px 18px; }
 .activitypanel { height: min(620px, calc(100vh - 180px)); display: flex; flex-direction: column; }
 .activitypanel td { text-transform: none; }
+/* A grid inside a page panel: a fixed height, so its rows scroll under the headings. */
+.historypanel { height: 360px; display: flex; flex-direction: column; }
+.historypanel .gridcard.bare { border-radius: 0 0 var(--radius, 12px) var(--radius, 12px); }
 .gridcard td button.sm { white-space: nowrap; }
 .ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.whoami { background: transparent; border: 0; color: inherit; padding: 6px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
@@ -1066,11 +1133,11 @@ button.whoami:hover { background: rgb(255 255 255 / 10%); color: inherit; }
 .residencetable th:nth-child(4), .residencetable td:nth-child(4) { width: 110px; }
 /* Room for both actions: 80px fitted Remove alone and clipped it the moment Edit joined it. */
 .residencetable th:last-child, .residencetable td:last-child { width: 130px; }
-/* The endorsements a licence can carry, two to a row as they appear on the card. */
+/* The endorsements a license can carry, two to a row as they appear on the card. */
 .endorsements { display: flex; flex-direction: column; gap: 8px; }
 .endorsementgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; padding: 14px 16px;
                    border: 1px solid var(--teal-300); border-radius: 10px; background: var(--teal-50); }
-/* Built for licence endorsements - "H - Hazmat" - and reused for ticks whose labels are a
+/* Built for license endorsements - "H - Hazmat" - and reused for ticks whose labels are a
    sentence. Two things had to give for that: a box with a width but no `flex: none` is a flex
    item the browser is free to squash, and it squashed it to an oval the moment the text beside
    it wrapped; and `line-height: 1` is fine on one line and unreadable on three. The box now
@@ -1151,6 +1218,11 @@ button.whoami:hover { background: rgb(255 255 255 / 10%); color: inherit; }
 .modal .radiofield { align-items: flex-start; }
 .modal .radioask { max-width: 74%; line-height: 1.45; }
 .residencetable td.actions { text-align: right; padding-right: 0; }
+/* Laid out rather than left to inline flow. An inline-flex button takes its baseline from its
+   first item, so one with an icon and one without sat two pixels apart - visible, and the sort of
+   thing that makes a careful person distrust the rest of the screen. */
+.residencetable td.actions { vertical-align: middle; }
+.residencetable td.actions > * { display: inline-flex; align-items: center; vertical-align: middle; }
 /* Taking a row back out is a dull red: readable as a removal, never as an alarm. */
 /* Row actions are buttons, not links. A link says "this takes you somewhere"; Copy, Edit, Remove
    and Make active all DO something to the row they sit on, and something that acts should look
@@ -1276,8 +1348,71 @@ main:has(> .reviewpage) { padding-top: 0; }
 
 .reviewcols { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
 .qualcard { padding: 0; }
-.qualcard h3 { margin: 0; padding: 16px 20px; font-size: 13px; text-transform: uppercase; letter-spacing: .07em;
-               color: var(--teal-900); border-bottom: 1px solid var(--border); }
+/* The same head a section wears inside a dialog - orange tick, tinted band, teal rule. A
+   panel on a record and a section in a form are the same thing to whoever is reading, and
+   two treatments for it made the product look like two products. */
+.qualcard h3 { display: flex; align-items: center; gap: 8px;
+               margin: 0; padding: 12px 20px; font-size: 13px; text-transform: uppercase;
+               letter-spacing: .07em; color: var(--teal-900);
+               background: var(--teal-50); border-bottom: 2px solid var(--teal-100); }
+.qualcard h3::before { content: ''; width: 4px; height: 14px; border-radius: 2px;
+                       background: var(--orange); flex: none; }
+/* Where the head shares its line with a button, the STRIP is the band and the heading inside
+   it is plain - otherwise the band stops 20px short of the card and the wrapper's own rule
+   draws a second line under the first. */
+.qualcard > .infotabs { padding: 8px 20px; background: var(--teal-50);
+                        border-bottom: 2px solid var(--teal-100); }
+/* One band height for every panel on a page, whether or not its head carries a button. A panel
+   whose head is a line of words sitting shallower than the one beside it reads as a different
+   kind of thing, which it is not. The figure is what a head with a button comes to. */
+.qualcard > .infotabs { min-height: 53px; box-sizing: border-box; }
+/* The same height for a head written as a bare heading - with or without actions in it - so every
+   panel's band matches, whichever markup it was built with. */
+.qualcard > h3 { min-height: 53px; box-sizing: border-box; padding-top: 8px; padding-bottom: 8px; }
+
+/* A requirement opened: the records that answer it, inside the row that asks for them. Tinted
+   and inset so the list reads as belonging to the row above it rather than as the next row. The
+   height has to be released - .recordtable fixes every cell at 42px, which is right for a line
+   of text and absurd for a table. */
+.drawerrow > td { height: auto; padding: 0; background: var(--teal-50);
+                  box-shadow: inset 0 1px 0 var(--teal-100), inset 0 -1px 0 var(--teal-100); }
+.drawer { padding: 10px 20px 16px 32px; }
+.drawer > .draweradd { justify-content: flex-end; margin-bottom: 6px; }
+/* The list inside sits on the tint, not on its own white card. */
+.drawer .recordtable { background: none; }
+.drawer .recordtable th:first-child, .drawer .recordtable td:first-child { padding-left: 10px; }
+/* Which requirement is open, said by the one mark that costs no words - in a column of its own,
+   at the weight of something meant to be hit. The widths are stated because this table has four
+   columns and .residencetable sizes the third and fourth for tables that have three. */
+.reqtable th:nth-child(1), .reqtable td:nth-child(1) { width: 54px; }
+.reqtable th:nth-child(2), .reqtable td:nth-child(2) { width: auto; }
+.reqtable th:nth-child(3), .reqtable td:nth-child(3) { width: 160px; }
+.qualcard .reqtable th:first-child, .qualcard .reqtable td:first-child { padding: 0; }
+.reqtable td.reqturn { text-align: center; vertical-align: middle; }
+.reqtable td.reqturn svg { color: var(--teal-500); transition: transform .14s ease, color .14s ease;
+                           vertical-align: middle; }
+.reqtable tr.click:hover td.reqturn svg { color: var(--teal-900); }
+.reqtable td.reqturn svg.turned { transform: rotate(90deg); color: var(--orange); }
+/* The name is the first thing READ, even though it is no longer the first cell. `.residencetable`
+   colours every cell but the first, and moving the chevron into a column of its own handed that
+   colour to the requirement's own name. A rule that works by position has to be moved when the
+   positions move. */
+.reqtable td:nth-child(2) { color: var(--text); }
+
+/* What is on file under a requirement. Stated for the same reason as the table above it: five
+   columns, against the three `.residencetable` sizes by position. */
+.credtable th:nth-child(1), .credtable td:nth-child(1),
+.credtable th:nth-child(2), .credtable td:nth-child(2) { width: 110px; }
+.credtable th:nth-child(3), .credtable td:nth-child(3) { width: auto; }
+.credtable th:nth-child(4), .credtable td:nth-child(4) { width: 150px; }
+.credtable th:last-child, .credtable td:last-child { width: 120px; }
+.qualcard > .infotabs > h3 { padding: 0; background: none; border: 0; }
+/* The content starts where the heading's words start, not against the card's edge. A table
+   flush with the border reads as though it has fallen out of its panel. */
+.qualcard .recordtable th:first-child,
+.qualcard .recordtable td:first-child { padding-left: 32px; }
+.qualcard .recordtable th:last-child,
+.qualcard .recordtable td:last-child { padding-right: 20px; }
 .qualcard h3.sub { border-top: 1px solid var(--border); color: var(--text-2); }
 
 /* The mark against a step, in the same language the applicant's own progress panel uses. */
@@ -1340,7 +1475,7 @@ main:has(> .reviewpage) { padding-top: 0; }
               letter-spacing: .04em; text-transform: uppercase; }
 
 /* ------------------------------------------------------------------------------------------------
-   Reading the barcode on a licence: the camera fills the dialog, with a frame to hold the card in
+   Reading the barcode on a license: the camera fills the dialog, with a frame to hold the card in
    ------------------------------------------------------------------------------------------------ */
 .modal.scanner { width: min(680px, 100%); }
 .scanhow { margin: 0 0 12px; font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
@@ -1393,7 +1528,13 @@ main:has(> .reviewpage) { padding-top: 0; }
 .qualfacts dd { margin: 0; color: var(--text); }
 
 /* The one instruction the page needs, said once per section and quietly. */
-.qualcard h3.stagehead { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+/* The count sits at the right, the title does not. `space-between` says "push the first thing
+   left and the last thing right", and when the count is absent - or was never there - the only
+   thing left to push right is the title itself, which is how every heading on the driver's
+   dashboard came to be read from the wrong end. The title stays where the tick leaves it and
+   whatever follows it is what travels. */
+.qualcard h3.stagehead { display: flex; align-items: center; justify-content: flex-start; gap: 16px; }
+.qualcard h3.stagehead > :last-child { margin-left: auto; }
 .stagehint { font-size: 10px; font-weight: 400; font-style: italic; letter-spacing: .01em;
              text-transform: none; color: var(--text-2); opacity: .55; }
 
@@ -1475,9 +1616,18 @@ embed.docfill, img.docfill { flex: 1; min-height: 0; height: auto; max-height: n
 .infotabs .panelactions button { border: 1px solid var(--teal-300); background: var(--surface);
   color: var(--teal-900); padding: 7px 16px; font-weight: 500; }
 .infotabs .panelactions button:hover { background: var(--teal-50); border-color: var(--teal-500); }
+/* An action beside Save takes Save's shape: the pill, not the squarer panel button. */
+.infotabs .panelactions button.pill { border-radius: 999px; padding: 7px 20px; }
+.infotabs .panelactions + button.primary { margin-left: 8px; }
 .infoform { padding: 18px 20px; }
+/* The other half of .qualcard. The card itself has no padding so its band can run edge to edge,
+   which leaves whatever sits under the band to supply its own - .infoform does it for a form, and
+   this does it for everything else. */
+.qualcard > .panelbody { padding: 18px 20px; }
+.qualcard > .panelbody > :first-child { margin-top: 0; }
+.qualcard > .panelbody > :last-child { margin-bottom: 0; }
 .fieldnote { font-size: 11px; color: var(--text-2); margin-top: 3px; }
-/* The active licence is marked by its own column - never by a different font, because every cell
+/* The active license is marked by its own column - never by a different font, because every cell
    in a row reads at the same size and weight, and never by a tint as well, because the column has
    already said it. */
 
@@ -1489,12 +1639,12 @@ embed.docfill, img.docfill { flex: 1; min-height: 0; height: auto; max-height: n
                                       flex: none; }
 .form .field.check, .profileform .field.check { grid-column: 1 / -1; }
 /* Two ticks that belong beside each other, rather than each taking a row of its own. */
-.profileform .field.check.sharerow { grid-column: span 2; }
+.profileform .field.check.sharerow, .form .field.check.sharerow { grid-column: span 2; }
 /* The names flow across; the heading spans them. */
 /* A picker with its own button beside it. The select keeps the width it had; the button is
    square and takes what it needs, so the pair still sits in one grid column. */
 .withpick { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
-.withpick > select { flex: 1; min-width: 0; }
+.withpick > select, .withpick > input { flex: 1; min-width: 0; }
 .pickbtn { flex: none; padding: 0 10px; }
 /* What was chosen, listed under its own heading rather than filling the form. Tight and
    unruled: these are a handful of names the dialog already decided, not a table anybody
@@ -1502,6 +1652,12 @@ embed.docfill, img.docfill { flex: 1; min-height: 0; height: auto; max-height: n
 .coverstable { margin: 0; }
 /* `height: auto` because .recordtable td sets a fixed 42px, which is right for a row
    carrying buttons and far too tall for a name. */
+/* The appointments a login holds. One a line: these are named responsibilities with long
+   regulatory names, not a row of short options. */
+.appointlist { display: grid; gap: 7px; }
+.appointlist .field.check { grid-column: auto; font-weight: 400; align-items: start; }
+.appointlist .field.check > span { line-height: 1.3; }
+
 /* Two actions on a row that is itself clickable. Right-aligned so the names beside them
    stay the thing being read. */
 .rowacts { display: flex; gap: 8px; justify-content: flex-end; }
@@ -1578,23 +1734,28 @@ embed.docfill, img.docfill { flex: 1; min-height: 0; height: auto; max-height: n
 .profileform .field.switch.beside { padding-top: 21px; justify-content: flex-end; }
 /* Anywhere else a plain checkbox appears, it matches too. */
 input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--teal-900); }
+/* A tick box is drawn by the browser; the box, padding and focus ring meant for text fields only
+   frame it in a second box. Keyboard focus still shows, as a thin outline. */
+input[type="checkbox"], input[type="radio"] { border: 0; padding: 0; background: none;
+                                              border-radius: 0; box-shadow: none; }
+input[type="checkbox"]:focus, input[type="radio"]:focus { box-shadow: none; }
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible {
+  outline: 2px solid var(--teal-500); outline-offset: 2px; }
 
-/* The licences on a driver's own page: eight columns spread across the full width, rather than the
+/* The licenses on a driver's own page: eight columns spread across the full width, rather than the
    application's seven bunched to the left. */
 /* License · Class · Valid · Active · actions. The actions column carries up to three buttons, so
    it keeps real room; the rest hold short values and need very little. */
-/* License · Class · Endorsements · Valid · Status · actions. The actions column holds three
-   buttons at 92px and needs about 300px; the rest is shared out by how much each value actually
-   occupies, with the gap taken out from between Status and the buttons. */
-.driverlicensetable th:nth-child(1), .driverlicensetable td:nth-child(1) { width: 19%; }
-.driverlicensetable th:nth-child(2), .driverlicensetable td:nth-child(2) { width: 7%; }
-.driverlicensetable th:nth-child(3), .driverlicensetable td:nth-child(3) { width: 14%; }
-.driverlicensetable th:nth-child(4), .driverlicensetable td:nth-child(4) { width: 20%; }
-.driverlicensetable th:nth-child(5), .driverlicensetable td:nth-child(5) { width: 11%; }
-.driverlicensetable th:last-child, .driverlicensetable td:last-child { width: 29%; text-align: right;
+/* License · Class · Endorsements · Valid · Status · View. One button per row. */
+.driverlicensetable th:nth-child(1), .driverlicensetable td:nth-child(1) { width: 25%; }
+.driverlicensetable th:nth-child(2), .driverlicensetable td:nth-child(2) { width: 8%; }
+.driverlicensetable th:nth-child(3), .driverlicensetable td:nth-child(3) { width: 15%; }
+.driverlicensetable th:nth-child(4), .driverlicensetable td:nth-child(4) { width: 26%; }
+.driverlicensetable th:nth-child(5), .driverlicensetable td:nth-child(5) { width: 12%; }
+.driverlicensetable th:last-child, .driverlicensetable td:last-child { width: 14%; text-align: right;
                                                                        white-space: nowrap; }
 /* The number is what the eye scans down, so it keeps its own weight and stays left. */
-.driverlicensetable td.licencenumber { text-align: left; color: var(--text); font-weight: 600; }
+.driverlicensetable td.licensenumber { text-align: left; color: var(--text); font-weight: 600; }
 /* And the same everywhere else a dialog lists records: the first column identifies the row, so it
    carries the row's own ink rather than the teal the other cells use. Written once so the tables
    cannot drift apart again. */
@@ -1630,9 +1791,6 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--teal-900
 .residencetable td.st-active { color: var(--green); }
 .residencetable td.st-inactive { color: var(--text-2); }
 .residencetable td.st-expired { color: var(--bad); }
-/* Buttons wrap onto a second line rather than being clipped by the cell they sit in. */
-.driverlicensetable td.actions { overflow: visible; white-space: normal; }
-.driverlicensetable td.actions .linkbtn { margin-top: 2px; margin-bottom: 2px; }
 /* Everything but the number is a short value in a wide column, and a left-aligned "FL" under a
    twelve-character heading reads as a gap rather than a column. The number stays left because it is
    long and is what the eye scans down. */
@@ -1685,14 +1843,14 @@ div.formsection { border: 1px solid var(--border); border-radius: 8px; overflow:
 .reviewtable th:nth-child(2), .reviewtable td:nth-child(2) { width: 150px; }
 .reviewtable th:nth-child(3), .reviewtable td:nth-child(3) { width: 130px; }
 
-/* A licence and what has been pulled on it: the licence names itself in the bar, and the two ways
+/* A license and what has been pulled on it: the license names itself in the bar, and the two ways
    to get a record sit in the bar with it. */
-.licencebar { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+.licensebar { display: flex; align-items: center; justify-content: space-between; gap: 16px;
   text-transform: none; letter-spacing: 0; font-size: 13px; }
-.licencedo { display: flex; gap: 8px; }
-.licencebar button { border: 1px solid var(--teal-300); background: var(--surface);
+.licensedo { display: flex; gap: 8px; }
+.licensebar button { border: 1px solid var(--teal-300); background: var(--surface);
   color: var(--teal-900); padding: 4px 14px; font-size: 12px; font-weight: 600; }
-.licencebar button:hover { background: var(--surface); border-color: var(--teal-500); }
+.licensebar button:hover { background: var(--surface); border-color: var(--teal-500); }
 .mvrtable { margin: 0 12px 10px; width: calc(100% - 24px); }
 .mvrtable th:nth-child(1), .mvrtable td:nth-child(1),
 .mvrtable th:nth-child(2), .mvrtable td:nth-child(2) { width: 120px; }
@@ -1718,11 +1876,11 @@ div.formsection { border: 1px solid var(--border); border-radius: 8px; overflow:
   font-weight: 600; white-space: nowrap; vertical-align: middle; }
 .mvrtable td.actions button + button, .reviewlist td.actions button + button { margin-left: 8px; }
 
-/* A licence waiting on a report somebody else has to produce. It sits against the licence it
+/* A license waiting on a report somebody else has to produce. It sits against the license it
    belongs to, and the empty space in the bar falls after it rather than around it. */
-.licencewait { display: inline-flex; align-items: center; color: #8a3f00;
+.licensewait { display: inline-flex; align-items: center; color: #8a3f00;
   margin: 0 auto 0 -10px; }
-.licencewait svg { stroke-width: 2.4; }
+.licensewait svg { stroke-width: 2.4; }
 
 /* A bar on driving is not a missing document, so it does not read as one: it sits under the
    driver's standing, in the banner itself, in the colour of something that stops work. */
@@ -1802,7 +1960,7 @@ div.formsection { border: 1px solid var(--border); border-radius: 8px; overflow:
 .emptyqueue p { margin: 0; }
 
 /* What a vehicle's measurements add up to: three neutral facts, each with its reason.
-   Deliberately not .residencetable - that one is built for the licence list, so it colours every
+   Deliberately not .residencetable - that one is built for the license list, so it colours every
    cell teal, holds each to one line and clips the overflow, which turned the reasons into "rated
    26,000 lb, ...". A reason nobody can read is not a reason. */
 .factpanel h3 { font-size: 13px; font-weight: 600; color: var(--text-2); margin: 0;
@@ -1945,7 +2103,7 @@ main:has(> .stickypage) { padding-top: 0; }
 .row > .pushright { margin-left: auto; }
 
 /* The screening history sets its own column widths. `.residencetable` is laid out fixed with widths
-   tuned for the licence list - a 64px third column, a 130px last one - and every cell clipped to one
+   tuned for the license list - a 64px third column, a 130px last one - and every cell clipped to one
    line, which is what turned "Excluded, lifted 28 Sep 2026" into "Exclud...".
    The result is the column people read, so it gets the room and is allowed to wrap. */
 /* One row height, button or no button. A cell holding a pill is taller than a cell holding words,
@@ -1965,7 +2123,7 @@ main:has(> .stickypage) { padding-top: 0; }
    whatever was written on it. The note takes the room left over. */
 /* Even columns, whatever this table turns out to be holding.
    It carries a different number of columns depending on the kind of record - a training record
-   has Trained by and Tested, a licence copy has neither - so sizing by POSITION put a fixed
+   has Trained by and Tested, a license copy has neither - so sizing by POSITION put a fixed
    140px on whatever happened to be second and let the first column swallow every pixel of
    slack. At 680 that was merely untidy; widened out it left "Valid" occupying half the dialog
    and everything else crowded against the buttons.
@@ -2012,6 +2170,26 @@ main:has(> .stickypage) { padding-top: 0; }
    ellipsis rule meant for text is a button nobody can read. */
 .recordtable th:last-child, .recordtable td:last-child { width: 150px; text-align: right;
                                                          overflow: visible; }
+/* ...but only where the last column really is actions. A table whose last column carries
+   prose - "where it stands" on a requirement - was having its sentence squeezed into 150px
+   and pushed to the right margin by a rule written for buttons. */
+/* Its OWN last column, not every last column inside it. A requirement opened on this page holds
+   a table of records, and a descendant selector does not stop at a table boundary: the inner
+   table's actions column was being left-aligned by a rule written for the outer table's sentence,
+   which is why Certify Repair and Remove sat on the left of their row. */
+.recordtable.lastisprose > thead > tr > th:last-child,
+.recordtable.lastisprose > tbody > tr > td:last-child { width: auto; text-align: left; }
+/* And it WRAPS. `.recordtable` sets nowrap with overflow hidden on every cell, which is right for
+   a name or a date and wrong for the one column that holds a sentence: a requirement explaining
+   itself in a line of regulation - "49 CFR 396.11(c): it must not be dispatched until it is put
+   right" - was cut off mid-word and pushed a horizontal scrollbar under the whole grid. The
+   column that is prose is the column that is allowed to be more than one line. */
+.recordtable.lastisprose > tbody > tr > td:last-child { white-space: normal; overflow: visible;
+                                         text-overflow: clip; line-height: 1.4; }
+.recordtable.lastisprose > tbody > tr { height: auto; }
+.recordtable.lastisprose > tbody > tr > td { height: auto; padding-top: 9px; padding-bottom: 9px; }
+/* And a row spanning the table is an empty state, never actions. */
+.recordtable td[colspan] { width: auto; text-align: left; }
 .screeningtable { table-layout: auto; }
 .screeningtable th, .screeningtable td { overflow: visible; text-overflow: clip; white-space: normal; }
 .screeningtable th:nth-child(1), .screeningtable td:nth-child(1) { width: 110px; white-space: nowrap; }
@@ -2050,7 +2228,7 @@ main:has(> .stickypage) { padding-top: 0; }
 .mvrstatetable td.actions .mvrordered { color: var(--orange-ink); margin-right: 10px; }
 /* A report's table: six columns, of which only the finding is long. The others are dates and one
    word apiece, so they are sized to what they hold and given room to stand apart - the MVR widths
-   are tuned for a licence in the first column and cramp these together. */
+   are tuned for a license in the first column and cramp these together. */
 .reporttable { table-layout: auto; }
 .reporttable th, .reporttable td { overflow: visible; white-space: nowrap; padding-right: 20px; }
 .reporttable th:nth-child(1), .reporttable td:nth-child(1) { width: 110px; }
@@ -2129,7 +2307,7 @@ main:has(> .stickypage) { padding-top: 0; }
 .sphitable td { height: auto; padding-top: 10px; padding-bottom: 10px; }
 
 /* Something waiting to be read is the one thing on a row that somebody has to act on, so it does
-   not look like the buttons beside it. Green and bold, wherever a row offers a reading - a licence
+   not look like the buttons beside it. Green and bold, wherever a row offers a reading - a license
    copy, a driving record, an employer's reply, a report that came back. */
 .residencetable td.actions .linkbtn.toread,
 .linkbtn.toread { color: var(--green); border-color: var(--green); font-weight: 700; }
@@ -2250,6 +2428,8 @@ main:has(> .stickypage) { padding-top: 0; }
 .qualreason { margin-top: 10px; max-width: 420px; }
 /* The question a rule is waiting on, and where to answer it. Not a warning - nothing is wrong. */
 .factasking { display: block; margin-top: 6px; font-size: 12px; color: var(--text-2); }
+.factasking.factfails { color: var(--bad); text-transform: none; white-space: normal; }
+.factasking.factwaits { color: var(--orange-ink); text-transform: none; white-space: normal; }
 /* The question a determination answers, put plainly and given room. */
 /* A policy read on screen: the published text, in the shape it was written, with room to read. */
 .policyview { padding: 20px 24px; max-height: 52vh; overflow-y: auto; }
@@ -2507,7 +2687,7 @@ main:has(> .stickypage) { padding-top: 0; }
 /* Every panel heading the same height, whether or not it carries a count. A badge is taller than
    the words beside it, so a heading that grows only when there is something to count leaves two
    cards side by side with their first rows at different heights. */
-.hiregrid .qualcard > h3.stagehead { min-height: 52px; box-sizing: border-box; }
+
 .hiregrid .qualcard > h3.stagehead .countpill { margin: -2px 0; }
 
 /* When it went out, the document, and who sent it - the last of those smaller and on its own line
@@ -2734,7 +2914,7 @@ main:has(> .stickypage) { padding-top: 0; }
    the map has its own tab now, and on the dashboard it has to leave room for the figures
    above it and the panels below without the playground scrolling to reach them. */
 .fleetmap { width: 100%; height: clamp(340px, 52vh, 620px); background: var(--surface-2); }
-/* The credit, as small as its licence allows. ODbL and the OSM tile policy both require it
+/* The credit, as small as its license allows. ODbL and the OSM tile policy both require it
    to be visible, so it collapses to the round button rather than disappearing. */
 .fleetmap .maplibregl-ctrl-attrib.maplibregl-compact { font-size: 11px; }
 .fleetmap .maplibregl-ctrl-attrib-button { opacity: .75; }
@@ -2848,8 +3028,9 @@ main:has(> .stickypage) { padding-top: 0; }
 .ratescroll th, .ratescroll td { padding-left: 8px; }
 
 /* Begin a new row in a form grid whatever came before. For a field whose neighbours are
-   conditional, so its position does not depend on which of them happens to be showing. */
-.profileform .field.startrow { grid-column-start: 1; }
+   conditional, so its position does not depend on which of them happens to be showing - and for
+   one that is read on its own, with the rest of its row left empty. */
+.profileform .field.startrow, .form .field.startrow { grid-column-start: 1; }
 
 /* The map in its own tab. Same bar as the panel head so the two are recognisably the same
    thing, and the map takes everything under it. */
@@ -2868,3 +3049,365 @@ main:has(> .stickypage) { padding-top: 0; }
 .mapwindow > header .iconbtn { color: #fff; }
 .mapwindow > .fleetmap { flex: 1; height: auto; min-height: 0; }
 
+
+/* ------------------------------------------------------------------------------------------------
+   The driver's app
+   ------------------------------------------------------------------------------------------------
+   A separate application that shares a stylesheet, so everything here is prefixed `dv` and nothing
+   else in the product can reach it. Built for one thumb in a moving vehicle: targets no smaller
+   than 52px, type no smaller than 15px, and the next action always the widest thing on screen. */
+.dvapp { position: fixed; inset: 0; display: flex; flex-direction: column;
+         background: var(--teal-50); font-size: 16px; }
+.dvhead { display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+          background: var(--teal-900); color: #fff; flex: none;
+          padding-top: calc(14px + env(safe-area-inset-top)); }
+.dvbrand { font-weight: 800; letter-spacing: .02em; font-size: 15px; opacity: .85; }
+.dvtitle { font-weight: 700; font-size: 17px; margin-left: auto; margin-right: auto;
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dvicon { background: none; border: 0; color: #fff; padding: 8px; display: flex; flex: none; }
+.dvbody { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px;
+          padding-bottom: calc(24px + env(safe-area-inset-bottom)); display: flex;
+          flex-direction: column; gap: 12px; }
+
+.dvform { display: flex; flex-direction: column; gap: 14px; }
+.dvfield { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600;
+           color: var(--text-2); }
+.dvfield input { height: 54px; font-size: 17px; padding: 0 14px; border-radius: 12px;
+                 border: 1px solid var(--border); background: #fff; color: var(--text); }
+.dvfield input:focus { outline: 2px solid var(--teal-500); outline-offset: 1px; }
+
+/* The next thing to do. One of these on screen at a time, and it is always the widest. */
+.dvgo { min-height: 60px; border: 0; border-radius: 14px; background: var(--teal-900); color: #fff;
+        font-size: 18px; font-weight: 700; display: flex; align-items: center;
+        justify-content: center; gap: 10px; padding: 0 16px; }
+.dvgo:disabled { opacity: .55; }
+.dvgo.waiting { background: var(--orange); color: #3a2200; }
+.dvsecond { min-height: 52px; border-radius: 12px; border: 1px solid var(--teal-300);
+            background: #fff; color: var(--teal-900); font-size: 16px; font-weight: 600;
+            display: flex; align-items: center; justify-content: center; gap: 8px; }
+.dvtrouble { min-height: 52px; border-radius: 12px; border: 1px solid #e3b7b7; background: #fff;
+             color: var(--bad); font-size: 16px; font-weight: 600; display: flex;
+             align-items: center; justify-content: center; gap: 8px; margin-top: 4px; }
+
+.dvlisthead { display: flex; align-items: center; justify-content: space-between;
+              font-size: 14px; font-weight: 600; color: var(--text-2); }
+.dvlisthead .dvicon { color: var(--text-2); }
+/* One job, two lines: the time and who it is, then where. A driver between trips scans this
+   list; a card each would be three thumb-scrolls for a morning's work. */
+.dvrow { display: flex; flex-direction: row; align-items: center; gap: 12px;
+         text-align: left; background: #fff;
+         border: 0; border-bottom: 1px solid var(--border); border-radius: 0;
+         padding: 12px 14px; min-height: 68px; justify-content: center; }
+.dvrow:first-of-type { border-top: 1px solid var(--border); }
+.dvrow:hover, .dvrow:focus, .dvrow:active { background: #fff; }
+.dvrow:active { background: var(--teal-50); }
+.dvrow.done { opacity: .6; }
+.dvrowtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dvrowtop { display: flex; align-items: baseline; gap: 10px; }
+.dvtime { font-size: 15px; font-weight: 800; color: var(--teal-900); flex: none;
+          min-width: 74px; }
+.dvaddr { font-size: 13px; color: var(--text-2); line-height: 1.35; overflow: hidden;
+          display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+/* The one mark that says where this job has got to - read across a moving vehicle, in daylight,
+   at a glance. A thin outline in a muted colour was not that: filled, on a disc, in the colour
+   the state means. The shape differs as well as the colour, so it is not colour alone. */
+.dvmark { margin-left: auto; flex: none; display: flex; align-items: center;
+          justify-content: center; width: 36px; height: 36px; border-radius: 50%;
+          color: #fff; }
+.dvmark svg { stroke-width: 2.6; }
+.dvmark.wait { background: var(--teal-100); color: var(--teal-900); }
+.dvmark.go { background: var(--teal-900); }
+.dvmark.done { background: var(--green); }
+.dvmark.waiting { background: var(--orange); color: #3a2200; }
+/* En route is the one that is actually happening now, so it carries a ring as well. */
+.dvmark.go.moving { box-shadow: 0 0 0 3px var(--teal-100); }
+.dvwhen { font-size: 15px; font-weight: 800; color: var(--teal-900); display: flex; gap: 10px;
+          align-items: center; }
+.dvwaiting { display: inline-flex; align-items: center; gap: 4px; font-size: 12px;
+             font-weight: 700; color: #7a4a00; background: var(--orange-100);
+             padding: 2px 8px; border-radius: 999px; }
+.dvwho { font-size: 16px; font-weight: 700; color: var(--text); flex: 1; min-width: 0;
+         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dvwhere { font-size: 14px; color: var(--text-2); display: flex; gap: 6px; align-items: start; }
+.dvstate { font-size: 14px; font-weight: 700; color: var(--teal-900); display: flex; gap: 6px;
+           align-items: center; margin-top: 2px; }
+
+.dvtrip { background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px;
+          display: flex; flex-direction: column; gap: 12px; }
+.dvrow { display: flex; justify-content: space-between; font-size: 15px; color: var(--text-2); }
+.dvrow b { color: var(--text); }
+.dvplace { display: flex; gap: 10px; font-size: 15px; color: var(--text); }
+.dvplace b { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+             color: var(--text-2); }
+/* Its own control now, outside the card and the width of the others it sits with. */
+.dvcall { min-height: 52px; width: 100%; box-sizing: border-box; border-radius: 12px;
+          border: 1px solid var(--teal-300); background: #fff; color: var(--teal-900);
+          font-size: 16px; font-weight: 700; display: flex; align-items: center;
+          justify-content: center; gap: 8px; text-decoration: none; }
+.dvcall:active { background: var(--teal-50); }
+/* The facts, then a rule, then the journey. The line is what stops a driver reading the vehicle
+   number as part of the address. */
+.dvfacts { display: flex; flex-direction: column; gap: 10px; padding-bottom: 12px;
+           border-bottom: 1px solid var(--border); }
+.dvplaces { display: flex; flex-direction: column; gap: 12px; padding-bottom: 12px;
+            border-bottom: 1px solid var(--border); }
+.dvtrip > :last-child { border-bottom: 0; padding-bottom: 0; }
+.dvnote { background: var(--orange-100); color: #5a3600; border-radius: 10px; padding: 10px 12px;
+          font-size: 14px; }
+.dverr { background: var(--bad-bg); color: var(--bad); border-radius: 10px; padding: 12px 14px;
+         font-size: 15px; font-weight: 600; }
+.dvdone { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px;
+          color: var(--green); font-weight: 700; font-size: 16px; }
+.dvempty, .dvwait { color: var(--text-2); text-align: center; padding: 40px 16px; font-size: 16px; }
+
+/* A sheet rather than a dialog: it comes up from the bottom, where the thumb already is. */
+.dvsheet { position: fixed; inset: 0; background: rgb(15 58 67 / 45%); display: flex;
+           align-items: flex-end; z-index: 50; }
+.dvsheetbody { background: var(--teal-50); width: 100%; border-radius: 18px 18px 0 0;
+               padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); display: flex;
+               flex-direction: column; gap: 10px; max-height: 88vh; overflow-y: auto; }
+.dvsheetbody h2 { margin: 0 0 4px; font-size: 19px; }
+.dvoption { min-height: 56px; border-radius: 12px; border: 1px solid var(--border); background: #fff;
+            color: var(--text); font-size: 16px; font-weight: 600; text-align: left; padding: 0 16px; }
+
+/* The app's own buttons keep their colour when touched. `button:hover` up at the top of this file
+   repaints any button pale on hover - fine for a mouse, wrong here, because a phone leaves :hover
+   stuck on whatever was last tapped. The driver pressed "Passenger aboard" and it turned into
+   white text on a white background. Every one of these states is stated rather than inherited. */
+.dvgo:hover, .dvgo:focus, .dvgo:active { background: var(--teal-900); border-color: var(--teal-900); color: #fff; }
+.dvgo.waiting:hover, .dvgo.waiting:focus, .dvgo.waiting:active { background: var(--orange); color: #3a2200; }
+.dvgo:active { filter: brightness(1.12); }
+.dvsecond:hover, .dvsecond:focus, .dvsecond:active { background: #fff; border-color: var(--teal-500); color: var(--teal-900); }
+.dvtrouble:hover, .dvtrouble:focus, .dvtrouble:active { background: #fff; border-color: var(--bad); color: var(--bad); }
+.dvoption:hover, .dvoption:focus, .dvoption:active { background: #fff; border-color: var(--teal-500); color: var(--text); }
+.dvcard:hover, .dvcard:focus, .dvcard:active { background: #fff; border-color: var(--border); border-left-color: var(--teal-900); }
+.dvcard.done:hover, .dvcard.done:active { border-left-color: var(--green); }
+.dvicon:hover, .dvicon:focus, .dvicon:active { background: none; border: 0; color: #fff; }
+.dvlisthead .dvicon:hover, .dvlisthead .dvicon:active { color: var(--text-2); }
+/* A tap should not leave a grey flash box behind on a mobile browser either. */
+.dvapp button, .dvapp a { -webkit-tap-highlight-color: transparent; }
+
+/* A <button> does not stretch in a flex column the way a <div> does - Firefox sizes form controls
+   to their content whatever the container says - so the width is stated. Without this the one
+   button a driver is meant to hit is as wide as the words on it: "Completed" ended up 134px of
+   target in the middle of a 390px screen. */
+.dvgo, .dvsecond, .dvtrouble, .dvoption, .dvnav, .dvchip, .dvcall, .dvform .dvgo {
+  width: 100%; box-sizing: border-box;
+}
+/* The trip list runs edge to edge, so each row is the body's width plus the padding it cancels.
+   Declared last because the rule above sets `width: 100%` on everything that is tapped, and the
+   two were fighting - a row that is 100% of a padded body stops 32px short of the screen. */
+/* The list is one block running edge to edge, with the rows flush inside it. The body's own gap
+   would otherwise space them apart like cards, which is the thing being moved away from. */
+.dvlist { display: flex; flex-direction: column; gap: 0; width: calc(100% + 32px);
+          margin: 0 -16px; }
+.dvrow { width: 100%; box-sizing: border-box; margin: 0; }
+.dvrowtop, .dvaddr, .dvrowtext { width: 100%; }
+.dvmark { margin-left: 0; }
+
+/* Whether this driver can sign in to the app, on the driver's own record. A row under the form
+   rather than a panel of its own: it is one fact and one button. */
+.appaccess { border-top: 1px solid var(--border); margin: 0 20px; padding: 14px 0 16px;
+             display: flex; flex-direction: column; gap: 10px; }
+.appaccess > .row { justify-content: space-between; align-items: center; }
+.appaccess input { width: 100%; }
+
+/* Whether the office can see this driver. Quiet when it is working, loud when it is not. */
+.dvgps { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+         border-radius: 10px; padding: 9px 12px; line-height: 1.35; }
+.dvgps.on { color: var(--good); background: var(--good-bg); }
+.dvgps.wait { color: var(--text-2); background: #fff; }
+.dvgps.off { color: var(--bad); background: var(--bad-bg); }
+.dvgps svg { flex: none; }
+
+/* Navigate. Sits above the trip card because it is what a driver reaches for first, and is the
+   one button here that leaves the app - so it is deliberately not the same colour as the one
+   that moves the trip along. */
+.dvnav { min-height: 58px; width: 100%; box-sizing: border-box; border-radius: 14px;
+         border: 2px solid var(--teal-900); background: #fff; color: var(--teal-900);
+         font-size: 17px; font-weight: 700; display: flex; align-items: center;
+         justify-content: center; gap: 10px; }
+.dvnav:hover, .dvnav:focus, .dvnav:active { background: #fff; border-color: var(--teal-900);
+         color: var(--teal-900); }
+.dvnav:active { background: var(--teal-50); }
+
+/* What happened on a trip, for somebody auditing it. Every row is a time and a fact; nothing is
+   summarised, because the point of the table is that a reader can see nothing was left out. */
+.happened { margin-top: 10px; }
+.happened td { height: auto; padding-top: 7px; padding-bottom: 7px; white-space: normal; }
+.happened th:first-child, .happened td:first-child { width: 190px; padding-left: 0; }
+.happened th:nth-child(2), .happened td:nth-child(2) { width: 220px; }
+.happened th:last-child, .happened td:last-child { width: auto; text-align: left; }
+.happened td.mono { color: var(--text-2); font-size: 12.5px; }
+
+/* Why a button a driver expected is not there. Shown in its place rather than leaving a gap:
+   somebody looking for "I Am Waiting" and finding nothing will ring the office. */
+.dvwhynot { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.4;
+            color: var(--text-2); background: #fff; border: 1px dashed var(--border);
+            border-radius: 12px; padding: 12px 14px; }
+.dvwhynot svg { flex: none; margin-top: 2px; }
+
+/* The driver's menu. At the bottom, where the thumb already is, and above the home indicator on
+   a phone that has one. Two pages: the work, and the vehicle. */
+.dvmenu { display: flex; flex: none; background: #fff; border-top: 1px solid var(--border);
+          padding-bottom: env(safe-area-inset-bottom); }
+.dvmenu button { flex: 1; min-height: 62px; border: 0; border-radius: 0; background: #fff;
+                 color: var(--text-2); font-size: 13px; font-weight: 700; display: flex;
+                 flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.dvmenu button.on { color: var(--teal-900); box-shadow: inset 0 3px 0 var(--orange); }
+.dvmenu button:hover, .dvmenu button:focus, .dvmenu button:active { background: #fff; }
+.dvmenu button.on:hover { color: var(--teal-900); }
+
+/* What the last person to drive this vehicle wrote down. */
+.dvlast { font-size: 13px; color: var(--text-2); background: #fff; border-radius: 10px;
+          padding: 10px 12px; line-height: 1.4; }
+/* Before or after the shift. */
+.dvpick { display: flex; gap: 8px; }
+.dvchip { flex: 1; min-height: 50px; border-radius: 12px; border: 1px solid var(--border);
+          background: #fff; color: var(--text-2); font-size: 15px; font-weight: 700; }
+.dvchip.on { border-color: var(--teal-900); color: var(--teal-900);
+             box-shadow: inset 0 0 0 1px var(--teal-900); }
+.dvchip:hover, .dvchip:focus, .dvchip:active { background: #fff; }
+/* The two answers. Neither is preselected: a driver must say which, not accept a default that
+   files "no defects" for a van nobody looked at. */
+.dvgo.quiet { background: #fff; color: var(--teal-900); border: 2px solid var(--teal-300); }
+.dvgo.quiet:hover, .dvgo.quiet:active { background: #fff; color: var(--teal-900); }
+.dvtrouble.on { border-color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
+.dvfield select { height: 54px; font-size: 17px; padding: 0 12px; border-radius: 12px;
+                  border: 1px solid var(--border); background: #fff; color: var(--text); }
+
+/* Fields stretch too. Same reason the buttons needed it stated: Firefox sizes a form control to
+   its content whatever the flex column says, and here it dragged the <label> around it down to
+   the width of the longest vehicle name. */
+.dvfield, .dvfield select, .dvfield input { width: 100%; box-sizing: border-box; }
+
+/* The line under a grid row: what would not fit in a column and should not be cut to fit one.
+   It is a second <tr> because a table cannot wrap a cell under its own columns - but it is not a
+   second ROW to anybody reading the screen, so the two behave as one. The pair carries a single
+   bottom border, and hovering either lights both: a highlight that covered the addresses but not
+   the name read as two separate things that happened to be adjacent. */
+.gridcard tbody tr.subrow > td { padding: 0 12px 11px 12px; border-top: 0; height: auto;
+                                 white-space: normal; }
+.gridcard tbody tr.hassub > td { padding-bottom: 2px; border-bottom: 0; }
+.gridcard tbody tr.click.hassub:hover td,
+.gridcard tbody tr.click.hassub:hover + tr.subrow td,
+.gridcard tbody tr.subrow.click:hover td,
+.gridcard tbody tr.click.hassub:has(+ tr.subrow:hover) td { background: var(--teal-50); }
+.route { display: flex; flex-direction: column; gap: 3px; font-size: 13px;
+         color: var(--text-2); }
+.route b { display: inline-block; min-width: 42px; }
+.route b { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--text-2);
+           margin-right: 4px; }
+
+/* A driver's working week: seven rows, two times each. Narrow, because it is a form and not a
+   report - the day names are the widest thing in it. */
+.shifttable { margin-top: 6px; }
+.shifttable th:first-child, .shifttable td:first-child { width: 160px; padding-left: 0; }
+.shifttable th:nth-child(2), .shifttable td:nth-child(2),
+.shifttable th:nth-child(3), .shifttable td:nth-child(3) { width: 150px; }
+.shifttable input[type="time"] { width: 130px; }
+.shifttable td { height: 46px; }
+
+/* A chip for a board nobody is looking at. It carries a count only when there is something on it,
+   and says so in the colour the rest of the product uses for "this has gone wrong". */
+.chip.shouting { border-color: var(--bad); color: var(--bad); font-weight: 600; }
+.chip.shouting.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+
+/* A numbered explanation of how something works, on a page that has to teach before it acts.
+   Roomier than a bare <ol> because each step is a sentence, not a word. */
+.howlist { margin: 0 0 4px; padding-left: 20px; }
+.howlist li { margin: 0 0 10px; line-height: 1.5; color: var(--text); }
+/* The one action a page exists for, when the page is otherwise all explanation. */
+button.big { padding: 11px 20px; font-size: 15px; }
+
+/* Motor vehicle records: one panel per license. The license is the heading, the last record pulled
+   on it reads across in four facts, and what can be done about it sits along the bottom. */
+.mvrpanels { display: flex; flex-direction: column; gap: 14px; }
+.mvrpanel { border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+            overflow: hidden; box-shadow: 0 1px 2px rgb(15 58 67 / 6%); }
+.mvrpanel > header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+                     padding: 10px 16px; background: var(--teal-50); border-bottom: 1px solid var(--border); }
+.mvrpanel > header .mvrlicense { font-size: 15px; font-weight: 700; color: var(--teal-900);
+                                 letter-spacing: .02em; }
+.mvrpanel > header .st-active { color: var(--green); font-weight: 600; font-size: 13px; }
+.mvrpanel > header .st-inactive { color: var(--text-2); font-weight: 600; font-size: 13px; }
+.mvrfacts { margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); }
+.mvrfacts > div { padding: 12px 16px; border-right: 1px solid var(--border); }
+.mvrfacts > div:last-child { border-right: none; }
+.mvrfacts dt { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2);
+               margin-bottom: 4px; }
+.mvrfacts dd { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+.mvrfacts dd.st-active { color: var(--green); }
+.mvrfacts dd.st-expired { color: var(--bad); }
+.mvrfacts dd.st-expiring, .mvrfacts dd.st-ordered { color: var(--orange-ink); }
+.mvrpanel > footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px;
+                     padding: 10px 16px; border-top: 1px solid var(--border); }
+@media (max-width: 640px) {
+  .mvrfacts { grid-template-columns: repeat(2, 1fr); }
+  .mvrfacts > div:nth-child(2) { border-right: none; }
+  .mvrfacts > div:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+}
+
+/* The open questions on the operating profile: each one leaves some rule under review. */
+.openlist { margin: 6px 0 0; padding-left: 18px; }
+.openlist li { margin: 2px 0; }
+/* What stands between a driver and a program, under the program's status. */
+/* Held off the panel's top edge, and a label never wraps. */
+.askfacts.overviewfacts { margin-top: 14px; }
+.askfacts.overviewfacts dt { white-space: nowrap; }
+.askfacts > div.ovprogram { flex-wrap: wrap; row-gap: 0; }
+.askfacts > div.ovprogram > dd { margin-left: auto; text-align: right; }
+.askfacts .ovreasons { flex-basis: 100%; margin: 2px 0 0 25px; padding-left: 20px; font-size: 12px;
+                       font-weight: 500; color: var(--bad); }
+.askfacts .ovreasons li { margin: 0; }
+.askfacts dd.st-ordered { color: var(--orange-ink); }
+.askfacts dd.st-inactive { color: var(--text-2); }
+
+/* A grid column centred, heading and sort control with it. */
+.gridcard td.center, .gridcard th.center,
+.residencetable td.center, .residencetable th.center { text-align: center; }
+.gridcard th.center .sorth { justify-content: center; }
+/* The line under a grid cell, where it is a code or a name rather than an email address. */
+.rowemail.keepcase { text-transform: none; }
+/* A rule's source under its name: the citations open the text they cite. */
+.rowsource a { color: var(--teal-700, var(--teal-900)); text-decoration: underline; text-underline-offset: 2px; }
+.rowsource a:hover { color: var(--orange-ink); }
+/* A word with more to say on hover. */
+.hashelp { cursor: help; }
+
+/* Operating Profile: the fields on the left, the states on the right as tall as the fields. */
+.profilegrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; }
+.profilegrid .statepick { display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+.profilegrid .statechecks { flex: 1 1 0; min-height: 180px; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px; align-content: start; background: var(--surface); }
+@media (max-width: 760px) { .profilegrid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Panels: the header band follows the card's rounded top corners, and the card floats with the
+   same lift the full-height grids have. Rounded rather than clipped, so a dropdown or tooltip
+   inside a panel is never cut off at its edge. */
+.qualcard { box-shadow: 0 2px 4px rgb(15 58 67 / 8%), 0 10px 24px rgb(15 58 67 / 12%); }
+.qualcard > .infotabs:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+
+/* Payers is three columns now; the page, heading and button included, stops at this width. */
+.payerspage { max-width: 960px; }
+
+/* Vehicle Determinations: the vehicle takes what is left; the figures are narrow and centred; the
+   two determinations are equal columns with their selects filling them, the same at both ends. */
+.vehicletable th:nth-child(2), .vehicletable td:nth-child(2) { width: 90px; }
+.vehicletable th:nth-child(3), .vehicletable td:nth-child(3) { width: 130px; }
+.vehicletable th:nth-child(4), .vehicletable td:nth-child(4) { width: 90px; }
+.vehicletable th:nth-child(n+5), .vehicletable td:nth-child(n+5) { width: 220px; text-align: left; }
+.vehicletable td select { width: 100%; }
+.vehicletable td:last-child, .vehicletable th:last-child { padding-right: 0; }
+
+/* A list of transit safety programs in a dialog: the program takes the room, state and the answer
+   are narrow. */
+.transittable th:nth-child(2), .transittable td:nth-child(2) { width: 80px; }
+.transittable th:nth-child(3), .transittable td:nth-child(3) { width: 200px; }
+.transittable td select { width: 100%; }
+.vehicletable td .withpick input { text-overflow: ellipsis; }
+
+/* What a driver's qualification file is still waiting on, under its row. */
+.filemissing { margin: 4px 0 0; padding-left: 20px; font-size: 13px; font-weight: 500;
+               color: var(--bad); }

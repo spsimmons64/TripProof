@@ -210,29 +210,29 @@ function AddRequirement({ data, rule, onClose, onDone }) {
             <input value={f.name} onChange={set('name')}
               placeholder="Defensive driving course" />
           </label>
-          <label className="field span-6">What it is
+          <label className="field span-6">What It Is
             <input value={f.description} onChange={set('description')}
               placeholder="Shown at the top of the requirement when somebody opens it" />
           </label>
-          <label className="field span-3">Who it applies to
+          <label className="field span-3">Who It Applies To
             <select value={f.audience} onChange={set('audience')}>
               {Object.entries(data.audiences || {}).map(([v, l]) =>
                 <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
-          <label className="field span-3">When it is due
+          <label className="field span-3">When It Is Due
             <select value={f.duestage} onChange={set('duestage')}>
               {Object.entries(data.stages || {}).map(([v, l]) =>
                 <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
           {f.duestage === 'athire' && (
-            <label className="field span-3">Days after hire
+            <label className="field span-3">Days After Hire
               <input type="number" min="1" max="3650" value={f.duedays}
                 onChange={set('duedays')} placeholder="30" />
             </label>
           )}
-          <label className="field span-3">Expires after (days)
+          <label className="field span-3">Expires After (Days)
             <input type="number" min="1" max="3650" value={f.expiresafterdays}
               onChange={set('expiresafterdays')} placeholder="Leave empty if it never expires" />
           </label>

@@ -1,0 +1,19 @@
+# Every fifteen minutes through the working day, hourly otherwise.
+#
+# A background check comes back when a court answers, which is all day and not on a schedule. The
+# office is told by the bell the next time it polls, so the gap between a report finishing and
+# somebody knowing is at most a quarter of an hour rather than however long until someone thinks
+# to look.
+#
+# Persistent=true because a box that was down for an hour should collect what finished while it
+# was away rather than wait for the next quarter hour.
+[Unit]
+Description=Collect finished TripProof background screenings
+
+[Timer]
+OnCalendar=*-*-* *:00/15:00
+RandomizedDelaySec=90
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -39,13 +39,13 @@ from app.db import rows
 # end, which is the correct thing to say about it.
 DRIVER_KINDS = {
     "annualreview", "applicationanswer", "applicationanswered", "cdlismedical", "credential",
-    "driverfact", "drugtest", "employerhistory", "exclusioncheck", "licencecopy", "licencematch",
+    "driverfact", "drugtest", "employerhistory", "exclusioncheck", "licensecopy", "licensematch",
     "mvr", "report", "roadtest", "signature", "transitmedical",
     # Answered by the dedicated pages rather than by a requirement dialog.
     "dutyhours", "prohibition", "accidentregister",
-    # Both licence rules are answered on the one Licenses Held screen - whether the licence is
+    # Both license rules are answered on the one Licenses Held screen - whether the license is
     # valid for the work, and whether a copy of it is in the file.
-    "licence",
+    "license",
     # 49 CFR 382.305 pool membership, answered from the requirement rather than from a date
     # field in the middle of Driver Information.
     "poolmember",

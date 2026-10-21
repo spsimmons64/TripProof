@@ -30,6 +30,7 @@ from datetime import date
 
 from app import exposure as _exposure
 from app import randompool as _randompool
+from app import payerlines as _payerlines
 from app.db import row, rows
 
 
@@ -158,6 +159,7 @@ def vehicle_facts(conn: Connection, accountid: str, vehicleid: str) -> dict:
         return {}
     worked = vehicleclass.facts(got)
     return {
+        **_vehicle_transit(conn, accountid, vehicleid),
         "vehicle.cmv_federal": worked.get("cmv_federal"),
         "vehicle.cmv_florida": worked.get("cmv_florida"),
         "vehicle.cdl_required": worked.get("cdl_required"),
@@ -170,7 +172,37 @@ def vehicle_facts(conn: Connection, accountid: str, vehicleid: str) -> dict:
     }
 
 
-# The day 49 CFR Part 380 Subpart F took effect. A licence or endorsement obtained before it was
+def _vehicle_transit(conn: Connection, accountid: str, vehicleid: str) -> dict:
+    """Whether each transit safety program that governs vehicles reaches this one.
+
+    A program that does not touch the company's home or operating states does not reach it, and
+    neither does one the company has determined it is not covered by. Otherwise the vehicle's own
+    determination answers - and a vehicle nobody has determined, or one under review, is unknown,
+    never exempt."""
+    company = row(conn, """
+        SELECT a.state, p.operatingstates FROM accounts a
+        LEFT JOIN companyprofiles p ON p.accountid = a.recordid WHERE a.recordid = :a
+    """, a=accountid) or {}
+    states = {s for s in (company.get("operatingstates") or "").split(",") if s} | {
+        company.get("state"), "US"}
+    said = {r["programcode"]: r["determination"] for r in rows(conn, """
+        SELECT programcode, determination FROM companytransitprograms WHERE accountid = :a
+    """, a=accountid)}
+    held = {r["programcode"]: r["determination"] for r in rows(conn, """
+        SELECT programcode, determination FROM vehicletransitprograms
+        WHERE accountid = :a AND vehicleid = :v
+    """, a=accountid, v=vehicleid)}
+    out = {}
+    for p in rows(conn, "SELECT code, state FROM transitsafetyprograms WHERE active = 1 AND vehicles = 1"):
+        if p["state"] not in states or said.get(p["code"]) == "notcovered":
+            out[f"vehicle.transit.{p['code']}"] = False
+        else:
+            out[f"vehicle.transit.{p['code']}"] = {"covered": True, "notcovered": False}.get(
+                held.get(p["code"]))
+    return out
+
+
+# The day 49 CFR Part 380 Subpart F took effect. A license or endorsement obtained before it was
 # obtained under the old rules and is not reopened by this one.
 ELDT_FROM = date(2022, 2, 7)
 # What entry-level training is required FOR: the CDL classes, and the endorsements that need it
@@ -183,11 +215,11 @@ def _eldt_reaches(conn: Connection, accountid: str, driverid: str) -> bool | Non
     """Whether entry-level driver training reaches this driver, from their licensing history.
 
     True where a CDL class or a P/S/H endorsement on file was issued on or after 7 February
-    2022. False where licences are on file and all of it predates that. None where nothing is
+    2022. False where licenses are on file and all of it predates that. None where nothing is
     recorded, because an empty licensing history is not evidence of an exemption.
 
     A RENEWAL carries a recent issue date without being a first obtainment, which is why an
-    earlier licence of the same class counts as the first and clears it: the oldest record of
+    earlier license of the same class counts as the first and clears it: the oldest record of
     the class is what says when the driver first held it. Where the only record is a recent one,
     this says it reaches them - the office then either files the training record or files the
     evidence that the driver held the class before the rule, and either answers it.
@@ -362,6 +394,18 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
         "fleet.wheelchair": fleet["wheelchair"],
     }
 
+    # A vehicle somebody has determined to be FMCSA-covered is covered, whatever its weight and
+    # seats say; where every vehicle has been determined not covered, the fleet is not. Otherwise
+    # the figures on the vehicles decide, as before.
+    judged = rows(conn, """
+        SELECT a.fmcsa FROM vehicleassessments a JOIN vehicles v ON v.recordid = a.vehicleid
+        WHERE a.accountid = :a AND v.deleted IS NULL AND v.stub = 0 AND a.fmcsa IS NOT NULL
+    """, a=accountid)
+    if any(j["fmcsa"] == "covered" for j in judged):
+        facts["fleet.cmv_federal"] = True
+    elif judged and len(judged) == fleet["vehicles"] and all(j["fmcsa"] == "notcovered" for j in judged):
+        facts["fleet.cmv_federal"] = False
+
     # What the company has said about itself. The questions are rows in companyquestions, so a new
     # one is data: it names the fact it answers, and rules refer to that name.
     for q in rows(conn, """
@@ -371,6 +415,36 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
         WHERE q.active = 1
     """, a=accountid):
         facts[q["factname"]] = None if q["answer"] is None else bool(q["answer"])
+
+    # The operating profile, where one has been kept, answers what the yes/no questions answered
+    # before - with dates and history. A program on file says whether Medicaid trips are carried;
+    # a question still answers where nothing has been recorded.
+    profile = row(conn, "SELECT employmentmodel, fdot1490, operatingstates FROM companyprofiles "
+                        "WHERE accountid = :a", a=accountid) or {}
+    # The programs are whatever the company's active payer lines carry - nobody enters them twice.
+    programs = rows(conn, f"""
+        SELECT program FROM companycontracts c
+        WHERE accountid = :a AND status = 'active' AND program IS NOT NULL AND {_payerlines.live("c")}
+          AND (effectivefrom IS NULL OR effectivefrom <= CURDATE())
+          AND (effectiveto IS NULL OR effectiveto >= CURDATE())
+    """, a=accountid)
+    if row(conn, "SELECT 1 AS x FROM companycontracts WHERE accountid = :a LIMIT 1", a=accountid):
+        facts["company.medicaid"] = any(p_["program"] == "medicaid" for p_ in programs)
+    facts["company.programs"] = sorted({p_["program"] for p_ in programs})
+    facts["company.employmentmodel"] = profile.get("employmentmodel")
+    facts["company.operatingstates"] = [x for x in (profile.get("operatingstates") or "").split(",") if x]
+    # Transit safety programs: one determination per program - covered / notcovered / review.
+    # Review, or no answer, is unknown - never exempt.
+    determined = {r["programcode"]: r["determination"] for r in rows(conn, """
+        SELECT programcode, determination FROM companytransitprograms WHERE accountid = :a
+    """, a=accountid)}
+    transit = [r["code"] for r in rows(conn, "SELECT code FROM transitsafetyprograms WHERE active = 1")]
+    for code in transit:
+        facts[f"company.transit.{code}"] = {"covered": True, "notcovered": False}.get(determined.get(code))
+    facts["company.transitdetermined"] = determined
+    # The Florida names the existing rules read.
+    facts["company.fdot1490"] = facts.get("company.transit.FL_1490")
+    facts["company.fdot1490set"] = determined.get("FL_1490")
 
     # 29 CFR 1910.1030(c)(2). Read from the determination the company signed, not from a
     # question on the applicability screen: the written determination IS the answer, and a tick
@@ -384,14 +458,16 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
     if vehicleid:
         facts.update(vehicle_facts(conn, accountid, vehicleid))
 
+
     if driverid:
         driver = row(conn, """
             SELECT operation, chapter1490, licenseclass, endorsements, endorsementsneeded, status,
+                   engagement,
                    englishproficient, dob, TIMESTAMPDIFF(YEAR, dob, CURDATE()) AS age
             FROM drivers WHERE recordid = :d AND accountid = :a AND deleted IS NULL
         """, d=driverid, a=accountid) or {}
         facts.update({
-            "driver.licenceclass": (driver.get("licenseclass") or "").upper() or None,
+            "driver.licenseclass": (driver.get("licenseclass") or "").upper() or None,
             "driver.endorsements": (driver.get("endorsements") or "").upper() or None,
             "driver.status": driver.get("status"),
             # What this driver is being qualified to operate. A statement of intent, and
@@ -407,7 +483,20 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
             "driver.cmv": driver.get("operation") in CMV_OPERATIONS,
             "driver.cdl": driver.get("operation") in CDL_OPERATIONS,
             "driver.heavy": driver.get("operation") == "cdlheavy",
-            "driver.chapter1490": bool(driver.get("chapter1490")),
+            # Florida's name for the 14-90 program, set from the program facts below.
+            "driver.chapter1490": None,
+            # The broker contracts this driver is approved to work.
+            "driver.contracts": [x["contractid"] for x in rows(conn, """
+                SELECT contractid FROM driverauthorizations
+                WHERE accountid = :a AND driverid = :d AND endedon IS NULL
+            """, a=accountid, d=driverid)],
+            # Employee or not. The driver's own classification first, then the company's model;
+            # a mixed or unset model leaves it unknown.
+            "driver.employee": ({"employee": True, "contractor": False, "subcontracted": False}
+                                .get(driver.get("engagement"))
+                                if driver.get("engagement")
+                                else {"employee": True, "contractor": False}
+                                .get(facts.get("company.employmentmodel"))),
             # Whether a prohibition is in force RIGHT NOW - 49 CFR 382.501. Two-valued: the
             # record either has an uncleared bar on it or it does not.
             #
@@ -422,13 +511,13 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
                   AND withdrawn IS NULL LIMIT 1
             """, a=accountid, d=driverid)),
             # 49 CFR Part 380 Subpart F. Entry-level driver training is tied to GETTING the
-            # licence or the endorsement, not to being hired - a driver who has held a Class B
+            # license or the endorsement, not to being hired - a driver who has held a Class B
             # since 2019 does not repeat it because a new company took them on. So this is read
             # off the licensing history rather than asked of every CDL holder: it applies where
             # a CDL class or a P, S or H endorsement on file was issued on or after the rule's
             # compliance date, and not where everything on file predates it.
             #
-            # Three-valued on purpose. With no licence recorded there is nothing to read, and
+            # Three-valued on purpose. With no license recorded there is nothing to read, and
             # saying "not required" about a driver whose licensing history nobody has entered
             # would be the software vouching for a check it never made.
             "driver.eldt": _eldt_reaches(conn, accountid, driverid),
@@ -464,11 +553,24 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
             # 40.307: a SAP's follow-up schedule, with fewer tests on file than it prescribed.
             "driver.followupowed": _followup_owed(conn, accountid, driverid),
         })
-        # What the driver said on their own application about a licence being revoked or
+        # Which transit safety programs this driver works under, and whether each reaches them:
+        # assigned and covered (or not yet determined - assigning the driver says they work that
+        # operation) is yes; not assigned, or the company determined not covered, is no; assigned
+        # while the determination is under review is unknown.
+        assigned = {r["programcode"] for r in rows(conn, """
+            SELECT programcode FROM drivertransitprograms WHERE accountid = :a AND driverid = :d
+        """, a=accountid, d=driverid)}
+        for code in transit:
+            said = determined.get(code)
+            facts[f"driver.transit.{code}"] = (
+                False if code not in assigned or said == "notcovered"
+                else None if said == "review" else True)
+        facts["driver.chapter1490"] = facts.get("driver.transit.FL_1490")
+        # What the driver said on their own application about a license being revoked or
         # denied. Three-valued, unlike the tick boxes above: an applicant who has not
         # answered it is not the same as one who answered no, and a rule that turns on the
         # answer must not reach somebody nobody has asked.
-        facts["driver.licenceaction"] = _licence_action(conn, accountid, driverid)
+        facts["driver.licenseaction"] = _license_action(conn, accountid, driverid)
         # 49 CFR 40.25(j): what the applicant said about pre-employment tests for jobs they applied
         # for and did not get. Three-valued, and the detail behind a "yes" comes with it.
         facts.update(_prior_violation(conn, accountid, driverid))
@@ -513,8 +615,8 @@ def _prior_violation(conn: Connection, accountid: str, driverid: str) -> dict:
     }
 
 
-def _licence_action(conn: Connection, accountid: str, driverid: str) -> bool | None:
-    """Did this driver say a licence had been revoked, or denied, in the last three years?
+def _license_action(conn: Connection, accountid: str, driverid: str) -> bool | None:
+    """Did this driver say a license had been revoked, or denied, in the last three years?
 
     Read from the application they filled in rather than copied onto the driver record, so it cannot
     drift away from what they actually signed. None where there is no application, or where the
@@ -558,6 +660,13 @@ UNANSWERED = {
     "company.cmvdrivers": "No drivers are on file, so it is not known whether this company employs "
                           "any who drive a commercial motor vehicle.",
 
+    "driver.employee": "Nobody has said whether this driver is an employee or a contractor "
+                       "(Driver Information, or the employment model on Company - Operating Profile)",
+    "driver.chapter1490": "The company's Florida Bus Transit System Safety (F.A.C. Chapter 14-90) "
+                          "determination is under review (Company - Operating Profile)",
+    "vehicle.transit.FL_1490": "Nobody has determined whether this vehicle operates under Florida's "
+                               "Bus Transit System Safety rule, F.A.C. Chapter 14-90 (Company - "
+                               "Operating Profile, Vehicle Determinations)",
     "company.medicaid": "Nobody has said whether this company carries Medicaid funded trips "
                         "(Settings - Company).",
     "company.transit": "Nobody has said whether this company works under a CTC, a transit contract "
@@ -575,7 +684,7 @@ UNANSWERED = {
                            "commercial motor vehicle (seating capacity and GVWR).",
     "vehicle.cdl_required": "Not enough is recorded about this vehicle to say whether it needs a "
                             "CDL (seating capacity and GVWR).",
-    "driver.eldt": "No licence is recorded for this driver, so there is no licensing history to "
+    "driver.eldt": "No license is recorded for this driver, so there is no licensing history to "
                    "say whether entry-level driver training applies (Driver Information).",
     "company.misrequested": "Nobody has said whether FMCSA has asked this company for a drug "
                             "and alcohol MIS report (Settings - Company).",

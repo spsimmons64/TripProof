@@ -42,6 +42,25 @@ def issue(conn: Connection, userid: str, purpose: str, createdby: str | None) ->
     return f"{settings.public_url.rstrip('/')}/reset?token={token}"
 
 
+def issue_for_driver(conn: Connection, driverid: str, purpose: str,
+                     createdby: str | None) -> str:
+    """The same invitation, against a driver record rather than a user record.
+
+    The link goes to the driver's app, not to the office sign-in: a driver sent to /reset ends up
+    at a screen built for a dispatcher, which is the sort of thing that gets a product rung about
+    on a Monday morning."""
+    token = secrets.token_urlsafe(32)
+    now = utcnow()
+    run(conn, "UPDATE passwordtokens SET usedon = :now WHERE driverid = :d AND usedon IS NULL",
+        now=now, d=driverid)
+    run(conn, """
+        INSERT INTO passwordtokens (recordid, driverid, tokenhash, purpose, expires, createdby)
+        VALUES (:id, :d, :h, :p, :exp, :by)
+    """, id=newid(), d=driverid, h=hash_token(token), p=purpose,
+        exp=now + LIFETIME[purpose], by=createdby)
+    return f"{settings.public_url.rstrip('/')}/drive/password?token={token}"
+
+
 def lookup(conn: Connection, token: str) -> dict | None:
     """The live token row joined to its user, or None if unknown, spent, expired, or the login is gone."""
     return row(conn, """

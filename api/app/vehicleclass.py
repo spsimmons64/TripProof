@@ -1,23 +1,23 @@
 ###################################################################################################
-# What licence a vehicle calls for.
+# What license a vehicle calls for.
 #
 # It follows the vehicle and nothing else. The program a company runs under - Medicaid, a CTC, a
 # Chapter 14-90 transit system - decides what else is asked of the driver, never which class of
-# licence they must hold to sit in that seat.
+# license they must hold to sit in that seat.
 #
 # Two lines matter, and both are counted the way the rules count them:
 #   seats  designed to carry more than 15 people INCLUDING the driver -> a passenger commercial
 #          vehicle, so a CDL with the passenger endorsement
 #   gvwr   26,001 lb or more -> a commercial vehicle by weight; Class B for a single vehicle
 #
-# A vehicle under both lines needs no commercial licence at all: in Florida that is an ordinary
+# A vehicle under both lines needs no commercial license at all: in Florida that is an ordinary
 # Class E. Nothing here guesses - a vehicle whose seats and weight are unknown says so.
 ###################################################################################################
 PASSENGER_SEATS = 16          # more than 15 including the driver
 HEAVY_GVWR = 26_001
 
 
-def licence_for(vehicle: dict) -> dict:
+def license_for(vehicle: dict) -> dict:
     """What a driver must hold to drive this one, as far as the record allows us to say."""
     seats, gvwr = vehicle.get("seats"), vehicle.get("gvwr")
     if not seats and not gvwr:
@@ -29,15 +29,15 @@ def licence_for(vehicle: dict) -> dict:
     passengers = bool(seats and seats >= PASSENGER_SEATS)
     if not heavy and not passengers:
         return {"known": True, "cdl": None, "endorsement": None,
-                "summary": "No commercial licence needed",
-                # Named precisely, because these are the thresholds for a commercial LICENCE and
+                "summary": "No commercial license needed",
+                # Named precisely, because these are the thresholds for a commercial LICENSE and
                 # not the ones that decide whether the vehicle is a commercial motor vehicle. A van
                 # rated 26,000 lb is comfortably a commercial motor vehicle and still needs no CDL,
                 # and saying it is "under both commercial thresholds" reads as a contradiction.
                 "why": (f"Carries {seats} including the driver, under 16" if seats else "")
                        + ("; " if seats and gvwr else "")
                        + (f"rated {gvwr:,} lb, under 26,001" if gvwr else "")
-                       + " - the two thresholds that call for a commercial licence."}
+                       + " - the two thresholds that call for a commercial license."}
 
     cdl = "B" if heavy else "C"
     why = []
@@ -136,9 +136,9 @@ def facts(vehicle: dict) -> dict:
          else f"carries {seats} including the driver, which is not more than 15 - F.S. 316.003(14)(b)"),
     ], [seats, gvwr])
 
-    # Worked out here rather than read off licence_for, which answers a different question: it says
-    # what licence to ask a driver for and settles for what it knows, so a vehicle with a weight on
-    # file and no seating count comes back "no commercial licence needed". For a fact the engine
+    # Worked out here rather than read off license_for, which answers a different question: it says
+    # what license to ask a driver for and settles for what it knows, so a vehicle with a weight on
+    # file and no seating count comes back "no commercial license needed". For a fact the engine
     # will act on, a missing seating count has to stay unknown - a twenty-seat bus and a seven-seat
     # van weigh the same on paper until somebody counts the seats.
     cdl_required, cdl_why = settle([
@@ -158,6 +158,6 @@ def facts(vehicle: dict) -> dict:
         "cmv_florida": cmv_florida,
         "cdl_required": cdl_required,
         "forcompensation": hire,
-        "licence": licence_for(vehicle),
+        "license": license_for(vehicle),
         "why": {"cmv_federal": fed_why, "cmv_florida": fl_why, "cdl_required": cdl_why},
     }

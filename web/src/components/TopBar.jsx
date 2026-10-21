@@ -9,6 +9,36 @@ import TimeZoneSelect from './TimeZoneSelect.jsx'
 const POLL_MS = 60000
 const LEVEL_ICON = { bad: XCircle, warn: AlertTriangle, info: Info }
 
+// A bell that only draws itself can be missed by somebody reading a different part of the screen,
+// and the things that arrive at this level - a driver broken down on the way to a pickup - are
+// exactly the ones nobody may miss. Two short notes, synthesised rather than fetched so there is
+// no asset to ship and nothing to fail at the moment it is needed.
+//
+// Browsers refuse to make a sound until the person has interacted with the page, so a failure
+// here is normal and silent: the bell still rings and the count still changes.
+function alarm() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (!Ctx) return
+    const ctx = new Ctx()
+    if (ctx.state === 'suspended') ctx.resume()
+    const at = ctx.currentTime
+    for (const [n, hz] of [[0, 880], [1, 1175]]) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = hz
+      // Shaped rather than switched: a square-edged tone clicks on the way in and out.
+      gain.gain.setValueAtTime(0.0001, at + n * 0.22)
+      gain.gain.exponentialRampToValueAtTime(0.22, at + n * 0.22 + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + n * 0.22 + 0.18)
+      osc.connect(gain); gain.connect(ctx.destination)
+      osc.start(at + n * 0.22); osc.stop(at + n * 0.22 + 0.2)
+    }
+    setTimeout(() => ctx.close().catch(() => {}), 1200)
+  } catch { /* no sound available; the bell still rings */ }
+}
+
 // Full-width header: brand on the left; notifications, who is signed in, and sign-out on the right.
 export default function TopBar({ user, admin }) {
   const signOut = () => { auth.clear(); window.location.assign('/login') }
@@ -69,6 +99,9 @@ function Notifications() {
     const was = seen.current
     seen.current = got.unread
     if (was !== null && got.unread > was) {
+      // Only for the level that means somebody is waiting on an answer. An expiring credential
+      // must not make a noise, or the noise stops meaning anything.
+      if ((got.items || []).some((n) => !n.read && n.level === 'bad')) alarm()
       setRinging(false)
       // Off, then on in the next frame, so a second arrival restarts the animation rather than
       // landing mid-way through the first one and showing nothing.

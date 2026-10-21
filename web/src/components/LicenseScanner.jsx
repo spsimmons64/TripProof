@@ -8,9 +8,9 @@ import wasmUrl from 'zxing-wasm/reader/zxing_reader.wasm?url'
 
 prepareZXingModule({ overrides: { locateFile: (path, prefix) => (path.endsWith('.wasm') ? wasmUrl : prefix + path) } })
 
-// Reading the barcode on the back of a licence, live from the camera.
+// Reading the barcode on the back of a license, live from the camera.
 //
-// A single photograph of a licence often will not decode - held at an angle, with a light across
+// A single photograph of a license often will not decode - held at an angle, with a light across
 // it, the bars smear. A camera does not have that problem: it gets a new frame every few
 // hundredths of a second and only one of them has to be good. So this keeps reading frames until
 // one comes back, which is why it succeeds where photographing the card and hoping does not.
@@ -27,7 +27,7 @@ function readable(hit) {
   return (hit.text || '').replace(/<LF>/g, '\n').replace(/<CR>/g, '\r').replace(/<RS>/g, '\x1e')
 }
 
-// The AAMVA record, in the shape the licence dialog uses. The same parsing lives on the server for
+// The AAMVA record, in the shape the license dialog uses. The same parsing lives on the server for
 // photographs that are uploaded rather than scanned; this is the copy the camera path uses.
 const CLASSES = new Set(['A', 'B', 'C', 'D', 'E', 'M'])
 const ENDORSEMENTS = new Set(['H', 'T', 'N', 'S', 'P', 'X'])
@@ -100,8 +100,8 @@ export default function LicenseScanner({ onRead, onClose, token }) {
           const frame = ctx.getImageData(0, 0, c.width, c.height)
           const hit = (await readBarcodes(frame, OPTIONS)).find((r) => r.text || r.bytes)
           if (hit) {
-            const licence = parseLicense(readable(hit))
-            if (licence) { stop = true; onRead(licence); return }
+            const license = parseLicense(readable(hit))
+            if (license) { stop = true; onRead(license); return }
           }
         } catch (e) {
           // A frame that will not decode returns nothing; a throw means the decoder itself is unwell.

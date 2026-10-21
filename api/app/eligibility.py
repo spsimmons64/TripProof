@@ -100,7 +100,7 @@ RETURN_TO_DUTY = {
 
 def covered(driver: dict) -> bool:
     """Whether Part 382 reaches this driver at all. The company's own answer settles it; failing
-    that, a commercial licence class does."""
+    that, a commercial license class does."""
     if driver.get("operatescmv") is not None:
         return bool(driver["operatescmv"])
     return (driver.get("licenseclass") or "").upper() in ("A", "B", "C")

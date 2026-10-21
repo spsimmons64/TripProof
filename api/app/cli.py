@@ -73,6 +73,17 @@ def migrate():
             raw.commit()
         finally:
             raw.close()
+    # Whatever the migrations changed in the rules is kept as a new version of each.
+    # Never a reason for the service not to start: a failure here is reported and the next run
+    # catches up, because a version is only ever the difference from the last one.
+    from app import ruleversions
+    try:
+        with tx() as conn:
+            n = ruleversions.capture(conn, reason="migration")
+        if n:
+            print(f"recorded {n} rule version{'' if n == 1 else 's'}")
+    except Exception as e:                  # noqa: BLE001 - see above
+        print(f"rule versions not recorded: {e}")
     print("migrations up to date")
 
 
@@ -134,11 +145,28 @@ def reprice(days: int):
                 print(r["accountid"], "failed:", e)
 
 
+def collect_screenings():
+    """Collect background screenings that have finished. Run often - they come back all day."""
+    from app import screeningsweep
+    with tx() as conn:
+        out = screeningsweep.collect(conn)
+    print(f"asked about {out['looked']} open screening(s)")
+    print(f"  came back    {out['landed']}")
+    print(f"  still going  {out['waiting']}")
+    if out["failed"]:
+        print(f"  could not be run {out['failed']}")
+    if out["unreachable"]:
+        print(f"  could not ask    {out['unreachable']}")
+
+
 def screen_exclusions():
     """Screen every driver against the OIG exclusion list. Run monthly, after the 10th."""
     from app import screening
     with tx() as conn:
         out = screening.monthly(conn)
+    if out.get("failed"):
+        print(f"OIG screening FAILED, recorded as failed: {out['why']}")
+        raise SystemExit(1)
     if out.get("skipped"):
         print(f"already screened against the list OIG published {out['stamp']} - nothing to do")
         return
@@ -147,11 +175,39 @@ def screen_exclusions():
     print(f"  potential {out['potential']:,}" + ("  <- these need a person" if out["potential"] else ""))
 
 
+def screen_sam():
+    """Screen every pending and active driver against the SAM.gov exclusions list. Run daily."""
+    from app import screening
+    with tx() as conn:
+        out = screening.daily_sam(conn)
+    if out.get("failed"):
+        print(f"SAM.gov screening FAILED, recorded as failed: {out['why']}")
+        raise SystemExit(1)
+    if out.get("skipped"):
+        print(f"already screened against the SAM.gov list of {out['stamp']} - nothing to do")
+        return
+    print(f"screened against the SAM.gov list of {out['stamp']} ({out['listed']:,} individuals)")
+    print(f"  clear     {out['clear']:,}")
+    print(f"  potential {out['potential']:,}" + ("  <- these need a person" if out["potential"] else ""))
+
+
+def daily_compliance():
+    """Keep today's program standings and re-check the week's assigned trips. Run daily."""
+    from app import dailycompliance
+    with tx() as conn:
+        out = dailycompliance.daily(conn)
+    print(f"snapshots {out['snapshots']:,} - trips checked {out['checked']:,}, "
+          f"no longer qualified {out['notqualified']:,}")
+
+
 def main():
     p = argparse.ArgumentParser(prog="app.cli")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("migrate")
     sub.add_parser("screen-exclusions")
+    sub.add_parser("screen-sam")
+    sub.add_parser("daily-compliance")
+    sub.add_parser("collect-screenings")
     cadm = sub.add_parser("create-admin")
     cadm.add_argument("--email", required=True)
     cadm.add_argument("--name", default="")
@@ -171,6 +227,12 @@ def main():
         migrate()
     elif args.cmd == "screen-exclusions":
         screen_exclusions()
+    elif args.cmd == "screen-sam":
+        screen_sam()
+    elif args.cmd == "daily-compliance":
+        daily_compliance()
+    elif args.cmd == "collect-screenings":
+        collect_screenings()
     elif args.cmd == "reprice":
         reprice(args.days)
     elif args.cmd == "create-admin":

@@ -106,22 +106,22 @@ export default function SupervisorRecord({ who, onClose, onSigned }) {
             <section>
               <h3 className="formsection">The Training You Did</h3>
               <div className="profileform">
-                <label className="field span-2">Date completed *
+                <label className="field span-2">Date Completed *
                   <input type="date" value={f.completedon} max={today}
                     onChange={(e) => setF({ ...f, completedon: e.target.value })} />
                 </label>
                 {/* The floor is on the input, not only in the check that gates the button.
                     382.603(b) is sixty minutes each, and a box that happily takes thirty is a
                     box that invites the one answer the section does not allow. */}
-                <label className="field span-2">Alcohol misuse, minutes *
+                <label className="field span-2">Alcohol Misuse, Minutes *
                   <input type="number" min={least} value={f.alcoholminutes}
                     onChange={(e) => setF({ ...f, alcoholminutes: e.target.value })} />
                 </label>
-                <label className="field span-2">Controlled substances, minutes *
+                <label className="field span-2">Controlled Substances, Minutes *
                   <input type="number" min={least} value={f.drugminutes}
                     onChange={(e) => setF({ ...f, drugminutes: e.target.value })} />
                 </label>
-                <label className="field span-3">Training provider
+                <label className="field span-3">Training Provider
                   <input value={f.provider} className="upper"
                     onChange={(e) => setF({ ...f, provider: e.target.value.toUpperCase() })} />
                 </label>
@@ -130,7 +130,7 @@ export default function SupervisorRecord({ who, onClose, onSigned }) {
                     onChange={(e) => setF({ ...f, file: e.target.files[0] || null })} />
                 </label>
                 <label className="field span-6">Note
-                  <input value={f.note} className="upper"
+                  <textarea value={f.note} className="upper"
                     onChange={(e) => setF({ ...f, note: e.target.value.toUpperCase() })} />
                 </label>
               </div>

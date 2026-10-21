@@ -11,7 +11,7 @@
 #
 # TWO RULES, AND THEY INVERT EACH OTHER
 #
-#   391.23(a)(1)  at hire      3 years back    ANY licence or permit
+#   391.23(a)(1)  at hire      3 years back    ANY license or permit
 #   391.25(a)     every 12 mo  12 months back  only where a CDL was held
 #
 # The annual is not another three-year sweep. It is a narrower question asked more often, and
@@ -41,9 +41,9 @@ HIRE_LOOKBACK = timedelta(days=3 * 365)
 # 391.25(a): at least every 12 months, covering at least the preceding 12 months.
 ANNUAL_LOOKBACK = timedelta(days=365)
 
-# Which licence classes are commercial. Only 391.25 needs this, and it is a guess dressed as a
+# Which license classes are commercial. Only 391.25 needs this, and it is a guess dressed as a
 # lookup - states do not agree on the letters, and Florida's Class E is ordinary while its Class C
-# is commercial. It is the default until somebody says otherwise on the licence itself.
+# is commercial. It is the default until somebody says otherwise on the license itself.
 CDL_CLASSES = ("A", "B", "C")
 
 
@@ -55,7 +55,9 @@ def standing(cov: dict, today: date) -> tuple[str, str] | None:
     for this office, so it reads as waiting even where the record it will replace has run out; a
     record sitting unread IS work for this office, so it outranks one that has simply lapsed.
 
-    The order is: waiting on an authority, waiting on a reader, out of date, never asked, done.
+    The order is: waiting on a reader, waiting on an authority, out of date, never asked, done. A
+    record that has come back and sits unread is work for this office right now, so it outranks a
+    request still out with another state.
     """
     required = cov.get("required") or []
     if not required:
@@ -64,13 +66,15 @@ def standing(cov: dict, today: date) -> tuple[str, str] | None:
     def these(pick) -> str:
         return ", ".join(e["state"] for e in required if pick(e))
 
-    out = these(lambda e: e.get("ordered"))
-    if out:
-        return "ordered", f"Requested from {out}, not back yet."
     unread = these(lambda e: e.get("record") and not e["record"]["norecord"]
                    and e["record"]["reviewstate"] != "reviewed")
     if unread:
-        return "review", f"On file for {unread}, waiting to be read."
+        out = these(lambda e: e.get("ordered"))
+        return "review", (f"On file for {unread}, waiting to be read."
+                          + (f" Also requested from {out}, not back yet." if out else ""))
+    out = these(lambda e: e.get("ordered"))
+    if out:
+        return "ordered", f"Requested from {out}, not back yet."
     lapsed = these(lambda e: e.get("record") and e["expireson"] and e["expireson"] < today)
     if lapsed:
         return "expired", f"The record on file for {lapsed} has run out."
@@ -94,9 +98,9 @@ def horizon(rule: dict) -> timedelta | None:
 
 def _held_during(conn: Connection, accountid: str, driverid: str, since: date,
                  cdl_only: bool = False) -> list[dict]:
-    """Every licence held on or after `since`.
+    """Every license held on or after `since`.
 
-    A licence counts as held during the window unless it had already expired before the window
+    A license counts as held during the window unless it had already expired before the window
     opened. One still marked active counts whatever its dates say - an expired card in the drawer
     is still the authority that issued it."""
     held = rows(conn, """
@@ -121,33 +125,47 @@ def coverage(conn: Connection, accountid: str, driverid: str, *, window: timedel
     years ago does not answer this year's question."""
     today = today or date.today()
     since = today - window
-    licences = _held_during(conn, accountid, driverid, since, cdl_only=cdl_only)
+    licenses = _held_during(conn, accountid, driverid, since, cdl_only=cdl_only)
 
     # One entry per licensing authority, carrying the cards it issued so the office can see why the
     # state is on the list at all.
     states: dict[str, dict] = {}
-    for l in licences:
-        entry = states.setdefault(l["state"], {"state": l["state"], "licences": [], "licenceid": None})
-        entry["licences"].append(l["number"])
-        # Ordering is done against a licence, so each state carries one to order on: the current
+    # And one per card, for the screen: the office thinks in licenses, each with its own last
+    # record. The rule above stays by state, because that is what 391.23(a)(1) asks.
+    cards: dict[str, dict] = {l["recordid"]: {
+        "licenseid": l["recordid"], "state": l["state"], "number": l["number"],
+        "classification": l["classification"], "active": bool(l["active"]),
+        "issued": l["issued"], "expires": l["expires"]} for l in licenses}
+    for l in licenses:
+        entry = states.setdefault(l["state"], {"state": l["state"], "licenses": [], "licenseid": None})
+        entry["licenses"].append(l["number"])
+        # Ordering is done against a license, so each state carries one to order on: the current
         # card where there is one, otherwise the most recent.
-        if entry["licenceid"] is None or l["active"]:
-            entry["licenceid"] = l["recordid"]
+        if entry["licenseid"] is None or l["active"]:
+            entry["licenseid"] = l["recordid"]
 
     if not states:
-        return {"required": [], "covered": 0, "missing": [], "complete": None,
-                "why": "No licences are on file, so there is nothing to say which states to ask."}
+        return {"required": [], "cards": [], "covered": 0, "missing": [], "complete": None,
+                "why": "No licenses are on file, so there is nothing to say which states to ask."}
 
     for got in rows(conn, """
-        SELECT l.state, m.recordid, m.issuedon, m.receivedon, m.orderedon, m.norecord, m.documentid,
+        SELECT l.state, m.licenseid, m.recordid, m.issuedon, m.receivedon, m.orderedon, m.norecord,
+               m.documentid,
                m.reviewstate, m.finding, m.note,
                -- What a CDLIS record says about medical qualification, carried so the panel that
                -- reads the record can show what is already recorded rather than an empty form.
                m.selfcert, m.medcertstatus, m.medcertexpires, m.medvariancetype, m.medvariance
         FROM drivermvrs m JOIN driverlicenses l ON l.recordid = m.licenseid
         WHERE m.accountid = :a AND m.driverid = :d AND m.cancelledon IS NULL
-        ORDER BY COALESCE(m.issuedon, m.receivedon) DESC
+        -- Two records dated the same day: the one that arrived last is the answer.
+        ORDER BY COALESCE(m.issuedon, m.receivedon) DESC, m.receivedon DESC, m.createdon DESC
     """, a=accountid, d=driverid):
+        card = cards.get(got["licenseid"])
+        if card is not None:
+            if got["receivedon"] or got["norecord"]:
+                card.setdefault("record", got)
+            elif got["orderedon"]:
+                card.setdefault("ordered", got)
         entry = states.get(got["state"])
         if not entry:
             continue                       # a record for a state that has dropped out of the window
@@ -176,9 +194,18 @@ def coverage(conn: Connection, accountid: str, driverid: str, *, window: timedel
                 entry["expireson"] = when + current_within
         # On file and still current. A record that has run out is on file and does not count.
         entry["state_covered"] = bool(got) and not (entry["expireson"] and entry["expireson"] < today)
+    for card in cards.values():
+        card["expireson"] = None
+        got = card.get("record")
+        if got and current_within:
+            when = got["issuedon"] or got["receivedon"]
+            if when:
+                card["expireson"] = (when if isinstance(when, date) else when.date()) + current_within
     missing = [e["state"] for e in required if not e["state_covered"]]
     return {
         "required": required,
+        # Active first, then by state - the card being driven on is the one people look for.
+        "cards": sorted(cards.values(), key=lambda c: (not c["active"], c["state"], c["number"])),
         "covered": sum(1 for e in required if e["state_covered"]),
         "missing": missing,
         "complete": not missing,
