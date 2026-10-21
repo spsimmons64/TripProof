@@ -10,6 +10,10 @@ from app.routers import (admin, apply, audits, auth, billing, dashboard, drivera
                          signing, trips,
                          uploading,
                          vault)
+# Moved out of vault.py, which had grown too large to work in safely. Registered right after it, so
+# the order the routes are matched in is the order they had there.
+from app.routers import (backgroundscreening, companyusers, drugalcohol, employerinquiries,
+                         exposure, hoursofservice, payers, roadtest, vehicles)
 
 # TripProof's own log lines (mail sent / failed, billing…) go to the container log next to uvicorn's.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(message)s")
@@ -24,7 +28,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (auth, vault, trips, dashboard, audits, rules, admin, notifications, apply, billing,
+for r in (auth, vault, companyusers, drugalcohol, employerinquiries, roadtest, hoursofservice,
+          backgroundscreening, exposure, payers, vehicles, trips, dashboard, audits, rules, admin, notifications, apply, billing,
           driverapply, driverapp, signing, uploading, employerreply, roadtestreply,
           live, gps, operating):
     app.include_router(r.router)
