@@ -639,6 +639,11 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
   // A record read where it lives, rather than only where it arrived. The engine decides which
   // records still want reading; this records the act against the record itself, which is the one
   // place a reading is kept whatever kind of thing was read.
+  // A drug screen on file with no result: the result is recorded against it, here.
+  const recordResult = (credentialid, result) => act(async () => {
+    await api.put(`/credentials/${credentialid}/result`, { result })
+  })
+
   const readRecord = (rec) => act(async () => {
     await api.post(`/drivers/${id}/evidence/read`, {
       sourcetable: rec.sourcetable, sourceid: rec.recordid, code,
@@ -1137,7 +1142,7 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
   // The company's own drug screen, laid out as the regulated drug test is: the last screen only,
   // View / Add / History / Close in the footer, and every screen in the History.
   if (source.kind === 'credential' && source.which === 'DRUG_SCREEN' && !filing) {
-    return <DrugScreenDialog {...{ asked, busy, err, markRead, onClose, r, readRecord, results, setFiling, setTestHistory, setViewing, shown, testHistory, unchecked, viewing }} />
+    return <DrugScreenDialog {...{ asked, busy, err, markRead, onClose, r, readRecord, recordResult, results, setFiling, setTestHistory, setViewing, shown, testHistory, unchecked, viewing }} />
   }
 
   // Read from a list, the same as the PHI acknowledgement: the latest record only, Reviewed or Not

@@ -204,7 +204,7 @@ SAYS = {
                 "the applicable vehicle unsupervised - attending the training is not the same as "
                 "being shown to have the skill.",
     "opendefect": "A defect reported on this vehicle has not been corrected and certified. 49 CFR "
-                  "396.11(c): it must not be dispatched until it is put right, and a clean report "
+                  "396.11(a)(3): it must not be dispatched until it is put right, and a clean report "
                   "filed afterwards does not lift it.",
     "shorttraining": "A supervisor's training on file is short of what 49 CFR 382.603 requires - "
                      "at least sixty minutes on alcohol misuse AND at least sixty minutes on "
@@ -450,7 +450,9 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
                    CASE WHEN t.requirestesting = 1 AND c.testedon IS NULL THEN 'untested'
                         -- A screen that came back positive, or was refused, is not one passed.
                         WHEN c.result IN ('positive', 'refusal') THEN 'positive'
-                        WHEN c.result = 'negative' THEN 'negative'
+                        -- A negative-dilute is a negative result (49 CFR 40.197) unless the
+                        -- MRO directed a recollection, which is filed as its own screen.
+                        WHEN c.result IN ('negative', 'negativedilute') THEN 'negative'
                         -- A screening that must say where it came from, and does not, or came
                         -- from a vendor rather than the authority itself.
                         WHEN t.requiresprovenance = 1
@@ -1411,6 +1413,8 @@ def stand(rule: dict, evidence: dict | None, today: date,
         return "pending", f"Nothing on file yet. {due}." if due else "Nothing on file yet."
 
     finding = (evidence.get("determination") or "").lower()
+    if finding == "nodefect":
+        return "satisfied", "No defect has been reported on this vehicle."
     # A report the rule asks somebody to read is not answered by the vendor's one-word summary:
     # Georgia's disqualifiers (DCH 914.2.2-914.2.3) are judged from what the report says. A failing
     # result still fails at once; anything else waits until the report has been marked read.
@@ -1787,7 +1791,7 @@ def _vehicle_evidence(conn: Connection, accountid: str, vehicleid: str,
     kind, _, which = source.partition(":")
     if kind == "dvir":
         # What settles this is not the newest report but the OLDEST defect nobody has corrected:
-        # 49 CFR 396.11(c) stops the vehicle until it is put right, and a clean report filed
+        # 49 CFR 396.11(a)(3) stops the vehicle until it is put right, and a clean report filed
         # afterwards does not lift it. Where nothing is open, the latest report is the evidence.
         open_defect = row(conn, """
             SELECT recordid, reportedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
@@ -1799,13 +1803,18 @@ def _vehicle_evidence(conn: Connection, accountid: str, vehicleid: str,
         """, a=accountid, v=vehicleid)
         if open_defect:
             return open_defect
-        return row(conn, """
+        latest = row(conn, """
             SELECT recordid, reportedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
                    'vehicledvirs' AS sourcetable, 'inspected' AS determination
             FROM vehicledvirs
             WHERE accountid = :a AND vehicleid = :v AND deleted IS NULL
             ORDER BY reportedon DESC, added DESC LIMIT 1
         """, a=accountid, v=vehicleid)
+        # No report at all is not a shortfall: a passenger carrier's driver reports only a defect
+        # found (396.11, as amended). What stops a vehicle is a defect nobody has put right.
+        return latest or {"recordid": f"{vehicleid}:dvir", "effectiveon": None, "expireson": None,
+                          "exempt": 0, "documentid": None, "sourcetable": "vehicledvirs",
+                          "determination": "nodefect"}
     if kind == "maintenance":
         return row(conn, """
             SELECT recordid, performedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
@@ -2121,6 +2130,15 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                     and evidence.get("effectiveon") and evidence["effectiveon"] < violatedon):
                 evidence, instead = None, None
             waiting_on = None if evidence else _ordered(conn, accountid, driverid, rule["evidencesource"])
+            # A credential a rule asks somebody to read - a document or a screening - is answered
+            # by the reading: once it is read, it stands as reviewed. A drug screen is not - what
+            # answers it is a negative result recorded against it, which its own dialog asks for.
+            if (rule.get("reviewrequired") and evidence and not evidence.get("determination")
+                    and (rule.get("evidencesource") or "").startswith("credential:")
+                    and rule.get("evidencesource") != "credential:DRUG_SCREEN"
+                    and ((evidence.get("sourcetable"), evidence.get("recordid")) in read
+                         or evidence.get("documentid") in readdocs)):
+                evidence = {**evidence, "determination": "reviewed"}
             status, why = stand(rule, evidence, today, waiting_on)
             # On file and in date, but nobody can say where the screening came from. It stands
             # under review until somebody records that it came from the authority itself.

@@ -511,3 +511,77 @@ def test_georgia_training_is_owed_before_driving(q):
                                                   'GA_NET_SPILL_KIT', 'GA_NET_PASSENGER_ASSIST',
                                                   'GA_NET_SAFETY_SENSITIVITY')""")).mappings().all()
     assert len(got) == 5 and all(r["duestage"] == "predrive" and r["duedays"] is None for r in got), got
+
+
+def test_a_trip_is_held_to_its_own_payer_lines_medicaid_state(q, monkeypatch):
+    """A company with both Florida and Georgia Medicaid lines: a trip billed under the Florida line
+    is judged as a Florida Medicaid trip, and Georgia's NEMT rules do not reach it."""
+    from app import rules, tripcheck
+    seen = {}
+    real = rules.for_driver
+    def spy(conn, accountid, driverid, facts, **kw):
+        seen.update(facts)
+        return real(conn, accountid, driverid, facts, **kw)
+    monkeypatch.setattr(tripcheck.rules, "for_driver", spy)
+    with q["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET status = 'hired' WHERE recordid = :d"), {"d": q["driver"]})
+        states = conn.execute(text("""SELECT DISTINCT state FROM companycontracts WHERE accountid = :a
+                                      AND payerid = :p AND status = 'active' AND program = 'medicaid'"""),
+                              {"a": q["acct"], "p": q["payer"]}).scalars().all()
+        for st in ("FL", "GA"):
+            if st not in states:
+                conn.execute(text("""INSERT INTO companycontracts (recordid, accountid, payerid, broker, state,
+                                                                   program, status)
+                                     VALUES (UUID(), :a, :p, 'Q BROKER', :s, 'medicaid', 'active')"""),
+                             {"a": q["acct"], "p": q["payer"], "s": st})
+        on = date.today() + timedelta(days=1)
+        leg = {"vehicleid": None, "pickupat": datetime.combine(on, datetime.min.time()), "tripdate": on,
+               "brokerid": q["payer"], "payer": "broker", "servicelevel": "ambulatory",
+               "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+               "dropoffplace": "12 OAK ST, VALDOSTA, GA 31601"}
+        said = tripcheck.check(conn, q["acct"], q["driver"], proposed=leg, record=False)
+        conn.execute(text("UPDATE drivers SET status = 'pending' WHERE recordid = :d"), {"d": q["driver"]})
+    assert said["program"] == "medicaid"
+    assert seen["company.medicaidstates"] == ["FL"], seen["company.medicaidstates"]
+    assert not any(b.get("code", "").startswith("GA_NET") for b in said["blockers"] + said["warnings"])
+
+
+def test_a_vehicle_with_no_inspection_reports_is_not_stopped():
+    """A passenger carrier's driver reports only a defect found; no report on file is not a shortfall."""
+    from app import rules
+    assert rules.stand({"code": "DVIR"}, {"determination": "nodefect"}, date.today())[0] == "satisfied"
+
+
+def test_fifth_review_wording_matches_what_the_rules_do(q):
+    """Descriptions that promised Georgia's 90 days, and a DVIR text from before no-defect reports
+    were dropped; and a company's own screening counts only once its result has been read."""
+    with q["db"].connect() as conn:
+        got = {r["code"]: r for r in conn.execute(text(
+            "SELECT code, description, citation, reviewrequired FROM compliancerules "
+            "WHERE accountid IS NULL AND effectiveto IS NULL AND code IN ('DVIR', 'GA_NET_FIRST_AID', "
+            "'GA_NET_SPILL_KIT', 'GA_NET_SAFETY_SENSITIVITY', 'GA_NET_DRIVER_TRAINING', "
+            "'BACKGROUND_SCREENING', 'NONDOT_DRUG_SCREEN', 'ABUSE_REGISTRY_CHECK')")).mappings()}
+    assert "(a)(2)(i)" in got["DVIR"]["description"] and "whether or not" not in got["DVIR"]["description"]
+    for c in ("GA_NET_FIRST_AID", "GA_NET_SPILL_KIT", "GA_NET_SAFETY_SENSITIVITY", "GA_NET_DRIVER_TRAINING"):
+        assert "has ninety days from assignment" not in got[c]["description"], c
+        assert "required before driving" in got[c]["description"], c
+    assert all(got[c]["reviewrequired"] for c in ("BACKGROUND_SCREENING", "NONDOT_DRUG_SCREEN",
+                                                  "ABUSE_REGISTRY_CHECK"))
+
+
+def test_a_drug_screen_filed_without_a_result_can_be_given_one(client, q):
+    """A screen on file with no result answers nothing, and there was no way to add the result."""
+    from app import rules
+    with q["db"].begin() as conn:
+        tid = conn.execute(text("SELECT recordid FROM credentialtypes WHERE code = 'DRUG_SCREEN'")).scalar()
+        conn.execute(text("""INSERT INTO credentials (recordid, accountid, credentialtypeid, subject, subjectid,
+                                                      issuedon, added)
+                             VALUES ('cred-screen-1', :a, :t, 'driver', :d, CURDATE(), NOW())"""),
+                     {"a": q["acct"], "t": tid, "d": q["driver"]})
+        assert not rules._evidence(conn, q["acct"], q["driver"], "credential:DRUG_SCREEN")["determination"]
+    r = client.put("/api/credentials/cred-screen-1/result", headers=q["h"], json={"result": "negativedilute"})
+    assert r.status_code == 200, r.text
+    with q["db"].connect() as conn:
+        assert rules._evidence(conn, q["acct"], q["driver"], "credential:DRUG_SCREEN")["determination"] == "negative"
+    assert client.put("/api/credentials/cred-screen-1/result", headers=q["h"],
+                      json={"result": "maybe"}).status_code == 400

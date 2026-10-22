@@ -160,7 +160,7 @@ export function DrugTestingDialog({ busy, err, file, filing, form, id, loadTesti
 }
 
 // RequirementDetail, when source.kind === 'credential' && source.which === 'DRUG_SCREEN' && !filing.
-export function DrugScreenDialog({ asked, busy, err, markRead, onClose, r, readRecord, results, setFiling, setTestHistory, setViewing, shown, testHistory, unchecked, viewing }) {
+export function DrugScreenDialog({ asked, busy, err, markRead, onClose, r, readRecord, recordResult, results, setFiling, setTestHistory, setViewing, shown, testHistory, unchecked, viewing }) {
     const screens = shown
     const last = screens[0] || null
     const screenTable = (list, viewable) => (
@@ -179,7 +179,14 @@ export function DrugScreenDialog({ asked, busy, err, markRead, onClose, r, readR
                 <td>{x.screentype || '-'}</td>
                 <td className={['positive', 'refusal'].includes(x.result) ? 'st-expired'
                   : x.result ? 'st-active' : undefined}>
-                  {SCREEN_RESULTS[x.result] || '-'}
+                  {/* A screen filed without its result answers nothing until one is recorded. */}
+                  {x.result || !viewable ? (SCREEN_RESULTS[x.result] || '-') : (
+                    <select value="" disabled={busy} aria-label="Record the result"
+                      onChange={(e) => e.target.value && recordResult(x.recordid, e.target.value)}>
+                      <option value="">Record Result</option>
+                      {Object.entries(SCREEN_RESULTS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  )}
                 </td>
                 <td className={tone}>{says}</td>
                 {viewable && (

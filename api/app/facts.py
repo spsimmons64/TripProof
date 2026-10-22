@@ -77,7 +77,7 @@ def fleet_facts(conn: Connection, accountid: str) -> dict:
         "cmv_florida": _any(worked, "cmv_florida"),
         "cdl_required": _any(worked, "cdl_required"),
         "heaviest_gvwr": max(weights) if weights else None,
-        # 49 CFR 396.11(a)(1): a carrier operating only one commercial motor vehicle does not
+        # 49 CFR 396.11(a)(5): a carrier operating only one commercial motor vehicle does not
         # prepare driver vehicle inspection reports. Two or more settles it; one, with units
         # nobody has measured, does not.
         "multiplecmv": (True if counted.count(True) >= 2

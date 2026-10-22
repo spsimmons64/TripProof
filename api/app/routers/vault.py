@@ -3961,6 +3961,36 @@ def end_contract_approval(driverid: str, contractid: str, request: Request,
     return {"ok": True}
 
 
+# What a drug screen came back as. Recorded on a screen already on file where it was filed without
+# one - from a link, or before the result was in - because a screen with no result answers nothing.
+SCREEN_RESULTS = ("negative", "negativedilute", "positive", "refusal", "cancelled")
+
+
+class ScreenResultIn(BaseModel):
+    result: str
+
+
+@router.put("/credentials/{credentialid}/result")
+def set_screen_result(credentialid: str, body: ScreenResultIn, request: Request,
+                      user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    if body.result not in SCREEN_RESULTS:
+        raise HTTPException(400, "Unknown result")
+    held = row(conn, """
+        SELECT c.subject, c.subjectid FROM credentials c
+        JOIN credentialtypes t ON t.recordid = c.credentialtypeid
+        WHERE c.recordid = :c AND c.accountid = :a AND c.deleted IS NULL AND t.code = 'DRUG_SCREEN'
+    """, c=credentialid, a=user["accountid"])
+    if not held:
+        raise HTTPException(404, "No such drug screen")
+    run(conn, "UPDATE credentials SET result = :r, updated = :now WHERE recordid = :c",
+        r=body.result, now=utcnow(), c=credentialid)
+    log(conn, user, "update", "credential", credentialid, {"result": body.result},
+        ip=client_ip(request))
+    _reevaluate_subject(conn, user, held["subject"], held["subjectid"])
+    saved(conn)
+    return {"ok": True}
+
+
 # Where a screening came from. Only the first two are the authority itself.
 PROVENANCE = {"fdle": "FDLE", "ahca": "AHCA Clearinghouse", "vendor": "Screening vendor"}
 

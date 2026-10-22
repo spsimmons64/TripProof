@@ -201,7 +201,7 @@ export function VehicleInspections({ id, bare, onChanged }) {
       {data.open.length > 0 && (
         <div className="notice bad">
           {data.open.length === 1 ? 'A defect is' : `${data.open.length} defects are`} outstanding
-          on this vehicle. 49 CFR 396.11(c): it must not be dispatched until the repair is
+          on this vehicle. 49 CFR 396.11(a)(3): it must not be dispatched until the repair is
           certified.
         </div>
       )}
@@ -311,7 +311,7 @@ export function VehicleInspections({ id, bare, onChanged }) {
   )
 }
 
-// The second half of 396.11(c): the repair, and somebody certifying it. Without this the report is
+// The second half of 396.11(a)(3): the repair, and somebody certifying it. Without this the report is
 // a complaint rather than a record.
 function CertifyRepair({ id, report, onClose, onDone }) {
   const [f, setF] = useState({ correctedon: '', correctedby: '', note: '' })

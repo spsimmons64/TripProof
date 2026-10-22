@@ -270,7 +270,7 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
     The compliance engine owns whether a van may go out, exactly as it owns whether a driver may
     drive. This did not ask it: it checked the lift, the seats and whether the vehicle was already
     busy, and nothing else - so a vehicle whose own page read "a defect has not been corrected;
-    49 CFR 396.11(c): it must not be dispatched" was offered to a dispatcher as available, and
+    49 CFR 396.11(a)(3): it must not be dispatched" was offered to a dispatcher as available, and
     assigning it was allowed. The file said one thing and the board did another.
     """
     today = when.date() if isinstance(when, datetime) else date.today()

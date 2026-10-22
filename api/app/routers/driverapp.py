@@ -537,7 +537,7 @@ def _settle_verify(conn: Connection, accountid: str, tripid: str) -> None:
 #
 # 396.13 is the other half and the one people forget: before driving, the driver must review the
 # last report and satisfy themselves that anything on it was put right. So the last report is
-# shown before a new one is asked for, and an uncorrected defect is said plainly - 396.11(c) does
+# shown before a new one is asked for, and an uncorrected defect is said plainly - 396.11(a)(3) does
 # not permit the vehicle to be dispatched until the repair is certified.
 #
 # Nothing here decides anything. A driver reports what they found; whether the van rolls is the
@@ -559,7 +559,7 @@ def _before_setting_off(conn: Connection, driver: dict, vehicleid: str | None,
                         seen: dict) -> dict | None:
     """What stands between this driver and setting off in this vehicle today, or None.
 
-    A defect nobody has certified as repaired (49 CFR 396.11(c)), or - where the vehicle runs under
+    A defect nobody has certified as repaired (49 CFR 396.11(a)(3)), or - where the vehicle runs under
     Florida's bus transit rule - no pre-trip inspection by this driver today. Yesterday's check
     does not cover today's run. Enforced, as the trip check is, only once the rule is approved and
     the company has switched enforcement on; until then the app asks for the check and lets the
@@ -646,7 +646,7 @@ def last_check(vehicleid: str, driver: dict = Depends(current_driver),
             WHERE r.vehicleid = :v AND r.accountid = :a AND r.deleted IS NULL
             ORDER BY r.reportedon DESC, r.added DESC LIMIT 1
         """, v=vehicleid, a=acct),
-        # The oldest defect nobody has certified. 396.11(c): the vehicle does not go out until it
+        # The oldest defect nobody has certified. 396.11(a)(3): the vehicle does not go out until it
         # is put right, and a clean report filed afterwards does not lift it.
         "outstanding": row(conn, """
             SELECT r.reportedon, r.defectnote,

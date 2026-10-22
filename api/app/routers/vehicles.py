@@ -147,7 +147,7 @@ def vehicle_dvirs(vehicleid: str, user: dict = Depends(current_user),
     return {
         "reports": held,
         "kinds": DVIR_KINDS,
-        # What stops the vehicle: a defect reported and not put right. 49 CFR 396.11(c).
+        # What stops the vehicle: a defect reported and not put right. 49 CFR 396.11(a)(3).
         "open": [r for r in held if r["defects"] and not r["correctedon"]],
         "drivers": rows(conn, """
             SELECT recordid, firstname, lastname FROM drivers
