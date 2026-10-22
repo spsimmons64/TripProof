@@ -16,7 +16,7 @@ import { UpperInput } from './MaskedInput.jsx'
 export const LICENSE_CLASSES = [
   ['A', 'Class A - Commercial, combination vehicles'],
   ['B', 'Class B - Commercial, heavy straight vehicles'],
-  ['C', 'Class C - Commercial, small vehicles'],
+  ['C', 'Class C - Small vehicles'],
   ['D', 'Class D - Non-commercial operator'],
   ['E', 'Class E - Operator'],
   ['M', 'Class M - Motorcycle'],
@@ -58,7 +58,12 @@ export function useFirstField() {
 // `onAdd` receives the license with `endorsements` as an array of codes, and - where the caller
 // asked for copies - the front and back files chosen, which it stores in its own way.
 export const BLANK_LICENSE = { number: '', confirm: '', state: '', issued: '', expires: '',
-                               originalissued: '', classification: '', endorsements: [] }
+                               originalissued: '', classification: '', commercial: '',
+                               endorsements: [] }
+
+// Whether it is a CDL, as the form holds it ('yes' / 'no' / '') and as the record keeps it.
+export const commercialOf = (v) => (v === 'yes' || v === true ? true : v === 'no' || v === false ? false : null)
+export const commercialWord = (v) => (v === true || v === 'yes' ? 'yes' : v === false || v === 'no' ? 'no' : '')
 
 // What is wrong with a license as filled in, as {field: message}. Here rather than in the dialog
 // because the driver fills the same form in from their own link, and two copies of these rules
@@ -68,7 +73,8 @@ export function licenseProblems(r) {
                     ['confirm', 'Enter the license number again'],
                     ['issued', 'The issue date is required'],
                     ['expires', 'The expiration date is required'],
-                    ['classification', 'The classification is required']]
+                    ['classification', 'The classification is required'],
+                    ['commercial', 'Say whether this is a commercial license']]
   const problems = Object.fromEntries(
     required.filter(([k]) => !String(r[k] ?? '').trim()).map(([k, m]) => [k, m]))
   if (!problems.confirm && r.number.trim() !== r.confirm.trim()) problems.confirm = 'The two do not match'
@@ -90,13 +96,17 @@ export function LicenseFields({ r, setR, bad, setBad, copies = false,
   const toggle = (code) => () => setR({ ...r,
     endorsements: r.endorsements.includes(code)
       ? r.endorsements.filter((c) => c !== code) : [...r.endorsements, code] })
-  // Endorsements only exist on a commercial license, so the class decides whether they can be picked.
-  const commercial = ['A', 'B', 'C'].includes(r.classification)
+  // Endorsements only exist on a commercial license, so that answer decides whether they can be
+  // picked. Asked rather than read off the class: Georgia's ordinary license is a Class C.
+  const commercial = r.commercial === 'yes'
   const setClass = (e) => {
     setBad(({ classification: _gone, ...rest }) => rest)
-    const value = e.target.value
-    setR({ ...r, classification: value,
-      endorsements: ['A', 'B', 'C'].includes(value) ? r.endorsements : [] })
+    setR({ ...r, classification: e.target.value })
+  }
+  const setCommercial = (e) => {
+    setBad(({ commercial: _gone, ...rest }) => rest)
+    setR({ ...r, commercial: e.target.value,
+      endorsements: e.target.value === 'yes' ? r.endorsements : [] })
   }
   const field = (k, label, span, node) => (
     <label className={`field span-${span}${bad[k] ? ' bad' : ''}`}>
@@ -119,6 +129,13 @@ export function LicenseFields({ r, setR, bad, setBad, copies = false,
         <select value={r.classification} onChange={setClass}>
           <option value="">Choose</option>
           {LICENSE_CLASSES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+        </select>
+      ))}
+      {field('commercial', 'Commercial License (CDL) *', 2, (
+        <select value={commercialWord(r.commercial)} onChange={setCommercial}>
+          <option value="">Choose</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
         </select>
       ))}
       <div className={`span-6 endorsements${commercial ? '' : ' off'}`}>
@@ -153,7 +170,8 @@ export default function LicenseDialog({ onAdd, onClose, initial, copies = false 
   // Correcting one starts from what is there, with the number already in both boxes.
   // Correcting one starts from what is there, with the number already in both boxes.
   const [r, setR] = useState({ ...BLANK_LICENSE,
-                               ...(initial ? { ...initial, confirm: initial.number } : {}) })
+                               ...(initial ? { ...initial, confirm: initial.number,
+                                               commercial: commercialWord(initial.commercial) } : {}) })
   const [front, setFront] = useState(null)
   const [back, setBack] = useState(null)
   const [bad, setBad] = useState({})

@@ -24,6 +24,7 @@ from sqlalchemy.engine import Connection
 
 from app import employers, mvr as mvrs, payerlines, validity
 from app.facts import UNANSWERED
+from app.recurrence import renewed
 from app.db import row, rows
 
 # ------------------------------------------------------------------------------------------------
@@ -108,6 +109,7 @@ FACT_LABELS = {
     "driver.heavy": "operates 26,001 lb or more", "driver.chapter1490": "Chapter 14-90 operation",
     "driver.employee": "employee", "fleet.wheelchair": "wheelchair vehicles in the fleet",
     "fleet.cmv_federal": "FMCSA-covered vehicles in the fleet",
+    "reach.part391interstate": "Part 391 reached by interstate operation",
 }
 
 
@@ -173,11 +175,12 @@ PROVING = ("qualified", "clear", "negative", "reviewed", "certified", "excepted"
            "exposed", "noexposure")
 # Not an answer: the record exists and does not settle the question. Work for this office rather
 # than a verdict on the driver.
-REVIEWING = ("review", "notshown")
+REVIEWING = ("review", "notshown", "residenceunknown")
 # "prohibited" is the FMCSA Clearinghouse's own word for it, kept rather than translated into one
 # of the others: an auditor reading this file should see the word the query returned.
 FAILING = ("disqualified", "flagged", "positive", "refusal", "adulterated", "substituted",
-           "prohibited", "notcertified", "conflict", "missing", "notage21", "notenglish",
+           "prohibited", "notcertified", "conflict", "missing", "notage21", "notage18", "notenglish",
+           "notgeorgia",
            "notregistered", "noqueryplan", "shorttraining", "opendefect",
            "nodraws", "hoursexceeded", "registershort", "noauthority",
            "nolicense", "licenseinactive", "wrongclass", "newermvr", "removal",
@@ -233,6 +236,14 @@ SAYS = {
     "notage21": "This driver is under 21. 49 CFR 391.11(b)(1) does not permit them to operate a "
                 "commercial motor vehicle in interstate commerce, and nothing can be filed that "
                 "changes it.",
+    "notgeorgia": "Georgia Medicaid accepts a Georgia license, or a license from the bordering state "
+                  "the driver lives in (DCH 914.2.1). The active license is neither. Add the "
+                  "license that is, or correct the driver's address if it is wrong.",
+    "residenceunknown": "The active license is from a state bordering Georgia. Georgia Medicaid "
+                        "accepts it only if the driver lives in that state (DCH 914.2.1), and the "
+                        "driver's address has no state. Add it under Driver Information.",
+    "notage18": "This driver is under 18. F.S. 316.302(4) does not permit them to operate a "
+                "commercial motor vehicle, and nothing can be filed that changes it.",
     "notenglish": "Recorded as not able to read and speak English well enough for 49 CFR "
                   "391.11(b)(2). The driver is not qualified while that stands.",
     "paperstands": "The certificate on file is newer than the driving record, so the State has not "
@@ -439,6 +450,7 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
                    CASE WHEN t.requirestesting = 1 AND c.testedon IS NULL THEN 'untested'
                         -- A screen that came back positive, or was refused, is not one passed.
                         WHEN c.result IN ('positive', 'refusal') THEN 'positive'
+                        WHEN c.result = 'negative' THEN 'negative'
                         -- A screening that must say where it came from, and does not, or came
                         -- from a vendor rather than the authority itself.
                         WHEN t.requiresprovenance = 1
@@ -478,7 +490,7 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
         held = row(conn, """
             SELECT recordid, issued AS effectiveon, expires AS expireson, 0 AS exempt,
                    copydocumentid AS documentid, 'driverlicenses' AS sourcetable,
-                   classification, active, number, state
+                   classification, commercial, active, number, state
             FROM driverlicenses
             WHERE accountid = :a AND driverid = :d
             ORDER BY active DESC, expires DESC LIMIT 1
@@ -490,6 +502,8 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
                     "exempt": 0, "documentid": None, "sourcetable": "driverlicenses",
                     "determination": "nolicense"}
         verdict = _license_verdict(held, facts or {})
+        if verdict == "qualified" and which == "georgia":
+            verdict = _georgia_license(conn, accountid, driverid, held)
         if verdict == "wrongclass":
             return {**held, "determination": verdict,
                     "said": _wrong_class_says(conn, accountid, driverid, held, facts or {})}
@@ -592,7 +606,8 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
     if kind == "report":
         return row(conn, """
             SELECT recordid, issuedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
-                   'driverreports' AS sourcetable, COALESCE(outcome, reviewstate) AS determination
+                   'driverreports' AS sourcetable, COALESCE(outcome, reviewstate) AS determination,
+                   reviewstate
             FROM driverreports WHERE accountid = :a AND driverid = :d AND code = :code
               AND receivedon IS NOT NULL
             ORDER BY issuedon DESC, receivedon DESC LIMIT 1
@@ -1053,6 +1068,11 @@ def _license_verdict(held: dict, facts: dict) -> str:
     be wrong - an unanswered question is not a failure."""
     if not held.get("active"):
         return "licenseinactive"
+    # A class letter does not say commercial - Georgia's ordinary license is a Class C. Where the
+    # record says the license is NOT a CDL, it does not cover CDL work whatever its letter.
+    if (facts.get("driver.heavy") is True or facts.get("driver.cdl") is True) \
+            and held.get("commercial") is not None and not held["commercial"]:
+        return "wrongclass"
     carried = (held.get("classification") or "").upper()
     if facts.get("driver.heavy") is True:
         # 26,001 lb or more. A Class C CDL is a commercial license and does not cover it.
@@ -1070,11 +1090,38 @@ CLASS_COVERS = {"A": "combination vehicles of 26,001 lb or more",
                 "E": "ordinary vehicles - not a commercial license"}
 
 
+# DCH 914.2.1: a current valid Georgia license, or one from the bordering state the driver lives in.
+GEORGIA_BORDER = ("AL", "FL", "NC", "SC", "TN")
+
+
+def _georgia_license(conn: Connection, accountid: str, driverid: str, held: dict) -> str:
+    """Whether the license on file is one Georgia Medicaid accepts: Georgia's own, or that of a
+    bordering state the driver lives in. Where they live is not on file, a bordering state's
+    license cannot be judged and is left for somebody to look at."""
+    state = (held.get("state") or "").upper()
+    if state == "GA":
+        return "qualified"
+    if state not in GEORGIA_BORDER:
+        return "notgeorgia"
+    lives = ((row(conn, "SELECT state FROM drivers WHERE recordid = :d AND accountid = :a",
+                  d=driverid, a=accountid) or {}).get("state") or "").upper()
+    if not lives:
+        return "residenceunknown"
+    return "qualified" if lives == state else "notgeorgia"
+
+
 def _wrong_class_says(conn: Connection, accountid: str, driverid: str, held: dict,
                       facts: dict) -> str:
     """Why this license does not fit the work, naming the license, what the work needs and why, and
     the way out - including a license already on file that would fit, if there is one."""
     heavy = facts.get("driver.heavy") is True
+    if held.get("commercial") is not None and not held["commercial"]:
+        which = " ".join(x for x in (held.get("state"), f"Class {held.get('classification')}"
+                                     if held.get("classification") else None) if x)
+        return (f"The active license ({which or 'on file'}) is recorded as not a commercial "
+                f"license, and Company Information says this driver will operate a vehicle that "
+                f"{'is rated 26,001 lb or more' if heavy else 'requires a CDL'}. Add the CDL under "
+                f"Licenses, or correct the license if it is in fact commercial.")
     fits = HEAVY_CLASSES if heavy else CDL_CLASSES
     carried = (held.get("classification") or "").upper()
     which = " ".join(x for x in (held.get("state"), f"Class {carried}" if carried else None) if x)
@@ -1251,9 +1298,11 @@ def horizon(rule: dict, evidence: dict | None, usdot: str | None = None) -> date
     if not evidence:
         return None
     expires = evidence.get("expireson")
-    if (not expires and rule.get("recurrence") == "days" and rule.get("recurrencedays")
-            and evidence.get("effectiveon")):
-        expires = evidence["effectiveon"] + timedelta(days=int(rule["recurrencedays"]))
+    # Where the rule sets an interval, a date typed onto the record cannot outlast it: a Georgia
+    # inspection filed as good for a year is still due six months after it was done (DCH 910.2).
+    due = renewed(rule, evidence["effectiveon"]) if evidence.get("effectiveon") else None
+    if due and (not expires or due < expires):
+        expires = due
     if not expires and rule.get("recurrence") == "usdotbiennial" and evidence.get("effectiveon"):
         expires = usdot_next_due(usdot, evidence["effectiveon"])
     return expires
@@ -1319,9 +1368,8 @@ def deadline(rule: dict, hiredon: date | None, evidence: dict | None = None) -> 
         return None
     if stage == "athire" and rule.get("duedays"):
         return hiredon + timedelta(days=int(rule["duedays"]))
-    if (stage == "ongoing" and evidence is None
-            and rule.get("recurrence") == "days" and rule.get("recurrencedays")):
-        return hiredon + timedelta(days=int(rule["recurrencedays"]))
+    if stage == "ongoing" and evidence is None:
+        return renewed(rule, hiredon)
     return None
 
 
@@ -1344,6 +1392,12 @@ def stand(rule: dict, evidence: dict | None, today: date,
         return "pending", f"Nothing on file yet. {due}." if due else "Nothing on file yet."
 
     finding = (evidence.get("determination") or "").lower()
+    # A report the rule asks somebody to read is not answered by the vendor's one-word summary:
+    # Georgia's disqualifiers (DCH 914.2.2-914.2.3) are judged from what the report says. A failing
+    # result still fails at once; anything else waits until the report has been marked read.
+    if (rule.get("reviewrequired") and "reviewstate" in evidence
+            and evidence["reviewstate"] != "reviewed" and finding not in FAILING):
+        return "review", None
     if finding == "paperstands":
         until = evidence.get("expireson")
         return "expiring", (SAYS["paperstands"]
@@ -1767,7 +1821,7 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
     for rule in rows(conn, """
         SELECT recordid, accountid, code, name, description, authoritytype, authority, citation,
                applieswhen, evidencekind, evidencesource, blocking, gate, grouping, duestage,
-               duetext, recurrence, recurrencedays, warndays, note, sortorder
+               duetext, recurrence, recurrencedays, recurrencemonths, warndays, note, sortorder
         FROM compliancerules
         WHERE subject = 'vehicle' AND effectiveto IS NULL
           AND (accountid IS NULL OR accountid = :a)
@@ -1787,7 +1841,8 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
         out.append({**{k: rule[k] for k in ("code", "name", "description", "authoritytype",
                                             "authority", "citation", "duestage", "duetext",
                                             "blocking", "gate", "grouping", "note", "evidencekind",
-                                            "evidencesource", "recurrence", "recurrencedays")},
+                                            "evidencesource", "recurrence", "recurrencedays",
+                                            "recurrencemonths")},
                     "scheduled": bool(rule.get("scheduled")),
                     "own": rule["accountid"] is not None,
                     "applies": reaches, "status": status, "why": why,
@@ -1814,7 +1869,7 @@ def for_company(conn: Connection, accountid: str, facts: dict,
     for rule in rows(conn, """
         SELECT recordid, accountid, code, name, description, authoritytype, authority, citation,
                applieswhen, evidencekind, evidencesource, blocking, gate, grouping, duestage,
-               duetext, recurrence, recurrencedays, warndays, note, sortorder, offered,
+               duetext, recurrence, recurrencedays, recurrencemonths, warndays, note, sortorder, offered,
                retentionrule
         FROM compliancerules
         WHERE subject = 'company' AND effectiveto IS NULL
@@ -1880,7 +1935,8 @@ def for_company(conn: Connection, accountid: str, facts: dict,
         out.append({**{k: rule[k] for k in ("code", "name", "description", "authoritytype",
                                             "authority", "citation", "duestage", "duetext",
                                             "blocking", "gate", "grouping", "note", "evidencekind",
-                                            "evidencesource", "recurrence", "recurrencedays")},
+                                            "evidencesource", "recurrence", "recurrencedays",
+                                            "recurrencemonths")},
                     "scheduled": bool(rule.get("scheduled")),
                     "own": rule["accountid"] is not None,
                     "applies": reaches, "status": status, "why": why,
@@ -1966,7 +2022,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                accountid, evidencesource, origin, extendable, extendnote, offered,
                alternatesource, alternatewhen, reviewrequired, determination,
                violationresets,
-               blocking, gate, grouping, duestage, duedays, duetext, recurrence, recurrencedays,
+               blocking, gate, grouping, duestage, duedays, duetext, recurrence, recurrencedays, recurrencemonths,
                scheduled, warndays, note, sortorder
         FROM compliancerules
         WHERE subject = 'driver' AND effectiveto IS NULL
@@ -2145,7 +2201,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                 # horizon; one the rule says recurs goes out of date on schedule.
                 got = mvrs.coverage(
                     conn, accountid, driverid, today=today, window=mvrs.HIRE_LOOKBACK,
-                    current_within=mvrs.horizon(rule))
+                    lapses=mvrs.horizon(rule))
                 # The states ARE the rule, so they decide the mark rather than adjusting one
                 # taken from a single record. A rule answered by one record read as complete on
                 # that record alone, whatever the other states said.
@@ -2182,7 +2238,8 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                                             "duestage", "duedays", "duetext", "blocking", "gate",
                                             "grouping",
                                             "note", "evidencekind",
-                                            "evidencesource", "recurrence", "recurrencedays")},
+                                            "evidencesource", "recurrence", "recurrencedays",
+                                            "recurrencemonths")},
                     # A check that comes round on its own. The date still applies and still goes
                     # red when it lapses; it just does not belong on a screen of exceptions.
                     "scheduled": bool(rule.get("scheduled")),

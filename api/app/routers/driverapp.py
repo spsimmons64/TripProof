@@ -218,7 +218,7 @@ def my_work(driver: dict = Depends(current_driver), conn: Connection = Depends(g
                l.outcomestate, l.pickupplace, l.pickuplat, l.pickuplng, l.dropoffplace,
                l.dropofflat, l.dropofflng, l.servicelevel AS legservice,
                t.recordid AS tripid, t.externalid, t.passenger, t.passengerphone, t.servicelevel,
-               t.note, v.externalid AS vehiclename,
+               t.note, l.vehicleid, v.externalid AS vehiclename,
                TRIM(CONCAT(COALESCE(v.modelyear, ''), ' ', COALESCE(v.make, ''), ' ',
                            COALESCE(v.model, ''))) AS vehicledescr,
                (SELECT w.recordid FROM tripwaits w
@@ -246,10 +246,10 @@ def my_work(driver: dict = Depends(current_driver), conn: Connection = Depends(g
         LEFT JOIN vehicles v ON v.recordid = l.vehicleid
         WHERE l.accountid = :a AND l.driverid = :d
           AND (l.executionstate <> 'completed'
-               OR DATE(COALESCE(l.dropoffat, l.pickupat)) = CURRENT_DATE)
+               OR DATE(COALESCE(l.dropoffat, l.pickupat)) = :today)
           AND l.outcomestate IS NULL
         ORDER BY l.pickupat IS NULL, l.pickupat, l.legnumber
-    """, a=driver["accountid"], d=driver["recordid"])
+    """, a=driver["accountid"], d=driver["recordid"], today=_today(conn, driver["accountid"]))
     # A pickup time is already the company's wall clock. The moments the phone reported - when a
     # wait started, when a problem was raised - are UTC instants, and the app shows every time the
     # same way, so they are turned into the same clock here. A driver in Florida told they have
@@ -258,6 +258,7 @@ def my_work(driver: dict = Depends(current_driver), conn: Connection = Depends(g
     def local(v):
         return v.replace(tzinfo=timezone.utc).astimezone(here).replace(tzinfo=None) if v else v
 
+    seen = {}
     for i in items:
         for field in ("waitingsince", "issueraisedon", "issueseen"):
             i[field] = local(i[field])
@@ -268,6 +269,13 @@ def my_work(driver: dict = Depends(current_driver), conn: Connection = Depends(g
         # disagree is the day a driver presses something that is refused with no explanation.
         i["canwait"] = i["executionstate"] in CAN_WAIT
         i["whynotwait"] = WHY_NOT_WAITING.get(i["executionstate"])
+        # A leg not yet started, in a vehicle that has to be inspected before it goes out today:
+        # the check comes first, and where it is enforced the start is not offered at all.
+        i["checkfirst"] = (_before_setting_off(conn, driver, i["vehicleid"], seen)
+                           if i["executionstate"] == "scheduled" else None)
+        if i["checkfirst"] and i["checkfirst"]["enforced"]:
+            i["next"] = ()
+            i["nextsaid"] = None
         # While the clock runs, ending it is the only thing this leg will accept.
         if i["waitingid"]:
             i["next"] = ()
@@ -317,7 +325,7 @@ def _taken(at: datetime | None) -> datetime:
 
 def _my_leg(conn: Connection, driver: dict, legid: str) -> dict:
     held = row(conn, """
-        SELECT l.recordid, l.tripid, l.executionstate, l.pickupat, l.dropoffat
+        SELECT l.recordid, l.tripid, l.vehicleid, l.executionstate, l.pickupat, l.dropoffat
         FROM triplegs l JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
         WHERE l.recordid = :id AND l.accountid = :a AND l.driverid = :d
     """, id=legid, a=driver["accountid"], d=driver["recordid"])
@@ -377,6 +385,10 @@ def move_leg(legid: str, body: StateIn, request: Request,
         return {"ok": True, "state": leg["executionstate"], "repeat": True}
     if body.state not in NEXT.get(leg["executionstate"], ()):
         raise HTTPException(409, f"That trip is already {SAID.get(leg['executionstate'], leg['executionstate']).lower()}.")
+    if leg["executionstate"] == "scheduled":
+        held = _before_setting_off(conn, driver, leg["vehicleid"], {})
+        if held and held["enforced"]:
+            raise HTTPException(409, held["why"])
     run(conn, "UPDATE triplegs SET executionstate = :s WHERE recordid = :l", s=body.state, l=legid)
     # The moment itself, kept. `executionstate` says where the leg is; this says when it got there
     # and who was standing where when they said so. Appended, so the sequence survives the next
@@ -532,6 +544,61 @@ def _settle_verify(conn: Connection, accountid: str, tripid: str) -> None:
 # company's call, recorded by somebody certifying the repair.
 DVIR_KINDS = {"pretrip": "Before the shift", "posttrip": "After the shift"}
 
+# The rules that say a vehicle is inspected before it goes out each day, or that a reported defect
+# keeps it in until the repair is certified.
+DAILY_CHECK = "FL_TRANSIT_DAILY_INSPECTION"
+DEFECT_HOLDS = ("FL_TRANSIT_DAILY_INSPECTION", "DVIR")
+
+
+def _today(conn: Connection, accountid: str):
+    """The company's own date. The server's turns over at eight in the evening in Florida."""
+    return localnow(dispatch.zone(conn, accountid)).date()
+
+
+def _before_setting_off(conn: Connection, driver: dict, vehicleid: str | None,
+                        seen: dict) -> dict | None:
+    """What stands between this driver and setting off in this vehicle today, or None.
+
+    A defect nobody has certified as repaired (49 CFR 396.11(c)), or - where the vehicle runs under
+    Florida's bus transit rule - no pre-trip inspection by this driver today. Yesterday's check
+    does not cover today's run. Enforced, as the trip check is, only once the rule is approved and
+    the company has switched enforcement on; until then the app asks for the check and lets the
+    driver go. `seen` keeps the answer per vehicle for one listing."""
+    if not vehicleid:
+        return None
+    if vehicleid in seen:
+        return seen[vehicleid]
+    from app import facts as factset, rules
+    acct = driver["accountid"]
+    f = factset.assemble(conn, acct, vehicleid=vehicleid)["facts"]
+    reach = {r["code"] for r in rules.for_vehicle(conn, acct, vehicleid, f)
+             if r["code"] in DEFECT_HOLDS and r["applies"] is True}
+    out = None
+    name = (row(conn, "SELECT externalid FROM vehicles WHERE recordid = :v", v=vehicleid)
+            or {}).get("externalid") or "this vehicle"
+    if reach and row(conn, """
+            SELECT 1 AS x FROM vehicledvirs WHERE vehicleid = :v AND accountid = :a
+              AND deleted IS NULL AND defects = 1 AND correctedon IS NULL LIMIT 1
+            """, v=vehicleid, a=acct):
+        out = {"kind": "defect", "rule": next(iter(sorted(reach))),
+               "why": f"Vehicle {name} has a reported defect that has not been certified as "
+                      f"repaired. It cannot go out until the office certifies the repair."}
+    elif DAILY_CHECK in reach and not row(conn, """
+            SELECT 1 AS x FROM vehicledvirs WHERE vehicleid = :v AND accountid = :a
+              AND driverid = :d AND kind = 'pretrip' AND reportedon = :today AND deleted IS NULL
+            LIMIT 1""", v=vehicleid, a=acct, d=driver["recordid"], today=_today(conn, acct)):
+        out = {"kind": "pretrip", "rule": DAILY_CHECK,
+               "why": f"Do the pre-trip check of vehicle {name} before setting off."}
+    if out:
+        approved = (row(conn, """SELECT legalreview FROM compliancerules WHERE code = :c
+                                 AND accountid IS NULL AND effectiveto IS NULL""", c=out["rule"])
+                    or {}).get("legalreview") == "approved"
+        switched = bool((row(conn, "SELECT enforcetripcheck FROM companyprofiles WHERE accountid = :a",
+                             a=acct) or {}).get("enforcetripcheck"))
+        out.update({"vehicleid": vehicleid, "vehiclename": name, "enforced": approved and switched})
+    seen[vehicleid] = out
+    return out
+
 
 class CheckIn(BaseModel):
     kind: str
@@ -592,8 +659,8 @@ def last_check(vehicleid: str, driver: dict = Depends(current_driver),
         "today": rows(conn, """
             SELECT kind, reportedon FROM vehicledvirs
             WHERE vehicleid = :v AND accountid = :a AND driverid = :d AND deleted IS NULL
-              AND reportedon = CURRENT_DATE
-        """, v=vehicleid, a=acct, d=driver["recordid"]),
+              AND reportedon = :today
+        """, v=vehicleid, a=acct, d=driver["recordid"], today=_today(conn, acct)),
     }
 
 
@@ -614,8 +681,8 @@ def file_check(vehicleid: str, body: CheckIn, driver: dict = Depends(current_dri
     run(conn, """
         INSERT INTO vehicledvirs (recordid, accountid, vehicleid, driverid, reportedon, kind,
                                   defects, defectnote, note, addedby)
-        VALUES (:id, :a, :v, :d, CURRENT_DATE, :k, :has, :dn, :n, NULL)
-    """, id=newid(), a=acct, v=vehicleid, d=driver["recordid"], k=body.kind,
+        VALUES (:id, :a, :v, :d, :today, :k, :has, :dn, :n, NULL)
+    """, id=newid(), a=acct, v=vehicleid, d=driver["recordid"], today=_today(conn, acct), k=body.kind,
         has=1 if body.defects else 0,
         dn=(body.defectnote or "").strip()[:512] or None,
         n=(body.note or "").strip()[:512] or None)
@@ -623,9 +690,9 @@ def file_check(vehicleid: str, body: CheckIn, driver: dict = Depends(current_dri
     # driver reading it off the dash once a day is the only reliable source there is.
     if body.odometer is not None and body.odometer > 0:
         run(conn, """
-            UPDATE vehicles SET odometer = :o, odometerasof = CURRENT_DATE
+            UPDATE vehicles SET odometer = :o, odometerasof = :today
             WHERE recordid = :v AND accountid = :a
               AND (odometer IS NULL OR odometer <= :o)
-        """, o=body.odometer, v=vehicleid, a=acct)
+        """, o=body.odometer, today=_today(conn, acct), v=vehicleid, a=acct)
     saved(conn)
     return {"ok": True, "defects": bool(body.defects)}

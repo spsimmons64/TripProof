@@ -30,6 +30,7 @@ from app import (accidents, annualreview, applicationview, backgroundchecks, bil
                  screening, screeningaccount, signatures, storage, tripcheck,
                  rates as rateset, vehicleclass, wheremap)
 from app import dispatch, gateways, payerlines
+from app.recurrence import renewed
 from app.routers import signing, uploading
 from app.activity import log
 from app.config import settings
@@ -415,6 +416,8 @@ class LicenseIn(BaseModel):
     # the issue date (usually the latest renewal) is not.
     originalissued: date | None = None
     expires: date | None = None
+    # Whether it is a commercial license (CDL). None is "not said" - the class letter does not say.
+    commercial: bool | None = None
     active: bool = False
     note: str | None = None
 
@@ -427,8 +430,8 @@ def _licenses(conn: Connection, accountid: str, driverid: str) -> list[dict]:
     it had no idea a copy was waiting - the license read "Review" on the requirements page and
     "View" with nothing behind it here."""
     held = rows(conn, """
-        SELECT recordid, number, state, classification, endorsements, issued, originalissued,
-               expires, active, note, copydocumentid
+        SELECT recordid, number, state, classification, commercial, endorsements, issued,
+               originalissued, expires, active, note, copydocumentid
         FROM driverlicenses WHERE accountid = :a AND driverid = :d
         ORDER BY active DESC, COALESCE(issued, '1900-01-01') DESC
     """, a=accountid, d=driverid)
@@ -530,18 +533,20 @@ def add_driver_license(driverid: str, body: LicenseIn, request: Request,
     lid = held["recordid"] if held else newid()
     if held:
         run(conn, """
-            UPDATE driverlicenses SET classification = :c, endorsements = :e, issued = :i,
-                   originalissued = :oi, expires = :x, note = :note, updated = :now WHERE recordid = :id
-        """, c=body.classification, e=body.endorsements, i=body.issued, oi=body.originalissued,
-            x=body.expires, note=body.note, now=utcnow(), id=lid)
+            UPDATE driverlicenses SET classification = :c, commercial = :cdl, endorsements = :e,
+                   issued = :i, originalissued = :oi, expires = :x, note = :note, updated = :now
+            WHERE recordid = :id
+        """, c=body.classification, cdl=body.commercial, e=body.endorsements, i=body.issued,
+            oi=body.originalissued, x=body.expires, note=body.note, now=utcnow(), id=lid)
     else:
         run(conn, """
             INSERT INTO driverlicenses (recordid, accountid, driverid, number, state, classification,
-                                        endorsements, issued, originalissued, expires, note)
-            VALUES (:id, :a, :d, :n, :s, :c, :e, :i, :oi, :x, :note)
+                                        commercial, endorsements, issued, originalissued, expires,
+                                        note)
+            VALUES (:id, :a, :d, :n, :s, :c, :cdl, :e, :i, :oi, :x, :note)
         """, id=lid, a=acct, d=driverid, n=number, s=state, c=body.classification,
-            e=body.endorsements, i=body.issued, oi=body.originalissued, x=body.expires,
-            note=body.note)
+            cdl=body.commercial, e=body.endorsements, i=body.issued, oi=body.originalissued,
+            x=body.expires, note=body.note)
     # The first license on file is the one they drive on until someone says otherwise.
     if body.active or not row(conn, "SELECT 1 AS x FROM driverlicenses WHERE accountid = :a AND driverid = :d AND active = 1",
                               a=acct, d=driverid):
@@ -552,6 +557,28 @@ def add_driver_license(driverid: str, body: LicenseIn, request: Request,
     # The id comes back as well as the list: a copy of the license is filed against the license it
     # belongs to, and the caller has just created it and has nothing else to identify it by.
     return {"recordid": lid, "licenses": out}
+
+
+class CommercialIn(BaseModel):
+    commercial: bool | None = None
+
+
+@router.post("/drivers/{driverid}/licenses/{licenseid}/commercial")
+def license_commercial(driverid: str, licenseid: str, body: CommercialIn, request: Request,
+                       user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """Say whether a license already on file is a CDL - the one thing its class letter cannot."""
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    if not row(conn, "SELECT 1 AS x FROM driverlicenses WHERE recordid = :l AND accountid = :a "
+                     "AND driverid = :d", l=licenseid, a=acct, d=driverid):
+        raise HTTPException(404, "That license is not on this driver")
+    run(conn, "UPDATE driverlicenses SET commercial = :c, updated = :now WHERE recordid = :l",
+        c=body.commercial, now=utcnow(), l=licenseid)
+    log(conn, user, "licensecommercial", "driver", driverid, {"commercial": body.commercial},
+        ip=client_ip(request))
+    out = _licenses(conn, acct, driverid)
+    saved(conn)
+    return {"licenses": out}
 
 
 @router.post("/drivers/{driverid}/licenses/{licenseid}/active")
@@ -696,15 +723,13 @@ def driver_reports(driverid: str, code: str, user: dict = Depends(current_user),
     # query is good for a year (49 CFR 382.701(b)); a PSP report has no horizon at all. Reading the
     # recurrence off the rule means the table and the engine can never disagree about the date.
     rule = row(conn, """
-        SELECT recurrence, recurrencedays FROM compliancerules
+        SELECT recurrence, recurrencedays, recurrencemonths FROM compliancerules
         WHERE subject = 'driver' AND evidencesource = :src AND effectiveto IS NULL
           AND (accountid IS NULL OR accountid = :a) LIMIT 1
     """, src=f"report:{code}", a=acct)
-    span = (rule or {}).get("recurrencedays") if (rule or {}).get("recurrence") == "days" else None
     for r in held:
         r["state"] = _report_stage(r)
-        r["expireson"] = (r["issuedon"] + timedelta(days=int(span))
-                          if span and r["issuedon"] else None)
+        r["expireson"] = renewed(rule or {}, r["issuedon"]) if r["issuedon"] else None
     # Only what stands now, as with a driving record: the earlier ones are kept and read in the
     # driver's file, but they are not what the office is waiting on.
     # The whole history, the way a license shows every driving record pulled on it. The earlier
@@ -3839,7 +3864,7 @@ def _fact_reading(conn: Connection, acct: str, driverid: str, which: str) -> dic
 
     A requirement nobody can answer still has to explain itself: the date it was read from, what
     that date makes true, and - where the date is missing - where to go and put it."""
-    if which != "driver.age21":
+    if which not in ("driver.age21", "driver.age18"):
         return None
     d = row(conn, """SELECT dob, TIMESTAMPDIFF(YEAR, dob, CURDATE()) AS age FROM drivers
                      WHERE recordid = :d AND accountid = :a""", d=driverid, a=acct) or {}
@@ -4666,7 +4691,7 @@ def requirement_detail(driverid: str, code: str, user: dict = Depends(current_us
         # window, so the screen shows the states rather than one record and a silence.
         "coverage": mvrs.coverage(
             conn, acct, driverid, window=mvrs.HIRE_LOOKBACK,
-            current_within=mvrs.horizon(rule),
+            lapses=mvrs.horizon(rule),
         ) if kind == "mvr" else None,
         # Which of these the driver sent in and nobody has read yet. A requirement does not stand
         # on one of those, and the row says so rather than the office having to remember.

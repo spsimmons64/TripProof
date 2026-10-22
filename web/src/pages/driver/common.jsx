@@ -17,7 +17,7 @@ import DocumentViewer, { DocumentPane } from '../../components/DocumentViewer.js
 import ApplicantForm from '../../components/ApplicantForm.jsx'
 import SignedDocViewer from '../../components/SignedDocViewer.jsx'
 import { PhoneInput } from '../../components/MaskedInput.jsx'
-import LicenseDialog from '../../components/LicenseDialog.jsx'
+import LicenseDialog, { commercialOf } from '../../components/LicenseDialog.jsx'
 import TestDialog from '../../components/TestDialog.jsx'
 import WithdrawDialog, { WithdrawnDialog } from '../../components/WithdrawDialog.jsx'
 import { Email, Phone } from '../../components/Contact.jsx'
@@ -25,7 +25,8 @@ import { Email, Phone } from '../../components/Contact.jsx'
 // One license, and the copies of its two sides. The license has to exist before a copy can belong
 // to it, so it is written first and the copies are filed against it.
 export async function saveLicense(id, license, copies) {
-  const body = { ...license, endorsements: (license.endorsements || []).join('') || null,
+  const body = { ...license, commercial: commercialOf(license.commercial),
+    endorsements: (license.endorsements || []).join('') || null,
     issued: license.issued || null, originalissued: license.originalissued || null,
     expires: license.expires || null }
   const saved = await api.post(`/drivers/${id}/licenses`, body)

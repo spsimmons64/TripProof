@@ -35,6 +35,7 @@ from datetime import date, timedelta
 from sqlalchemy.engine import Connection
 
 from app.db import rows
+from app.recurrence import renewed
 
 # 391.23(a)(1): the three years before the driver was taken on.
 HIRE_LOOKBACK = timedelta(days=3 * 365)
@@ -84,16 +85,17 @@ def standing(cov: dict, today: date) -> tuple[str, str] | None:
     return "satisfied", cov["why"]
 
 
-def horizon(rule: dict) -> timedelta | None:
-    """How long one record answers this rule, or None if it is asked once and done.
+def horizon(rule: dict):
+    """When one record stops answering this rule - a function of the record's date - or None if it
+    is asked once and done.
 
     The rule carries this already - it is what `stand()` uses to expire the one record it looks at -
     so coverage asks the rule rather than keeping a second opinion about the same question. Reading
     it off a rule code was worse than wrong: the code being tested reads annual reviews, not driving
     records, so the branch never fired and nothing ever went out of date."""
-    if rule.get("recurrence") == "days" and rule.get("recurrencedays"):
-        return timedelta(days=int(rule["recurrencedays"]))
-    return None
+    if renewed(rule, date.today()) is None:
+        return None
+    return lambda when: renewed(rule, when)
 
 
 def _held_during(conn: Connection, accountid: str, driverid: str, since: date,
@@ -116,11 +118,11 @@ def _held_during(conn: Connection, accountid: str, driverid: str, since: date,
 
 
 def coverage(conn: Connection, accountid: str, driverid: str, *, window: timedelta = HIRE_LOOKBACK,
-             cdl_only: bool = False, current_within: timedelta | None = None,
+             cdl_only: bool = False, lapses=None,
              today: date | None = None) -> dict:
     """What is required, what is covered, and what is missing - by state.
 
-    `current_within` is how recent a record has to be to still count. The hiring inquiry has no
+    `lapses` says when a record dated on a given day stops counting. The hiring inquiry has no
     such limit: it is asked once and answers for that hire. The annual does - a record from two
     years ago does not answer this year's question."""
     today = today or date.today()
@@ -186,21 +188,21 @@ def coverage(conn: Connection, accountid: str, driverid: str, *, window: timedel
         # invented. A rule that recurs gives its record that long and no longer.
         entry["expireson"] = None
         got = entry.get("record")
-        if got and current_within:
+        if got and lapses:
             when = got["issuedon"] or got["receivedon"]
             if when:
                 if not isinstance(when, date):
                     when = when.date()
-                entry["expireson"] = when + current_within
+                entry["expireson"] = lapses(when)
         # On file and still current. A record that has run out is on file and does not count.
         entry["state_covered"] = bool(got) and not (entry["expireson"] and entry["expireson"] < today)
     for card in cards.values():
         card["expireson"] = None
         got = card.get("record")
-        if got and current_within:
+        if got and lapses:
             when = got["issuedon"] or got["receivedon"]
             if when:
-                card["expireson"] = (when if isinstance(when, date) else when.date()) + current_within
+                card["expireson"] = lapses(when if isinstance(when, date) else when.date())
     missing = [e["state"] for e in required if not e["state_covered"]]
     return {
         "required": required,

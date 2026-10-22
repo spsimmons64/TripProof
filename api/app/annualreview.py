@@ -73,13 +73,15 @@ def readiness(conn: Connection, accountid: str, driverid: str, today: date | Non
     interval is how they come to disagree about whether a record is still current.
     """
     from app import mvr as mvrs
-    days = row(conn, "SELECT recurrencedays FROM compliancerules WHERE code = 'MVR_ANNUAL'") or {}
+    rule = row(conn, """SELECT recurrence, recurrencedays, recurrencemonths FROM compliancerules
+                        WHERE code = 'MVR_ANNUAL' AND accountid IS NULL AND effectiveto IS NULL""") or {}
     lic = _active_license(conn, accountid, driverid)
     if not lic:
         return {"required": [], "covered": 0, "missing": [], "complete": None,
                 "why": "No active license is on file, so there is nothing to review against."}
     cov = mvrs.coverage(conn, accountid, driverid, today=today, window=mvrs.HIRE_LOOKBACK,
-                        current_within=timedelta(days=days.get("recurrencedays") or 365))
+                        lapses=mvrs.horizon(rule) or mvrs.horizon({"recurrence": "months",
+                                                                   "recurrencemonths": 12}))
     card = next((c for c in cov.get("cards", []) if c["licenseid"] == lic["recordid"]), None) or {}
     today = today or date.today()
     covered = bool(card.get("record")) and not (card.get("expireson") and card["expireson"] < today)

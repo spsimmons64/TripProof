@@ -342,9 +342,11 @@ function SetPassword({ onIn }) {
 // The vehicle check. 49 CFR 396.11 puts this on the driver, and 396.13 says they must read the
 // last one before driving - so the last report is shown first, and an uncorrected defect is said
 // before anything is asked.
-function VehicleCheck({ me, reporting }) {
+// `vehicle` opens it on one vehicle, and `onFiled` is told when a clean check has gone in - a trip
+// that sent the driver here to do its pre-trip check takes them back to it.
+function VehicleCheck({ me, reporting, vehicle = null, onFiled }) {
   const [list, setList] = useState(null)
-  const [vehicleid, setVehicle] = useState(null)
+  const [vehicleid, setVehicle] = useState(vehicle)
   const [seen, setSeen] = useState(null)
   const [kind, setKind] = useState('pretrip')
   const [defects, setDefects] = useState(null)       // null | false | true
@@ -374,8 +376,10 @@ function VehicleCheck({ me, reporting }) {
         odometer: odometer === '' ? null : Number(odometer),
       })
       setDone(defects ? 'defect' : 'clean')
+      const clean = !defects
       setDefects(null); setNote(''); setOdo('')
       setSeen(await call(`/vehicles/${vehicleid}/lastcheck`))
+      if (clean && kind === 'pretrip') onFiled?.()
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
 
@@ -463,6 +467,7 @@ function Work({ me, onOut }) {
   const [err, setErr] = useState(null)
   const [open, setOpen] = useState(null)      // the legid being worked
   const [where, setWhere] = useState('trips') // which of the app's pages
+  const [checkFor, setCheckFor] = useState(null) // the trip that sent the driver to inspect
   const go = (to) => { setWhere(to); setOpen(null) }
   const load = useCallback(async () => {
     try { setData(await call('/trips')); setErr(null) } catch (x) { setErr(x.message) }
@@ -485,10 +490,22 @@ function Work({ me, onOut }) {
   // The screen is kept awake only while a trip is actually under way. All day would be a flat
   // battery by two o'clock.
   useAwake(driving)
+  // The pre-trip check a trip asked for, on that trip's vehicle, and back to the trip once filed.
+  if (checkFor) {
+    const back = () => { setCheckFor(null); setOpen(checkFor.legid) }
+    return (
+      <Shell title="Pre-Trip Check"
+        right={<button className="dvicon" onClick={back} aria-label="Back">✕</button>}>
+        <VehicleCheck me={me} reporting={reporting} vehicle={checkFor.vehicleid}
+          onFiled={async () => { await load(); back() }} />
+      </Shell>
+    )
+  }
   const leg = items.find((x) => x.legid === open)
   if (leg) {
     return <Trip me={me} leg={leg} reporting={reporting}
-      onBack={() => setOpen(null)} onDone={load} />
+      onBack={() => setOpen(null)} onDone={load}
+      onCheck={() => { setOpen(null); setCheckFor({ legid: leg.legid, vehicleid: leg.vehicleid }) }} />
   }
 
   const menu = (
@@ -623,7 +640,7 @@ function navigateTo(place, lat, lng) {
   }
 }
 
-function Trip({ me, leg, reporting, onBack, onDone }) {
+function Trip({ me, leg, reporting, onBack, onDone, onCheck }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const [asking, setAsking] = useState(null)    // 'issue' | 'wait'
@@ -694,8 +711,18 @@ function Trip({ me, leg, reporting, onBack, onDone }) {
         <div className="dvwhynot"><Clock size={16} /> {leg.whynotwait}</div>
       ) : null}
 
+      {/* What has to happen before this trip can start: the day's pre-trip check of its vehicle,
+          or a defect the office has to certify. Decided by the server, as every button here is. */}
+      {leg.checkfirst?.kind === 'pretrip' && (
+        <button className="dvgo" type="button" onClick={onCheck}>
+          <ClipboardCheck size={20} /> Do The Pre-Trip Check Of {leg.checkfirst.vehiclename}
+        </button>
+      )}
+      {leg.checkfirst?.kind === 'defect' && <div className="dverr">{leg.checkfirst.why}</div>}
+
       {leg.nextsaid && (
-        <button className="dvgo" disabled={busy} onClick={() => step(leg.next[0])}>
+        <button className={`dvgo${leg.checkfirst ? ' quiet' : ''}`} disabled={busy}
+          onClick={() => step(leg.next[0])}>
           {busy ? 'Sending…' : leg.nextsaid}
         </button>
       )}

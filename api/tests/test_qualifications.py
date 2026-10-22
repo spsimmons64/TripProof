@@ -6,6 +6,7 @@
 #
 # Plus the unit tests that need no database: the migration splitter, and the admin customer model.
 ###################################################################################################
+import json
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -320,3 +321,149 @@ def test_a_payer_line_is_matched_by_the_state_the_trip_begins_in(client, q):
         "when": f"{on}T09:00:00", "payerid": p, "payer": "broker",
         "pickupplace": leg["pickupplace"], "dropoffplace": leg["dropoffplace"]})
     assert got.status_code == 200, got.text
+
+
+def test_six_months_is_six_calendar_months():
+    """DCH 910.2 says six months; 183 days lands on a different date."""
+    from app import rules
+    six = {"recurrence": "months", "recurrencemonths": 6}
+    assert rules.renewed(six, date(2026, 1, 15)) == date(2026, 7, 15)
+    assert rules.renewed(six, date(2026, 8, 31)) == date(2027, 2, 28)
+    assert rules.renewed({"recurrence": "days", "recurrencedays": 10}, date(2026, 1, 1)) == date(2026, 1, 11)
+    assert rules.renewed({"recurrence": "once"}, date(2026, 1, 1)) is None
+
+
+def test_the_federal_age_does_not_reach_a_florida_intrastate_driver(q):
+    """F.S. 316.302(2)(a) excuses the Florida intrastate driver the federal twenty-one, and (4)
+    sets eighteen; DRIVER_AGE once demanded twenty-one of them."""
+    from app import facts as factset
+    with q["db"].connect() as conn:
+        f = factset.assemble(conn, q["acct"], q["driver"], states=["GA", "FL"])["facts"]
+        rules_ = {r["code"]: json.loads(r["applieswhen"]) for r in conn.execute(text(
+            "SELECT code, applieswhen FROM compliancerules WHERE effectiveto IS NULL AND accountid IS NULL "
+            "AND code IN ('DRIVER_AGE', 'FL_INTRASTATE_AGE18')")).mappings()}
+    assert rules_["DRIVER_AGE"] == {"fact": "reach.part391interstate", "is": True}
+    assert "FL_INTRASTATE_AGE18" in rules_
+    # Crossing a state line, Part 391 reaches a CMV driver by the federal rules themselves.
+    assert f["reach.part391interstate"] == f["driver.cmv"]
+
+
+def test_a_typed_expiry_cannot_outlast_the_rules_interval():
+    """A Georgia inspection filed as good for a year still lapses six months after it was done;
+    the six months never showed because the typed date won."""
+    from app import rules
+    six = {"recurrence": "months", "recurrencemonths": 6}
+    filed = {"effectiveon": date(2026, 10, 2), "expireson": date(2027, 10, 2)}
+    assert rules.horizon(six, filed) == date(2027, 4, 2)
+    # An earlier date on the record still wins.
+    assert rules.horizon(six, {**filed, "expireson": date(2027, 1, 1)}) == date(2027, 1, 1)
+    # A rule with no interval keeps the record's own date.
+    assert rules.horizon({"recurrence": "ondocument"}, filed) == date(2027, 10, 2)
+
+
+def test_years_are_counted_in_calendar_months(q):
+    """A two-year medical printed good through 09/30/2028 lapsed on 09/29 - 730 days across a leap
+    year. Every yearly and monthly interval is now calendar months."""
+    from app import mvr, rules
+    with q["db"].connect() as conn:
+        left = conn.execute(text("""SELECT code, recurrencedays FROM compliancerules
+                                    WHERE accountid IS NULL AND effectiveto IS NULL
+                                      AND recurrence = 'days' AND recurrencedays <> 3""")).all()
+        medical = conn.execute(text("""SELECT recurrence, recurrencedays, recurrencemonths FROM compliancerules
+                                       WHERE code = 'FL_TRANSIT_MEDICAL' AND accountid IS NULL
+                                         AND effectiveto IS NULL""")).mappings().one()
+    assert not left, left
+    assert rules.horizon(dict(medical), {"effectiveon": date(2026, 9, 30),
+                                         "expireson": date(2028, 9, 30)}) == date(2028, 9, 30)
+    yearly = mvr.horizon({"recurrence": "months", "recurrencemonths": 12})
+    assert yearly(date(2027, 2, 28)) == date(2028, 2, 28)
+    assert mvr.horizon({"recurrence": "once"}) is None
+
+
+def test_second_audit_corrections(q):
+    """The signed Clearinghouse consent lasts the employment, so it is asked once per hire; and a
+    Class C license stands in for a road test only where the work calls for a CDL."""
+    with q["db"].connect() as conn:
+        got = {r["code"]: r for r in conn.execute(text(
+            "SELECT code, recurrence, alternatewhen FROM compliancerules WHERE accountid IS NULL "
+            "AND effectiveto IS NULL AND code IN ('CLEARINGHOUSE_CONSENT', 'ROAD_TEST')")).mappings()}
+    assert got["CLEARINGHOUSE_CONSENT"]["recurrence"] == "perhire"
+    assert {"fact": "driver.cdl", "is": True} in json.loads(got["ROAD_TEST"]["alternatewhen"])["all"]
+
+
+def test_a_programs_hard_stop_does_not_grey_out_a_driver_for_every_trip():
+    """The dispatch list's 'may they drive at all' read every hard stop, a Georgia Medicaid one
+    included, and so refused a private pay run over a Medicaid shortfall."""
+    from app import rules
+    item = {"code": "X", "status": "failed", "applies": True, "gate": "hardstop",
+            "sources": [{"code": "GA_ONLY", "program": "medicaid", "status": "failed", "applies": True}]}
+    assert rules.for_program(item, None) is None
+    item["sources"].append({"code": "ALL", "program": None, "status": "satisfied", "applies": True})
+    assert rules.for_program(item, None)["status"] == "satisfied"
+
+
+def test_a_license_says_whether_it_is_commercial(client, q):
+    """The class letter cannot say CDL - Georgia's ordinary license is a Class C - so the license
+    carries the answer, and a CDL driver on a license recorded as not commercial is on the wrong one."""
+    from app import facts as factset, rules
+    h, d = q["h"], q["driver"]
+    r = client.post(f"/api/drivers/{d}/licenses", headers=h, json={
+        "number": "Q1234567", "state": "GA", "classification": "C", "commercial": False,
+        "issued": "2024-01-01", "expires": "2030-01-01", "active": True})
+    assert r.status_code == 200, r.text
+    lic = next(l for l in r.json()["licenses"] if l["number"] == "Q1234567")
+    assert lic["commercial"] in (0, False)
+    with q["db"].connect() as conn:
+        assert factset.assemble(conn, q["acct"], d)["facts"]["driver.licensecommercial"] is False
+    assert rules._license_verdict({"active": 1, "classification": "C", "commercial": 0},
+                                  {"driver.cdl": True}) == "wrongclass"
+    assert rules._license_verdict({"active": 1, "classification": "C", "commercial": None},
+                                  {"driver.cdl": True}) == "qualified"
+    said = client.post(f"/api/drivers/{d}/licenses/{lic['recordid']}/commercial", headers=h,
+                       json={"commercial": True})
+    assert said.status_code == 200, said.text
+    with q["db"].connect() as conn:
+        assert factset.assemble(conn, q["acct"], d)["facts"]["driver.licensecommercial"] is True
+
+
+def test_georgia_medicaid_takes_a_georgia_or_home_border_state_license(q):
+    """DCH 914.2.1: a Georgia license, or one from the bordering state the driver lives in."""
+    from app import rules
+    with q["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET state = 'FL' WHERE recordid = :d"), {"d": q["driver"]})
+        ga = rules._georgia_license(conn, q["acct"], q["driver"], {"state": "GA"})
+        fl = rules._georgia_license(conn, q["acct"], q["driver"], {"state": "FL"})
+        al = rules._georgia_license(conn, q["acct"], q["driver"], {"state": "AL"})
+        tx = rules._georgia_license(conn, q["acct"], q["driver"], {"state": "TX"})
+        conn.execute(text("UPDATE drivers SET state = NULL WHERE recordid = :d"), {"d": q["driver"]})
+        unknown = rules._georgia_license(conn, q["acct"], q["driver"], {"state": "FL"})
+    assert (ga, fl, al, tx, unknown) == ("qualified", "qualified", "notgeorgia", "notgeorgia",
+                                         "residenceunknown")
+
+
+def test_a_bus_transit_vehicle_is_inspected_before_it_goes_out_each_day(q):
+    """A week-old inspection report satisfied the Florida daily pre-trip check. The trip now asks
+    for today's pre-trip check by this driver, and a defect nobody has certified holds the vehicle."""
+    from app.routers import driverapp
+    driver = {"accountid": q["acct"], "recordid": q["driver"]}
+    with q["db"].begin() as conn:
+        vehicle = conn.execute(text("SELECT recordid FROM vehicles WHERE accountid = :a AND externalid = 'QV1'"),
+                               {"a": q["acct"]}).scalar()
+        assert vehicle, "made by test_transit_programs_reach_drivers_and_vehicles"
+        today = driverapp._today(conn, q["acct"])
+        conn.execute(text("""INSERT INTO vehicledvirs (recordid, accountid, vehicleid, driverid, reportedon,
+                                                       kind, defects)
+                             VALUES ('dvir-old', :a, :v, :d, :on, 'pretrip', 0)"""),
+                     {"a": q["acct"], "v": vehicle, "d": q["driver"], "on": today - timedelta(days=7)})
+        held = driverapp._before_setting_off(conn, driver, vehicle, {})
+        assert held and held["kind"] == "pretrip" and held["enforced"] is False, held
+        conn.execute(text("""INSERT INTO vehicledvirs (recordid, accountid, vehicleid, driverid, reportedon,
+                                                       kind, defects)
+                             VALUES ('dvir-today', :a, :v, :d, :on, 'pretrip', 0)"""),
+                     {"a": q["acct"], "v": vehicle, "d": q["driver"], "on": today})
+        assert driverapp._before_setting_off(conn, driver, vehicle, {}) is None
+        conn.execute(text("""INSERT INTO vehicledvirs (recordid, accountid, vehicleid, driverid, reportedon,
+                                                       kind, defects, defectnote)
+                             VALUES ('dvir-bad', :a, :v, :d, :on, 'posttrip', 1, 'BRAKES')"""),
+                     {"a": q["acct"], "v": vehicle, "d": q["driver"], "on": today})
+        assert driverapp._before_setting_off(conn, driver, vehicle, {})["kind"] == "defect"

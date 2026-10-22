@@ -23,6 +23,8 @@ import WithdrawDialog, { WithdrawnDialog } from '../../components/WithdrawDialog
 import { Email, Phone } from '../../components/Contact.jsx'
 import { saveLicense, unread } from './common.jsx'
 
+const cdlWord = (v) => (v === true || v === 1 ? 'Yes' : v === false || v === 0 ? 'No' : 'Not Said')
+
 export function DriverLicenses({ id, onChanged, bare, adding: addingFrom, onAdding,
                          pending = new Set(), onReviewed }) {
   const [data, error, reload] = useLoad(() => api.get(`/drivers/${id}/licenses`), [id])
@@ -65,8 +67,8 @@ export function DriverLicenses({ id, onChanged, bare, adding: addingFrom, onAddi
     <>
       {err && !open && <div className="notice bad">{err}</div>}
       <table className="residencetable driverlicensetable">
-        <thead><tr><th>License</th><th>Class</th><th>Endorsements</th><th>Valid</th><th>Status</th>
-          <th /></tr></thead>
+        <thead><tr><th>License</th><th>Class</th><th>CDL</th><th>Endorsements</th><th>Valid</th>
+          <th>Status</th><th /></tr></thead>
         <tbody>
           {data.licenses.map((l) => {
             const [cls, word] = standing(l)
@@ -74,6 +76,7 @@ export function DriverLicenses({ id, onChanged, bare, adding: addingFrom, onAddi
             <tr key={l.recordid}>
               <td className="licensenumber">{[l.state, l.number].filter(Boolean).join(' ')}</td>
               <td>{l.classification || '-'}</td>
+              <td>{cdlWord(l.commercial)}</td>
               {/* Stored as the letters run together, read as separate endorsements. */}
               <td>{(l.endorsements || '').split('').filter(Boolean).join(' · ') || '-'}</td>
               <td>
@@ -91,7 +94,7 @@ export function DriverLicenses({ id, onChanged, bare, adding: addingFrom, onAddi
             </tr>
             )
           })}
-          {!data.licenses.length && <tr><td colSpan={6}>No licenses on file.</td></tr>}
+          {!data.licenses.length && <tr><td colSpan={7}>No licenses on file.</td></tr>}
         </tbody>
       </table>
       {open && (
@@ -139,6 +142,20 @@ export function DriverLicenses({ id, onChanged, bare, adding: addingFrom, onAddi
               <div><dt>License number</dt><dd>{open.number || '-'}</dd></div>
               <div><dt>State</dt><dd>{STATE_NAMES[open.state] || open.state || '-'}</dd></div>
               <div><dt>Class</dt><dd>{open.classification || '-'}</dd></div>
+              {/* The class letter does not say whether it is a CDL - Georgia's ordinary license is
+                  a Class C - so it is answered here, on the license already on file. */}
+              <div><dt>Commercial (CDL)</dt><dd>
+                <select value={open.commercial === true || open.commercial === 1 ? 'yes'
+                  : open.commercial === false || open.commercial === 0 ? 'no' : ''}
+                  disabled={busy === 'commercial'}
+                  onChange={(e) => act(() => api.post(`/drivers/${id}/licenses/${open.recordid}/commercial`,
+                    { commercial: e.target.value === 'yes' ? true : e.target.value === 'no' ? false : null }),
+                    'commercial')}>
+                  <option value="">Not said</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </dd></div>
               <div><dt>Endorsements</dt>
                 <dd>{(open.endorsements || '').split('').filter(Boolean).join(' · ') || '-'}</dd></div>
               <div><dt>Issued</dt><dd>{open.issued ? date(open.issued) : '-'}</dd></div>

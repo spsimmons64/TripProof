@@ -138,6 +138,7 @@ export default function UploadDocument() {
       body.append('number', lic.number)
       body.append('state', lic.state)
       body.append('classification', lic.classification)
+      body.append('commercial', lic.commercial)
       body.append('endorsements', (lic.endorsements || []).join(''))
       body.append('issuedon', lic.issued)
       body.append('expireson', lic.expires)

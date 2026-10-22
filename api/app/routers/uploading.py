@@ -251,7 +251,8 @@ async def _one_side(side: UploadFile | None) -> bytes | None:
 
 
 async def _take_license(conn: Connection, request: Request, held: dict, number, state,
-                        classification, endorsements, issued, expires, front, back):
+                        classification, endorsements, issued, expires, front, back,
+                        commercial=None):
     """The license the driver typed in, and the copy of it, filed the way the office files one.
 
     The front and the back become one PDF - see app/images.py - so what ends up on the license is
@@ -278,18 +279,19 @@ async def _take_license(conn: Connection, request: Request, held: dict, number, 
     lid = already["recordid"] if already else newid()
     if already:
         run(conn, """
-            UPDATE driverlicenses SET classification = :c, endorsements = :e, issued = :i,
-                   expires = :x, copydocumentid = :doc, updated = :now WHERE recordid = :id
-        """, c=(classification or None), e=(endorsements or None), i=issued, x=expires,
-            doc=documentid, now=utcnow(), id=lid)
+            UPDATE driverlicenses SET classification = :c, commercial = :cdl, endorsements = :e,
+                   issued = :i, expires = :x, copydocumentid = :doc, updated = :now
+            WHERE recordid = :id
+        """, c=(classification or None), cdl=commercial, e=(endorsements or None), i=issued,
+            x=expires, doc=documentid, now=utcnow(), id=lid)
     else:
         run(conn, """
             INSERT INTO driverlicenses (recordid, accountid, driverid, number, state, classification,
-                                        endorsements, issued, expires, copydocumentid)
-            VALUES (:id, :a, :d, :n, :s, :c, :e, :i, :x, :doc)
+                                        commercial, endorsements, issued, expires, copydocumentid)
+            VALUES (:id, :a, :d, :n, :s, :c, :cdl, :e, :i, :x, :doc)
         """, id=lid, a=held["accountid"], d=held["driverid"], n=number, s=state,
-            c=(classification or None), e=(endorsements or None), i=issued, x=expires,
-            doc=documentid)
+            c=(classification or None), cdl=commercial, e=(endorsements or None), i=issued,
+            x=expires, doc=documentid)
     # The first license on file is the one they drive on until somebody says otherwise. A driver
     # sending one in does not get to decide that, so an existing active license is left alone.
     if not row(conn, "SELECT 1 AS x FROM driverlicenses WHERE accountid = :a AND driverid = :d"
@@ -315,6 +317,7 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
                   exempt: bool = Form(False), file: UploadFile | None = File(None),
                   number: str | None = Form(None), state: str | None = Form(None),
                   classification: str | None = Form(None), endorsements: str | None = Form(None),
+                  commercial: str | None = Form(None),
                   front: UploadFile | None = File(None), back: UploadFile | None = File(None),
                   priorviolation: str | None = Form(None), prioremployer: str | None = Form(None),
                   priortestdate: str | None = Form(None), priortesttype: str | None = Form(None),
@@ -340,7 +343,8 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
                                          fontkey, file)
     if held["credentialcode"] == "DRIVER_LICENSE":
         return await _take_license(conn, request, held, number, state, classification,
-                                   endorsements, issuedon, expireson, front, back)
+                                   endorsements, issuedon, expireson, front, back,
+                                   {"yes": 1, "no": 0}.get((commercial or "").lower()))
     data = None
     if not exempt:
         if file is None or not file.filename:

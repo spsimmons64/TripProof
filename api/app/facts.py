@@ -351,6 +351,11 @@ def _reach(company: dict, fleet: dict, roster: dict, driver: dict | None = None)
             return False
         return None                      # nobody has said whether they cross a state line
     out["reach.fmcsr"] = mine(driver.get("driver.cmv"))
+    # Part 391 reached by the federal rules themselves - across a state line - rather than by
+    # Florida's adoption of them. The difference is the age: F.S. 316.302(2)(a) excuses the
+    # intrastate driver from 391.11(b)(1)'s twenty-one, and (4) puts the floor at eighteen.
+    out["reach.part391interstate"] = (driver.get("driver.cmv") if interstate is True
+                                      else False if interstate is False or byflorida else None)
     out["reach.part391"] = out["reach.fmcsr"]
     out["reach.part390"] = out["reach.fmcsr"]
     out["reach.part382"] = mine(driver.get("driver.cdl"))
@@ -543,6 +548,12 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
             # software vouching for something it has never been told.
             "driver.age": driver.get("age"),
             "driver.age21": None if driver.get("age") is None else driver["age"] >= 21,
+            # F.S. 316.302(4): eighteen to operate a CMV in Florida, where the intrastate driver is
+            # excused the federal twenty-one by 316.302(2)(a).
+            "driver.age18": None if driver.get("age") is None else driver["age"] >= 18,
+            # Whether the license they drive on is a CDL. Asked of the license, not read off its
+            # class letter: Georgia's ordinary license is a Class C. Unknown until somebody says.
+            "driver.licensecommercial": _commercial(conn, accountid, driverid),
             # 49 CFR 382.303: whether any accident on this driver's register called for a test.
             # True the moment one does and stays true until the test is on file - the obligation
             # does not lapse because the window to collect has closed, it just gets harder to
@@ -624,6 +635,13 @@ def _prior_violation(conn: Connection, accountid: str, driverid: str) -> dict:
         "driver.priorrtdcomplete": True if rtd == "yes" else False if rtd in ("no", "inprogress")
         else None,
     }
+
+
+def _commercial(conn: Connection, accountid: str, driverid: str) -> bool | None:
+    held = row(conn, """SELECT commercial FROM driverlicenses
+                        WHERE accountid = :a AND driverid = :d AND active = 1 LIMIT 1""",
+               a=accountid, d=driverid)
+    return None if not held or held["commercial"] is None else bool(held["commercial"])
 
 
 def _license_action(conn: Connection, accountid: str, driverid: str) -> bool | None:
@@ -710,6 +728,10 @@ UNANSWERED = {
     "company.samgov": "Nobody has said whether a contract, grant or program requires SAM.gov "
                       "screening (Settings - Company).",
     "driver.age21": "The driver's date of birth is not on file, so their age cannot be "
+                    "established (Driver Information).",
+    "driver.licensecommercial": "Nobody has said whether the license this driver drives on is a "
+                                "commercial license (Licenses).",
+    "driver.age18": "The driver's date of birth is not on file, so their age cannot be "
                     "established (Driver Information).",
     "driver.postaccidentowed": "An accident on file has not been answered either way "
                                "(Requirements - accident register).",

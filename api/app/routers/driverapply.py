@@ -142,12 +142,26 @@ def _fullname(app_: dict) -> str:
     return f"{app_.get('firstname') or ''} {app_.get('lastname') or ''}".strip()
 
 
+def _commercial_said(one: dict) -> int | None:
+    """What the applicant said about whether a license is a CDL, as the record keeps it."""
+    return {"yes": 1, "no": 0, True: 1, False: 0}.get(one.get("commercial"))
+
+
+def _is_cdl(one: dict) -> bool:
+    """A commercial license, where the applicant said; by its class where they did not, as it was
+    read before the question was asked."""
+    said = _commercial_said(one)
+    if said is not None:
+        return bool(said)
+    return (one.get("classification") or "").upper() in ("A", "B", "C")
+
+
 def _blanks(app_: dict) -> dict:
     """What the documents we ship put in their blanks: the company, the driver, and the license the
     Clearinghouse consent is given under - the commercial one if the driver listed one."""
     data = json.loads(app_["data"] or "{}")
     licenses = ((data.get("steps") or {}).get("2") or {}).get("licenses") or []
-    cdl = next((l for l in licenses if l.get("classification") in ("A", "B", "C")), None) or \
+    cdl = next((l for l in licenses if _is_cdl(l)), None) or \
         (licenses[0] if licenses else {})
     return {"company": app_["accountname"], "fullname": _fullname(app_),
             "cdlstate": cdl.get("state", ""), "cdlnumber": cdl.get("number", ""),
@@ -310,22 +324,25 @@ def _keep_licenses(conn: Connection, app_: dict, declared: list) -> None:
         """, a=acct, d=driverid, n=number, s=state)
         if got:
             run(conn, """
-                UPDATE driverlicenses SET classification = :c, endorsements = :e, issued = :i,
-                       originalissued = :oi, expires = :x, active = :act, copydocumentid = COALESCE(copydocumentid, :doc),
-                       updated = :now
+                UPDATE driverlicenses SET classification = :c, commercial = :cdl, endorsements = :e,
+                       issued = :i, originalissued = :oi, expires = :x, active = :act,
+                       copydocumentid = COALESCE(copydocumentid, :doc), updated = :now
                 WHERE recordid = :id
-            """, c=(one.get("classification") or None), e=ends, i=(one.get("issued") or None),
+            """, c=(one.get("classification") or None), cdl=_commercial_said(one), e=ends,
+                i=(one.get("issued") or None),
                 oi=(one.get("originalissued") or None),
                 x=(one.get("expires") or None), act=active, doc=front, now=utcnow(),
                 id=got["recordid"])
         else:
             run(conn, """
                 INSERT INTO driverlicenses (recordid, accountid, driverid, number, state,
-                                            classification, endorsements, issued, originalissued,
-                                            expires, active, copydocumentid, note)
-                VALUES (:id, :a, :d, :n, :s, :c, :e, :i, :oi, :x, :act, :doc, 'From the application')
+                                            classification, commercial, endorsements, issued,
+                                            originalissued, expires, active, copydocumentid, note)
+                VALUES (:id, :a, :d, :n, :s, :c, :cdl, :e, :i, :oi, :x, :act, :doc,
+                        'From the application')
             """, id=newid(), a=acct, d=driverid, n=number, s=state,
-                c=(one.get("classification") or None), e=ends, i=(one.get("issued") or None),
+                c=(one.get("classification") or None), cdl=_commercial_said(one), e=ends,
+                i=(one.get("issued") or None),
                 oi=(one.get("originalissued") or None),
                 x=(one.get("expires") or None), act=active, doc=front)
     # Only one license is the one they drive on.
@@ -817,7 +834,7 @@ def submit(request: Request, tasks: BackgroundTasks, app_: dict = Depends(sessio
     data = json.loads(app_["data"] or "{}")
     # A commercial driver is one who holds a commercial license: the card decides, not a question.
     licenses = ((data.get("steps") or {}).get("2") or {}).get("licenses") or []
-    cmv = any((l.get("classification") or "").upper() in ("A", "B", "C") for l in licenses)
+    cmv = any(_is_cdl(l) for l in licenses)
     wanted = [d for d in STEP_DOCS.values() if d not in CMV_DOCS or cmv]
     missing = [d for d in wanted if d not in have]
     if missing:

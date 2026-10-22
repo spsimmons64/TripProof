@@ -144,8 +144,12 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
             blocks.append(f"Not hired - {d['status']}")
         else:
             f = factset.assemble(conn, accountid, d["recordid"])["facts"]
-            stops = [r for r in rules.for_driver(conn, accountid, d["recordid"], f)
-                     if r["applies"] and r["gate"] == "hardstop"
+            # Only what stops them on EVERY trip. A program's own hard stop - a Georgia Medicaid
+            # driving record - says nothing about a private pay run; the trip check reads those
+            # against the trip's own program.
+            general = [rules.for_program(r, None)
+                       for r in rules.for_driver(conn, accountid, d["recordid"], f)]
+            stops = [r for r in general if r and r["applies"] and r["gate"] == "hardstop"
                      and r["status"] in ("expired", "failed", "overdue")]
             if stops:
                 blocks.append(f"May not drive - {_because(stops[0])}")
@@ -283,8 +287,9 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
         # May it go out at all? The same question, asked of the same engine, in the same words
         # the vehicle's own file uses.
         f = factset.assemble(conn, accountid, vehicleid=v["recordid"])["facts"]
-        stops = [r for r in rules.for_vehicle(conn, accountid, v["recordid"], f, today=today)
-                 if r["applies"] and r["gate"] == "hardstop"
+        general = [rules.for_program(r, None)
+                   for r in rules.for_vehicle(conn, accountid, v["recordid"], f, today=today)]
+        stops = [r for r in general if r and r["applies"] and r["gate"] == "hardstop"
                  and r["status"] in ("expired", "failed", "overdue")]
         if stops:
             blocks.append(f"Cannot be dispatched - {_because(stops[0])}")
