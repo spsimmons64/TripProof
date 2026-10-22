@@ -167,7 +167,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
 
         # Hours are a warning, not a bar: 14-90.006 is the company's to manage, and a
         # dispatcher looking at a near-limit driver may still have no alternative.
-        warn = list(drafts)
+        warn = []
         off = roster.get(d["recordid"])
         if off:
             warn.append(off)
@@ -190,7 +190,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
         out.append({
             "driverid": d["recordid"], "name": d["name"],
             "available": not blocks,
-            "blocked": blocks, "because": why, "warnings": warn,
+            "blocked": blocks, "because": why, "warnings": warn, "drafts": drafts,
             "miles": miles,
         })
     # Available first, then nearest, then those with a known position, then by name.
@@ -316,7 +316,8 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
         out.append({
             "vehicleid": v["recordid"],
             "name": f"{v['externalid']} · {v['make'] or ''} {v['model'] or ''}".strip(" ·"),
-            "available": not blocks, "blocked": blocks, "because": why, "warnings": drafts,
+            "available": not blocks, "blocked": blocks, "because": why, "warnings": [],
+            "drafts": drafts,
         })
     out.sort(key=lambda x: (not x["available"], x["name"]))
     return out
@@ -429,7 +430,8 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
         # and whether they are hired is already said by the candidate list itself.
         mine = [b for b in said["blockers"]
                 if not b.get("vehicle") and b["code"] not in ("HIRED", "DRIVER")]
-        return split(mine)
+        stop, drafts = split(mine)
+        return stop, drafts, [said_of(h) for h in said.get("holds") or []]
 
     def split(found: list[dict]) -> tuple[list[str], list[str]]:
         """What refuses the assignment, and what only warns: the same line the assignment draws.
@@ -440,17 +442,22 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
 
     away = _unavailable(conn, accountid, when)
     for d in drivers:
-        stop, warn = driver_check(d["driverid"])
+        stop, drafts, holds = driver_check(d["driverid"])
         d["blocked"] = d["blocked"] + stop
-        d["warnings"] = d["warnings"] + warn
+        # Drafts are said, and nothing has to be accepted for them; a hold has to be accepted by
+        # an owner or admin, so it is a warning - and named as a hold so the assignment knows who.
+        d["drafts"] = d.get("drafts", []) + drafts
+        d["holds"] = holds
+        d["warnings"] = d["warnings"] + holds
         if d["driverid"] in away["drivers"]:
             d["warnings"] = d["warnings"] + [away["drivers"][d["driverid"]]]
         d["available"] = not d["blocked"]
     for v in vehicles:
-        stop, warn = split(tripcheck.vehicle_blockers(conn, accountid, v["vehicleid"], service, when,
-                                                      states, program, contract))
+        stop, drafts = split(tripcheck.vehicle_blockers(conn, accountid, v["vehicleid"], service, when,
+                                                        states, program, contract))
         v["blocked"] = v["blocked"] + stop
-        v["warnings"] = v.get("warnings", []) + warn
+        v["drafts"] = v.get("drafts", []) + drafts
+        v.setdefault("warnings", [])
         if v["vehicleid"] in away["vehicles"]:
             v["warnings"] = v["warnings"] + [away["vehicles"][v["vehicleid"]]]
         v["available"] = not v["blocked"]

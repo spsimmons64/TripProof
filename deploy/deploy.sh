@@ -38,7 +38,10 @@ say "Staging the working copy for the tests"
 
 say "Running the tests against tripproof_test"
 "${SSH[@]}" "cd $CI/api && set -a && . $LIVE/.env && set +a \
-  && export TEST_DB_NAME=tripproof_test TEST_DB_USER=\$DB_USER TEST_DB_PASSWORD=\$DB_PASSWORD \
+  && if [ -n \"\$TEST_DB_USER\" ]; then export TEST_DB_STRICT=1; \
+     else echo 'WARNING: no TEST_DB_USER in .env - the tests are running as the live database user'; \
+          export TEST_DB_USER=\$DB_USER TEST_DB_PASSWORD=\$DB_PASSWORD; fi \
+  && export TEST_DB_NAME=tripproof_test \
             TEST_DB_HOST=127.0.0.1 MIGRATIONS_PATH=\$HOME/tripproof-ci/db/migrations \
   && PYTHONPATH=. timeout 1800 $LIVE/venv/bin/python -m pytest tests -q -p no:cacheprovider --tb=short \
      2>&1 | grep -vE '^(applying|recorded) ' | tail -40; exit \${PIPESTATUS[0]}" \

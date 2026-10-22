@@ -3970,6 +3970,8 @@ INSPECTION_RESULTS = ("passed", "failed")
 
 class ScreenResultIn(BaseModel):
     result: str
+    # Required where a result already recorded is being changed: the correction says why.
+    reason: str | None = None
 
 
 @router.put("/credentials/{credentialid}/result")
@@ -3988,11 +3990,15 @@ def set_screen_result(credentialid: str, body: ScreenResultIn, request: Request,
                else INSPECTION_RESULTS if held["subject"] == "vehicle" else SCREENING_RESULTS)
     if body.result not in allowed:
         raise HTTPException(400, "Unknown result")
+    reason = (body.reason or "").strip()
+    if held["result"] and held["result"] != body.result and not reason:
+        raise HTTPException(400, "Say why the recorded result is being changed.")
     run(conn, "UPDATE credentials SET result = :r, updated = :now WHERE recordid = :c",
         r=body.result, now=utcnow(), c=credentialid)
     # What it said before, kept with the change: an Ineligible later recorded Eligible stays on the
     # record as having been Ineligible, and who changed it and when.
-    log(conn, user, "result", "credential", credentialid, {"result": body.result, "was": held["result"]},
+    log(conn, user, "result", "credential", credentialid,
+        {"result": body.result, "was": held["result"], "reason": reason or None},
         ip=client_ip(request))
     _reevaluate_subject(conn, user, held["subject"], held["subjectid"])
     saved(conn)

@@ -15,14 +15,14 @@
 ###################################################################################################
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy.engine import Connection
 
 from app import facts as factset
 from app import payerlines, rules
 from app.engine import ENGINE_VERSION
-from app.db import newid, row, run, utcnow
+from app.db import newid, row, rows, run, utcnow
 
 FAILING = ("failed", "expired", "overdue", "pending")
 WAITING = ("review", "ordered")
@@ -101,6 +101,129 @@ def no_line(conn: Connection, accountid: str, payerid: str, state: str | None) -
     return f"{name or 'This payer'} is not set up for {where}. Add a {where} line on the Payers page."
 
 
+# What judge_items reads of a requirement, and all it reads - kept with every decision so the same
+# judgement can be made again from the record alone (replay, below).
+ITEM_KEYS = ("code", "qualificationcode", "name", "status", "why", "applies", "blocking", "dueon",
+             "enforcement", "program", "legalreview", "restricted", "documentid", "recordid",
+             "expireson")
+SOURCE_KEYS = ("code", "status", "applies", "why", "program", "legalreview", "restricted")
+
+
+def kept_item(i: dict) -> dict:
+    out = {k: i.get(k) for k in ITEM_KEYS}
+    if i.get("sources"):
+        out["sources"] = [{k: s.get(k) for k in SOURCE_KEYS} for s in i["sources"]]
+    return out
+
+
+def judge_items(items: list[dict], program: str, at: datetime) -> tuple[list, list, list]:
+    """What the requirements on file mean for one trip: what refuses it, what is said about it, and
+    what an owner or admin has to accept. Pure - reads nothing but its arguments - so a decision can
+    be made again from what was kept with it."""
+    blockers, warnings, holds = [], [], []
+    day = at.date() if isinstance(at, datetime) else at
+    for i in items:
+        if i.get("enforcement") == "hr":
+            continue
+        # The row as this trip's program sees it, so another program's shortfall cannot block it.
+        i = rules.for_program(i, program)
+        if not i:
+            continue
+        due = i.get("dueon")
+        if isinstance(due, str):
+            due = date.fromisoformat(due[:10])
+        # Only a rule a reviewer approved may be enforced. Anything else is recorded.
+        said = {"qualification": i.get("qualificationcode"), "code": i["code"],
+                "name": i["name"], "status": i["status"], "reason": i.get("why"),
+                "enforceable": any(s.get("legalreview") == "approved"
+                                   for s in (i.get("sources") or [i]))}
+        if i["applies"] is None:
+            warnings.append({**said, "reason": f'Applicability undecided - {i.get("why")}'})
+        # Missing but not yet due by the day of the trip - a training allowed 90 days from
+        # hire - is a warning, not a bar.
+        elif (i["applies"] is True and i.get("blocking") and i["status"] == "pending"
+              and due and due > day):
+            warnings.append({**said, "reason": f'Due by {due:%m/%d/%Y}.'})
+        elif i["applies"] is True and i.get("blocking") and i["status"] in FAILING:
+            blockers.append(said)
+        # A driving record read as restricting what the driver may do. TripProof cannot judge a
+        # trip against the restriction's terms, so it holds the trip for a person: under an
+        # approved rule an owner or admin accepts it for this trip, with the reason, or the
+        # driver is not put on it.
+        elif i["applies"] is True and i["status"] == "review" and any(
+                s.get("restricted") for s in (i.get("sources") or [i])):
+            hold = {**said, "hold": "restricted",
+                    "reason": f'{i.get("why")} An owner or admin has to accept it for this trip.'}
+            (holds if said["enforceable"] else warnings).append(hold)
+        elif i["applies"] is True and i.get("blocking") and i["status"] in WAITING:
+            warnings.append(said)
+        elif i["applies"] is True and i["status"] == "expiring":
+            warnings.append(said)
+    return blockers, warnings, holds
+
+
+def replay(conn: Connection, accountid: str, evaluationid: str) -> dict:
+    """Make a recorded decision again from what was kept with it - the requirements as they stood,
+    the trip's program and day - and nothing read live. Says whether the rule-based part comes out
+    the same, and whether the engine that made it is the engine replaying it, and confirms that
+    every rule it read can still be recovered, by version and hash, from the rule history."""
+    kept = row(conn, """
+        SELECT program, evaluatedfor, blockers, warnings, rulesread, standingread, engineversion
+        FROM tripeligibility WHERE recordid = :i AND accountid = :a
+    """, i=evaluationid, a=accountid)
+    if not kept or kept["standingread"] is None:
+        return {"replayable": False, "why": "No inputs were kept with this decision."}
+    items = json.loads(kept["standingread"])
+    b, w, h = judge_items(items, kept["program"], kept["evaluatedfor"])
+    codes = {i["code"] for i in items}
+    def rulebased(found):
+        return sorted({(x["code"], x.get("hold") or "") for x in found if x["code"] in codes})
+    recorded_b = json.loads(kept["blockers"] or "[]")
+    recorded_w = json.loads(kept["warnings"] or "[]")
+    read = json.loads(kept["rulesread"] or "[]")
+    missing = [r["code"] for r in read if r.get("version") and not row(conn, """
+        SELECT 1 AS x FROM compliancerulesversions WHERE rulecode = :c AND version = :v
+          AND snapshotsha = :h AND accountid IS NULL""", c=r["code"], v=r["version"], h=r.get("sha"))]
+    return {
+        "replayable": True,
+        "engine": kept["engineversion"], "sameengine": kept["engineversion"] == ENGINE_VERSION,
+        "matches": rulebased(b) == rulebased(recorded_b) and rulebased(w + h) == rulebased(recorded_w),
+        "rulesrecoverable": not missing, "missing": missing,
+        "blockers": b, "warnings": w, "holds": h,
+    }
+
+
+def what_if(conn: Connection, accountid: str, codes: list[str], since=None) -> dict:
+    """Before rules are approved: which recorded decisions they would have refused. Each decision is
+    judged again from what was kept with it (as replay does), with these rules taken as approved -
+    the shadow-against-enforced comparison to read before switching a stage of rules on."""
+    codes = set(codes)
+    held = rows(conn, f"""
+        SELECT recordid, driverid, legid, program, evaluatedfor, standingread FROM tripeligibility
+        WHERE accountid = :a AND standingread IS NOT NULL {"AND evaluatedon >= :s" if since else ""}
+        ORDER BY evaluatedon
+    """, a=accountid, s=since)
+    refused, byrule = [], {}
+    for d in held:
+        items = json.loads(d["standingread"])
+        for i in items:
+            for s in i.get("sources") or []:
+                if s["code"] in codes:
+                    s["legalreview"] = "approved"
+            if i["code"] in codes:
+                i["legalreview"] = "approved"
+        b, _w, h = judge_items(items, d["program"], d["evaluatedfor"])
+        newly = sorted({x["code"] for x in b + h if x["enforceable"] and (
+            x["code"] in codes or any(s.get("code") in codes for s in next(
+                (i.get("sources") or [] for i in items if i["code"] == x["code"]), [])))})
+        if newly:
+            refused.append({"evaluationid": d["recordid"], "driverid": d["driverid"],
+                            "legid": d["legid"], "rules": newly})
+            for c in newly:
+                byrule[c] = byrule.get(c, 0) + 1
+    return {"decisions": len(held), "refused": len(refused), "byrule": byrule, "which": refused}
+
+
 def program_of(conn: Connection, accountid: str, leg: dict | None, at: datetime,
                program: str | None = None) -> tuple[str, dict | None, str | None]:
     """The trip's program, the payer line it falls under, and the state it began in. The line's own
@@ -174,7 +297,7 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
     from app import ruleversions
     versions = ruleversions.current_snapshots(conn)
 
-    blockers, warnings, read = [], [], []
+    blockers, warnings, read, holds = [], [], [], []
     # What the decision was made FROM, kept with it: the facts as assembled for this trip, and where
     # each requirement stood and on which record. With the rule hashes in `read`, a decision can be
     # replayed - the same rules, the same facts, the same evidence.
@@ -211,9 +334,7 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
                                  f'The driver is not approved for the {contract["broker"]} contract.'})
         items = rules.for_driver(conn, accountid, driverid, facts, today=at.date())
         seenfacts = facts
-        standing = [{"code": i["code"], "applies": i.get("applies"), "status": i.get("status"),
-                     "why": i.get("why"), "record": i.get("documentid") or i.get("recordid"),
-                     "on": i.get("on"), "expireson": i.get("expireson")} for i in items]
+        standing = [kept_item(i) for i in items]
         if service in WHEELCHAIR_LEVELS:
             held = next((i for i in items if i.get("qualificationcode") == SECUREMENT), None)
             if not held or held["applies"] is not True or held["status"] not in ("satisfied",
@@ -225,32 +346,15 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
         for i in items:
             if i.get("enforcement") == "hr":
                 continue
-            # The row as this trip's program sees it, so another program's shortfall cannot block it.
-            i = rules.for_program(i, program)
-            if not i:
-                continue
-            for s in i.get("sources") or []:
-                held = versions.get(s["code"]) or {}
-                read.append({"code": s["code"], "legalreview": s.get("legalreview"),
+            seen = rules.for_program(i, program)
+            for src in (seen or {}).get("sources") or []:
+                held = versions.get(src["code"]) or {}
+                read.append({"code": src["code"], "legalreview": src.get("legalreview"),
                              "version": held.get("version"), "sha": held.get("sha")})
-            # Only a rule a reviewer approved may be enforced. Anything else is recorded.
-            said = {"qualification": i.get("qualificationcode"), "code": i["code"],
-                    "name": i["name"], "status": i["status"], "reason": i.get("why"),
-                    "enforceable": any(s.get("legalreview") == "approved"
-                                       for s in (i.get("sources") or [i]))}
-            if i["applies"] is None:
-                warnings.append({**said, "reason": f'Applicability undecided - {i.get("why")}'})
-            # Missing but not yet due by the day of the trip - a training allowed 90 days from
-            # hire - is a warning, not a bar.
-            elif (i["applies"] is True and i.get("blocking") and i["status"] == "pending"
-                  and i.get("dueon") and i["dueon"] > at.date()):
-                warnings.append({**said, "reason": f'Due by {i["dueon"]:%m/%d/%Y}.'})
-            elif i["applies"] is True and i.get("blocking") and i["status"] in FAILING:
-                blockers.append(said)
-            elif i["applies"] is True and i.get("blocking") and i["status"] in WAITING:
-                warnings.append(said)
-            elif i["applies"] is True and i["status"] == "expiring":
-                warnings.append(said)
+        b, w, h = judge_items(items, program, at)
+        blockers += b
+        warnings += w
+        holds += h
     if vehicleid:
         blockers += vehicle_blockers(conn, accountid, vehicleid, service, at, states, program,
                                      contract)
@@ -265,7 +369,7 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
                              + " ".join(x for x in (contract["broker"], contract.get("state")) if x)
                              + " line."})
 
-    undecided = any(w.get("code") == "CONTRACT" or w.get("status") in WAITING
+    undecided = bool(holds) or any(w.get("code") == "CONTRACT" or w.get("status") in WAITING
                     or str(w.get("reason") or "").startswith("Applicability undecided")
                     for w in warnings)
     decision = "notqualified" if blockers else "needsreview" if undecided else "eligible"
@@ -279,13 +383,17 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
             VALUES (:id, :a, :d, :v, :l, :p, :for, :now, :by, :dec, :b, :w, :r, :s, :e, :f, :st)
         """, id=evalid, a=accountid, d=driverid, v=vehicleid, l=legid, p=program, now=utcnow(),
             by=userid, dec=decision, b=json.dumps(blockers, default=str),
-            w=json.dumps(warnings, default=str), r=json.dumps(read), s=int(shadow),
+            # Holds are kept with the warnings, marked as holds, so the record shows what an owner
+            # or admin was asked to accept.
+            w=json.dumps(warnings + holds, default=str), r=json.dumps(read), s=int(shadow),
             e=ENGINE_VERSION, f=json.dumps(seenfacts, default=str, sort_keys=True),
             st=json.dumps(standing, default=str), **{"for": at})
     return {"evaluationid": evalid, "eligible": decision == "eligible", "decision": decision,
             "program": program, "service": service, "evaluatedfor": at, "blockers": blockers,
             "state": states[0] if states else None, "states": states,
             "warnings": warnings, "rulesread": read, "shadow": shadow,
+            # Held for an owner or admin to accept, trip by trip - see the restricted record above.
+            "holds": holds,
             "engineversion": ENGINE_VERSION,
             # What may actually be refused: approved rules and the structural facts.
             "enforceable": [b for b in blockers if b.get("enforceable")]}

@@ -115,7 +115,7 @@ export default function BookTrip({ onClose, onBooked }) {
         onChange={() => pick(id)} />
       <span className="pickwho">{c.name}</span>
       <span className="pickwhy">
-        {(c.blocked.length ? c.blocked : c.because).join(' · ')}
+        {(c.blocked.length ? c.blocked : [...(c.drafts || []), ...c.because]).join(' · ')}
         {c.warnings?.length ? <b> · {c.warnings.join(' · ')}</b> : null}
       </span>
     </label>

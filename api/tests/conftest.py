@@ -9,7 +9,7 @@ import tempfile
 
 import pytest
 
-from app.dbguard import refuse_unsafe
+from app.dbguard import reaches_beyond, refuse_unsafe
 
 INTEGRATION = bool(os.environ.get("TEST_DB_NAME"))
 
@@ -43,6 +43,14 @@ def db():
         connected = conn.exec_driver_sql("SELECT DATABASE()").scalar()
         if refuse_unsafe(connected, None):
             pytest.exit(f"Refusing to wipe {connected!r}: " + refuse_unsafe(connected, None), returncode=2)
+        # And the login itself: one made for the tests sees only test databases, so no setting it
+        # is given can point it at live data. Required where the deploy has such a login.
+        beyond = reaches_beyond([r[0] for r in conn.exec_driver_sql("SHOW DATABASES").fetchall()])
+        if beyond and os.environ.get("TEST_DB_STRICT") == "1":
+            pytest.exit(f"Refusing to run: the test login can reach {', '.join(beyond)}", returncode=2)
+        if beyond:
+            print(f"\nWARNING: the test login can reach {', '.join(beyond)} - give the tests a login "
+                  f"of their own (TEST_DB_USER in .env)")
         conn.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 0")
         for (name, kind) in conn.exec_driver_sql("SHOW FULL TABLES").fetchall():
             conn.exec_driver_sql(f"DROP {'VIEW' if kind == 'VIEW' else 'TABLE'} `{name}`")

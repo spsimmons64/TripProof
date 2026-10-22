@@ -36,6 +36,10 @@ export default function AssignDialog({ leg, onCancel, onClose, onDone }) {
   const v = chosen(data?.vehicles, vehicleid, 'vehicleid')
   const warnings = [...(d?.warnings || []), ...(v?.warnings || [])]
   const needswhy = warnings.length > 0
+  // A restricted driving record is accepted by an owner or admin; any other warning by a supervisor.
+  const holds = d?.holds || []
+  const others = warnings.filter((w) => !holds.includes(w))
+  const mayaccept = (!holds.length || data?.mayclear) && (!others.length || data?.mayoverride)
 
   const save = async () => {
     setBusy(true); setErr(null)
@@ -89,11 +93,14 @@ export default function AssignDialog({ leg, onCancel, onClose, onDone }) {
             <>
               <h3 className="formsection">Accepting A Warning</h3>
               {warnings.map((w) => <div key={w} className="notice warn">{w}</div>)}
-              {data.mayoverride ? (
+              {mayaccept ? (
                 <label className="field">Why this is being accepted *
-                  <input value={why} onChange={(e) => setWhy(e.target.value)} /></label>
+                  <textarea value={why} onChange={(e) => setWhy(e.target.value)} /></label>
               ) : (
-                <div className="notice bad">A supervisor has to accept that.</div>
+                <div className="notice bad">
+                  {holds.length && !data.mayclear ? 'An owner or admin has to accept that.'
+                    : 'A supervisor has to accept that.'}
+                </div>
               )}
             </>
           )}
@@ -120,7 +127,7 @@ function Candidates({ title, rows, idkey, chosen, onPick }) {
                   the telephone. */}
               <span className="pickwhy">
                 {blocked ? r.blocked.join(' · ')
-                  : [...(r.warnings || []), ...(r.because || [])].join(' · ')}
+                  : [...(r.warnings || []), ...(r.drafts || []), ...(r.because || [])].join(' · ')}
               </span>
             </button>
           )

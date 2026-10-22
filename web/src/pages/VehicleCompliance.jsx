@@ -4,6 +4,7 @@ import { api } from '../lib/api.js'
 import { Badge, Loading, useLoad } from '../components/ui.jsx'
 import { Modal } from '../admin/common.jsx'
 import DocumentViewer from '../components/DocumentViewer.jsx'
+import ReasonDialog from '../components/ReasonDialog.jsx'
 import { CredentialForm } from '../components/Credentials.jsx'
 import { date } from '../lib/format.js'
 
@@ -59,6 +60,7 @@ export function VehicleRequirements({ id, credentials = [], onChanged }) {
   const [open, setOpen] = useState(null)
   const [filing, setFiling] = useState(null)
   const [viewing, setViewing] = useState(null)
+  const [changing, setChanging] = useState(null)
   if (!data) return <Shell title="Requirements"><Loading error={error} /></Shell>
 
   const live = data.items.filter((r) => r.applies !== false)
@@ -109,6 +111,8 @@ export function VehicleRequirements({ id, credentials = [], onChanged }) {
                               onAdd={typeid ? () => setFiling({ typeid, name: r.name }) : null}
                               onView={setViewing}
                               onResult={r.reviewrequired ? async (c, result) => {
+                                // A result already recorded is changed only with the reason.
+                                if (c.result) { setChanging({ c, result }); return }
                                 await api.put(`/credentials/${c.recordid}/result`, { result })
                                 changed()
                               } : null} />}
@@ -130,6 +134,13 @@ export function VehicleRequirements({ id, credentials = [], onChanged }) {
       )}
       {viewing && <DocumentViewer id={viewing.documentid} name={viewing.name}
         onClose={() => setViewing(null)} />}
+      {changing && (
+        <ReasonDialog title="Change The Recorded Result" onClose={() => setChanging(null)}
+          onSave={async (reason) => {
+            await api.put(`/credentials/${changing.c.recordid}/result`, { result: changing.result, reason })
+            changed()
+          }} />
+      )}
     </Shell>
   )
 }

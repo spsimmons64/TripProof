@@ -183,12 +183,14 @@ def test_2b_an_uploaded_inspection_counts_only_once_recorded_passed(make):
     got = vehicle_rule(co, "GA_NET_VEHICLE_INSPECTION")
     assert got["status"] == "review" and "passed" in got["why"], got
 
-    def put(result):
+    def put(result, reason=None):
         return co["client"].put(f"/api/credentials/{latest}/result", headers=co["h"],
-                                json={"result": result})
+                                json={"result": result, "reason": reason})
     assert put("failed").status_code == 200
     assert vehicle_rule(co, "GA_NET_VEHICLE_INSPECTION")["status"] == "failed"
-    assert put("passed").status_code == 200
+    # Changing a recorded result needs the reason.
+    assert put("passed").status_code == 400
+    assert put("passed", "BROKER RE-INSPECTED AND PASSED").status_code == 200
     assert vehicle_rule(co, "GA_NET_VEHICLE_INSPECTION")["status"] == "satisfied"
 
 
@@ -251,19 +253,21 @@ def test_3_a_screening_read_and_found_not_eligible_fails(make):
                      {"a": co["acct"], "d": co["driver"], "c": l1})
     assert requirement(co, "FL_LEVEL1_DRIVER")["status"] == "review"
 
-    def put(result):
-        return co["client"].put(f"/api/credentials/{l1}/result", headers=co["h"], json={"result": result})
+    def put(result, reason=None):
+        return co["client"].put(f"/api/credentials/{l1}/result", headers=co["h"],
+                                json={"result": result, "reason": reason})
     assert put("ineligible").status_code == 200
     assert requirement(co, "FL_LEVEL1_DRIVER")["status"] == "failed"
-    assert put("eligible").status_code == 200
+    assert put("eligible").status_code == 400
+    assert put("eligible", "WRONG DRIVER'S RESULT RECORDED").status_code == 200
     assert requirement(co, "FL_LEVEL1_DRIVER")["status"] == "satisfied"
     # The earlier determination is not lost: each change is kept with what it replaced.
     with co["db"].connect() as conn:
         kept = [json.loads(x) for x in conn.execute(text(
             "SELECT detail FROM activitylog WHERE accountid = :a AND action = 'result' "
             "AND entityid = :c ORDER BY added"), {"a": co["acct"], "c": l1}).scalars()]
-    assert kept == [{"result": "ineligible", "was": None},
-                    {"result": "eligible", "was": "ineligible"}], kept
+    assert kept == [{"result": "ineligible", "was": None, "reason": None},
+                    {"result": "eligible", "was": "ineligible", "reason": "WRONG DRIVER'S RESULT RECORDED"}], kept
 
 
 def test_3b_an_optional_requirement_not_adopted_reaches_nobody(make):
@@ -447,7 +451,9 @@ def test_6_a_draft_rule_never_blocks_dispatch_and_an_approved_one_does(make):
     finally:
         trans.rollback()
         conn.close()
-    assert before["available"] and any("not yet approved" in w for w in before["warnings"]), before
+    # Said as a note, and nothing has to be accepted for it - not a warning a supervisor signs off.
+    assert before["available"] and any("not yet approved" in w for w in before["drafts"]), before
+    assert not any("not yet approved" in w for w in before["warnings"]), before
     assert not after["available"] and after["blocked"], after
 
 
@@ -524,9 +530,9 @@ def test_7b_a_decision_keeps_the_facts_and_evidence_it_was_made_from(make):
 @pytest.mark.parametrize("finding,note", [("restricted", "DAYLIGHT DRIVING ONLY"),
                                           ("disqualified", "LICENSE SUSPENDED 2023")])
 def test_8_an_approved_georgia_mvr_rule_on_a_georgia_trip(make, finding, note):
-    """TripProof cannot judge a trip against a restriction's terms, so it does not claim to: a
-    restricted record neither clears nor refuses the trip - the decision is held for a person, with
-    the restriction named. A disqualifying record refuses it."""
+    """TripProof cannot judge a trip against a restriction's terms, so it does not claim to: under
+    an approved rule a restricted record holds the trip for an owner or admin to accept, with the
+    restriction named. A disqualifying record refuses it."""
     from app import tripcheck
     co = make()
     add_line(co, co["payer"], "GA")
@@ -547,9 +553,9 @@ def test_8_an_approved_georgia_mvr_rule_on_a_georgia_trip(make, finding, note):
     mvr = lambda found: [x for x in found if x.get("code") == "GA_NET_MVR"]  # noqa: E731
     if finding == "restricted":
         assert not mvr(said["enforceable"]) and not mvr(said["blockers"]), said
-        held = mvr(said["warnings"])
-        assert held and note in (held[0].get("reason") or ""), said["warnings"]
-        assert not said["eligible"]
+        held = mvr(said["holds"])
+        assert held and note in (held[0].get("reason") or ""), said["holds"]
+        assert not said["eligible"] and said["decision"] in ("needsreview", "notqualified")
     else:
         assert mvr(said["enforceable"]), said
 
@@ -600,3 +606,121 @@ def test_10_the_test_database_guard():
     assert refuse_unsafe("tripproof", "tripproof")                 # the live database
     assert refuse_unsafe("tripproof_copy", None)                   # not named for tests
     assert refuse_unsafe("tripproof_test", "tripproof_test")       # the configured live database
+
+
+def test_8b_only_an_owner_or_admin_can_accept_a_restricted_driver_for_a_trip(make):
+    """The hold on an actual leg: a staff login is refused, an owner accepts it with the reason, and
+    the acceptance is kept with the assignment."""
+    from app.routers import admin
+    from app.security import hash_password
+    co = make()
+    add_line(co, co["payer"], "GA")
+    driving_record(co, "restricted", "DAYLIGHT DRIVING ONLY")
+    c = co["client"]
+    on = date.today() + timedelta(days=2)
+    trip = c.post("/api/trips", headers=co["h"], json={
+        "passenger": "HOLD TEST", "tripdate": str(on), "payer": "broker", "brokerid": co["payer"],
+        "legs": [{"pickupat": f"{on}T10:00:00", "pickupplace": "12 OAK ST, VALDOSTA, GA 31601",
+                  "dropoffplace": "9 ELM ST, MACON, GA 31201"}]})
+    assert trip.status_code == 200, trip.text
+    with co["db"].begin() as conn:
+        legid = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"),
+                             {"t": trip.json()["recordid"]}).scalar()
+        staff = admin._create_user(conn, co["acct"], f"staff-{co['tag']}@acceptance.test", "Staff",
+                                   "staff", None, "America/New_York")
+        conn.execute(text("UPDATE users SET passwordhash = :p WHERE recordid = :u"),
+                     {"p": hash_password(PASSWORD), "u": staff["recordid"]})
+        # The driver is approved for the line, so nothing but the restriction stands in the way.
+        conn.execute(text("""INSERT INTO driverauthorizations (recordid, accountid, driverid, contractid,
+                                                               approvedon)
+                             VALUES (UUID(), :a, :d, :c, NOW())"""),
+                     {"a": co["acct"], "d": co["driver"], "c": line(co, co["payer"], "GA")["recordid"]})
+        conn.execute(text("UPDATE compliancerules SET legalreview = 'approved' WHERE code = 'GA_NET_MVR' "
+                          "AND accountid IS NULL AND effectiveto IS NULL"))
+    try:
+        mine = next(d for d in c.get(f"/api/legs/{legid}/candidates", headers=co["h"]).json()["drivers"]
+                    if d["driverid"] == co["driver"])
+        assert mine["available"] and mine["holds"] and "DAYLIGHT DRIVING ONLY" in mine["holds"][0], mine
+        body = {"driverid": co["driver"], "vehicleid": None, "overridereason": "DAYTIME PICKUP CONFIRMED"}
+        refused = c.post(f"/api/legs/{legid}/assign", headers=login(c, f"staff-{co['tag']}@acceptance.test"),
+                         json=body)
+        assert refused.status_code == 403 and "owner or admin" in refused.text, refused.text
+        assert c.post(f"/api/legs/{legid}/assign", headers=co["h"],
+                      json={**body, "overridereason": ""}).status_code == 400
+        accepted = c.post(f"/api/legs/{legid}/assign", headers=co["h"], json=body)
+        assert accepted.status_code == 200, accepted.text
+        with co["db"].connect() as conn:
+            kept = conn.execute(text("SELECT override, overridereason, assignedby FROM tripassignments "
+                                     "WHERE legid = :l AND endedon IS NULL"), {"l": legid}).mappings().one()
+        me = c.get("/api/auth/me", headers=co["h"]).json()
+        assert kept["override"] == 1 and kept["overridereason"] == "DAYTIME PICKUP CONFIRMED"
+        assert kept["assignedby"] == me["recordid"]
+    finally:
+        with co["db"].begin() as conn:
+            conn.execute(text("UPDATE compliancerules SET legalreview = 'draft' WHERE code = 'GA_NET_MVR' "
+                              "AND accountid IS NULL AND effectiveto IS NULL"))
+            # An unpriced test trip is not left on the platform's at-risk figures.
+            conn.execute(text("UPDATE trips SET deleted = NOW() WHERE recordid = :t"),
+                         {"t": trip.json()["recordid"]})
+
+
+def test_7c_a_decision_replays_from_what_was_kept_after_everything_live_has_changed(make):
+    """Recorded, then the rules, the facts and the evidence all change: the live answer moves, the
+    replay of the recorded decision does not, and every rule it read is still recoverable."""
+    from app import tripcheck
+    co = make()
+    on = date.today() + timedelta(days=1)
+    leg = {"vehicleid": None, "pickupat": datetime.combine(on, datetime.min.time()), "tripdate": on,
+           "brokerid": None, "payer": "private", "servicelevel": "ambulatory",
+           "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, ORLANDO, FL 32801"}
+    conn = co["db"].connect()
+    trans = conn.begin()
+    try:
+        first = tripcheck.check(conn, co["acct"], co["driver"], proposed=leg, record=True)
+        # Everything live changes: a rule is approved, the company crosses state lines, and the
+        # driver is made a CDL operator - different rules now reach them.
+        approved(conn, "DRIVER_LICENSE_COPY")
+        conn.execute(text("INSERT INTO companyanswers (accountid, code, answer, updated) "
+                          "VALUES (:a, 'INTERSTATE', 1, NOW())"), {"a": co["acct"]})
+        conn.execute(text("UPDATE drivers SET operation = 'cdlheavy' WHERE recordid = :d"), {"d": co["driver"]})
+        live = tripcheck.check(conn, co["acct"], co["driver"], proposed=leg, record=False)
+        again = tripcheck.replay(conn, co["acct"], first["evaluationid"])
+    finally:
+        trans.rollback()
+        conn.close()
+    assert {b["code"] for b in live["blockers"]} != {b["code"] for b in first["blockers"]}
+    assert again["replayable"] and again["sameengine"] and again["rulesrecoverable"], again
+    assert again["matches"], again
+    assert {b["code"] for b in again["blockers"]} == {b["code"] for b in first["blockers"]
+                                                       if b["code"] in {b2["code"] for b2 in again["blockers"]}}
+
+
+
+def test_10b_a_test_login_that_can_see_live_data_is_named():
+    from app.dbguard import reaches_beyond
+    assert reaches_beyond(["information_schema", "tripproof_test"]) == []
+    assert reaches_beyond(["information_schema", "tripproof", "tripproof_test"]) == ["tripproof"]
+
+
+
+def test_11_a_stage_of_rules_can_be_tried_against_past_decisions_before_it_is_approved(make):
+    """Shadow against enforced: recorded decisions judged again with a stage of rules taken as
+    approved - nothing live changes, and the rules stay drafts."""
+    from app import tripcheck
+    co = make()
+    on = date.today() + timedelta(days=1)
+    leg = {"vehicleid": None, "pickupat": datetime.combine(on, datetime.min.time()), "tripdate": on,
+           "brokerid": None, "payer": "private", "servicelevel": "ambulatory",
+           "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, ORLANDO, FL 32801"}
+    with co["db"].begin() as conn:
+        said = tripcheck.check(conn, co["acct"], co["driver"], proposed=leg, record=True)
+        assert not said["enforceable"]                       # every rule a draft
+        failing = [b["code"] for b in said["blockers"]]
+        assert failing
+        trial = tripcheck.what_if(conn, co["acct"], failing[:1])
+        none = tripcheck.what_if(conn, co["acct"], ["NO_SUCH_RULE"])
+        still = conn.execute(text("SELECT legalreview FROM compliancerules WHERE code = :c AND accountid IS NULL "
+                                  "AND effectiveto IS NULL"), {"c": failing[0]}).scalar()
+    assert trial["refused"] == 1 and trial["byrule"] == {failing[0]: 1}, trial
+    assert none["refused"] == 0
+    assert still == "draft"

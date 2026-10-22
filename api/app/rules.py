@@ -2140,6 +2140,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
           AND (accountid IS NULL OR accountid = :acct)
         ORDER BY sortorder, name
     """, acct=accountid) + contract_rules(conn, accountid):
+        restricted = False          # set only where a driving record was read as restricting
         expr = condition(rule["applieswhen"])
         reaches = applies(expr, facts)
         # A rule TripProof offers rather than imposes. No regulation puts it in force, so it
@@ -2326,6 +2327,12 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                 overall = mvrs.standing(got, today)
                 if overall:
                     status, why = overall
+                # Read as restricting what the driver may do: a hold an owner or admin accepts
+                # trip by trip (app/tripcheck.py), not a shortfall anybody can file away.
+                restricted = status == "review" and any(
+                    (e.get("record") or {}).get("reviewstate") == "reviewed"
+                    and (e.get("record") or {}).get("finding") == "restricted"
+                    for e in got.get("required") or [])
             # 391.23(d) and (e) are answered employer by employer, and 391.23(i) says the asking
             # counts where the answer never comes. So the mark is the state of the inquiries, not
             # whether some document exists.
@@ -2361,7 +2368,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                     # A check that comes round on its own. The date still applies and still goes
                     # red when it lapses; it just does not belong on a screen of exceptions.
                     "scheduled": bool(rule.get("scheduled")),
-                    "applies": reaches, "status": status, "why": why,
+                    "applies": reaches, "status": status, "why": why, "restricted": restricted,
                     # Where the company has said another requirement's evidence answers this one
                     # (14-90.0041(1)(b): its own medical standard in place of FDOT's form), the two
                     # are one thing to keep on file, and the row folds into that one.
@@ -2498,7 +2505,8 @@ def _by_qualification(conn: Connection, out: list[dict]) -> list[dict]:
                                "citation": i["citation"], "category": i.get("authoritycategory"),
                                "because": i.get("because"), "status": i["status"],
                                "legalreview": i.get("legalreview"), "program": i.get("program"),
-                               "applies": i["applies"], "why": i.get("why")} for i in pool]
+                               "applies": i["applies"], "why": i.get("why"),
+                               "restricted": i.get("restricted", False)} for i in pool]
         if len(pool) > 1:
             primary["blocking"] = int(any(i.get("blocking") for i in pool))
             if any(i.get("gate") == "hardstop" for i in pool):

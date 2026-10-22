@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Ban, Car, Check, ChevronLeft, Download, FlaskConical, LayoutDashboard, ChevronRight, Clock, ExternalLink, Eye, FileSignature, FileText, FileUp, FolderOpen, History, IdCard, ListChecks, Loader2, MoreHorizontal, Plus, X, Send, UserCheck, UserX } from 'lucide-react'
 import { STATE_NAMES } from '../../../lib/states.js'
 import { api } from '../../../lib/api.js'
+import ReasonDialog from '../../../components/ReasonDialog.jsx'
 import { useRefreshOnFocus, useWatch } from '../../../lib/live.js'
 import { date } from '../../../lib/format.js'
 import { Bubble, Loading, useLoad } from '../../../components/ui.jsx'
@@ -134,6 +135,9 @@ export function QuestionnaireDialog({ askForIt, asked, busy, err, markRead, onCl
 
 // RequirementDetail, when latest && !filing.
 export function LatestDocumentDialog({ act, askForIt, asked, busy, credHistory, credentialtype, err, latest, markRead, onClose, r, readRecord, setCredHistory, setFiling, setViewing, shown, today, unchecked, viewing }) {
+    // A result already recorded is changed only with the reason, kept with the change.
+    const [changing, setChanging] = useState(null)
+    const record = (result, reason) => api.put(`/credentials/${latest.recordid}/result`, { result, reason })
     const waiting = unchecked.has(latest.documentid) || latest.needsreading
     // One that runs out is replaced, so its expiry, the next one and the ones before it belong in
     // the dialog - read off the rule's own recurrence, not a list kept by hand.
@@ -151,9 +155,8 @@ export function LatestDocumentDialog({ act, askForIt, asked, busy, credHistory, 
           ? 'st-expired' : 'st-ordered',
         cell: (
           <select value={latest.result || ''} disabled={busy}
-            onChange={(e) => act(async () => {
-              await api.put(`/credentials/${latest.recordid}/result`, { result: e.target.value })
-            })}>
+            onChange={(e) => (latest.result ? setChanging(e.target.value)
+              : act(async () => { await record(e.target.value) }))}>
             <option value="" disabled>Not recorded</option>
             <option value="eligible">Eligible</option>
             <option value="ineligible">Not Eligible</option>
@@ -231,6 +234,10 @@ export function LatestDocumentDialog({ act, askForIt, asked, busy, credHistory, 
         )}
         <ReadingViewer viewing={viewing} busy={busy} onMarkRead={markRead} onReadRecord={readRecord}
           onClose={() => setViewing(null)} />
+        {changing && (
+          <ReasonDialog title="Change The Recorded Result" onClose={() => setChanging(null)}
+            onSave={(reason) => act(async () => { await record(changing, reason) })} />
+        )}
       </>
     )
   

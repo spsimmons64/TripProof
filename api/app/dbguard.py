@@ -13,3 +13,13 @@ def refuse_unsafe(name: str | None, live: str | None) -> str | None:
     if live and name == live:
         return f"{name!r} is the live database"
     return None
+
+
+# Databases every MariaDB login can see and none of which hold TripProof data.
+SYSTEM = {"information_schema", "performance_schema", "mysql", "sys"}
+
+
+def reaches_beyond(visible: list[str]) -> list[str]:
+    """The databases a test login can see that are not test databases - each one something a
+    misconfigured run could reach. A login made for the tests should see none."""
+    return sorted(d for d in visible if d not in SYSTEM and not d.endswith("_test"))

@@ -1013,6 +1013,8 @@ def leg_candidates(legid: str, user: dict = Depends(current_user),
     if not said:
         raise HTTPException(404, "No such leg")
     said["mayoverride"] = _supervisor(conn, user)
+    # Who may accept a restricted driving record for this trip.
+    said["mayclear"] = user.get("role") in ("owner", "admin")
     return said
 
 
@@ -1042,12 +1044,17 @@ def assign_leg(legid: str, body: AssignIn, request: Request, user: dict = Depend
             raise HTTPException(409, who["blocked"][0])
 
     warnings = (chosen_driver or {}).get("warnings", []) + (chosen_vehicle or {}).get("warnings", [])
+    # A restricted driving record is accepted for a trip by an owner or admin only; every other
+    # warning by a supervisor. Either way with the reason, kept on the assignment.
+    holds = (chosen_driver or {}).get("holds", [])
+    others = [w for w in warnings if w not in holds]
     overriding = bool(warnings)
-    if overriding:
-        if not _supervisor(conn, user):
-            raise HTTPException(403, f"{warnings[0]} - a supervisor has to accept that.")
-        if not (body.overridereason or "").strip():
-            raise HTTPException(400, "Say why this is being accepted.")
+    if holds and user.get("role") not in ("owner", "admin"):
+        raise HTTPException(403, f"{holds[0]} - only an owner or admin can accept it for this trip.")
+    if others and not _supervisor(conn, user):
+        raise HTTPException(403, f"{others[0]} - a supervisor has to accept that.")
+    if overriding and not (body.overridereason or "").strip():
+        raise HTTPException(400, "Say why this is being accepted.")
 
     now = utcnow()
     # The one in force is ended rather than deleted, and the new one is written beside it. A
@@ -1076,7 +1083,8 @@ def assign_leg(legid: str, body: AssignIn, request: Request, user: dict = Depend
     evaluate(conn, acct, tripids=[tripid], userid=user["recordid"], reason="assignment")
     log(conn, user, "trip-assigned", "trip", tripid,
         {"legid": legid, "driverid": body.driverid, "vehicleid": body.vehicleid,
-         "override": overriding, "why": body.overridereason}, ip=client_ip(request))
+         "override": overriding, "why": body.overridereason,
+         "accepted": warnings or None}, ip=client_ip(request))
     saved(conn)
     return {"ok": True, "override": overriding}
 
