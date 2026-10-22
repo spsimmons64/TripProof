@@ -100,8 +100,22 @@ def no_line(conn: Connection, accountid: str, payerid: str, state: str | None) -
     return f"{name or 'This payer'} is not set up for {where}. Add a {where} line on the Payers page."
 
 
+def program_of(conn: Connection, accountid: str, leg: dict | None, at: datetime,
+               program: str | None = None) -> tuple[str, dict | None, str | None]:
+    """The trip's program, the payer line it falls under, and the state it began in. The line's own
+    program, where it names one, decides; otherwise the payer's kind; no payer is the passenger."""
+    origin = pickup_state((leg or {}).get("originplace") or (leg or {}).get("pickupplace"))
+    contract = (contract_for(conn, accountid, leg.get("brokerid"), at.date(), origin)
+                if leg else None)
+    if leg:
+        program = program or (contract or {}).get("program") or PAYER_PROGRAM.get(
+            leg.get("payer") or "private", "privatepay")
+    return program or "privatepay", contract, origin
+
+
 def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: str | None,
-                     at: datetime, states: list[str] | None = None) -> list[dict]:
+                     at: datetime, states: list[str] | None = None,
+                     program: str | None = None) -> list[dict]:
     """What stops this vehicle carrying this trip: a lift the service needs and it lacks, and any
     blocking vehicle requirement failed or expired on the day."""
     out = []
@@ -115,6 +129,10 @@ def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: 
                                   f"lift-equipped vehicle."})
     vfacts = factset.assemble(conn, accountid, None, vehicleid, states=states)["facts"]
     for v in rules.for_vehicle(conn, accountid, vehicleid, vfacts, today=at.date()):
+        # Another program's rule does not stop this trip: a Georgia Medicaid inspection says
+        # nothing about a private pay run.
+        if program and v.get("program") not in (None, program):
+            continue
         if v["applies"] is True and v.get("blocking") and v["status"] in ("failed", "expired"):
             out.append({"code": v["code"], "name": v["name"], "status": v["status"],
                         "reason": v.get("why"), "vehicle": True})
@@ -137,14 +155,7 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
         at = at or leg["pickupat"] or (datetime.combine(leg["tripdate"], datetime.min.time())
                                        if leg["tripdate"] else None)
     at = at or utcnow()
-    origin = pickup_state((leg or {}).get("originplace") or (leg or {}).get("pickupplace"))
-    contract = (contract_for(conn, accountid, leg.get("brokerid"), at.date(), origin)
-                if leg else None)
-    if leg:
-        # The contract's own program, where it names one, decides; otherwise the payer's kind.
-        program = program or (contract or {}).get("program") or PAYER_PROGRAM.get(
-            leg["payer"] or "private", "privatepay")
-    program = program or "privatepay"
+    program, contract, origin = program_of(conn, accountid, leg, at, program)
     service = (leg or {}).get("servicelevel")
     states = trip_states(leg)
     from app import ruleversions
@@ -166,6 +177,10 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
     else:
         # Held to the rules of every state the trip is in, and to the federal ones if it crosses.
         facts = factset.assemble(conn, accountid, driverid, vehicleid, states=states)["facts"]
+        # A Medicaid trip is held to the program of the state its payer line is for, and no other:
+        # a Florida member driven into Georgia is a Florida Medicaid trip.
+        if contract and contract.get("program") == "medicaid":
+            facts["company.medicaidstates"] = [(contract.get("state") or origin or "").upper()]
         if contract:
             # The trip itself brings the contract's requirements with it.
             facts["trip.contract"] = contract["recordid"]
@@ -215,7 +230,7 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
             elif i["applies"] is True and i["status"] == "expiring":
                 warnings.append(said)
     if vehicleid:
-        blockers += vehicle_blockers(conn, accountid, vehicleid, service, at, states)
+        blockers += vehicle_blockers(conn, accountid, vehicleid, service, at, states, program)
 
     undecided = any(w.get("code") == "CONTRACT" or w.get("status") in WAITING
                     or str(w.get("reason") or "").startswith("Applicability undecided")

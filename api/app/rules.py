@@ -180,7 +180,7 @@ REVIEWING = ("review", "notshown", "residenceunknown")
 # of the others: an auditor reading this file should see the word the query returned.
 FAILING = ("disqualified", "flagged", "positive", "refusal", "adulterated", "substituted",
            "prohibited", "notcertified", "conflict", "missing", "notage21", "notage18", "notenglish",
-           "notgeorgia",
+           "notgeorgia", "testsowed",
            "notregistered", "noqueryplan", "shorttraining", "opendefect",
            "nodraws", "hoursexceeded", "registershort", "noauthority",
            "nolicense", "licenseinactive", "wrongclass", "newermvr", "removal",
@@ -625,6 +625,25 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
             FROM roadtests WHERE accountid = :a AND driverid = :d AND completedon IS NOT NULL
             ORDER BY testedon DESC, completedon DESC LIMIT 1
         """, a=accountid, d=driverid)
+
+    if kind == "drugtest" and which == "postaccident":
+        # 382.303 asks for an alcohol test AND a controlled substances test after a qualifying
+        # accident, and the accident register links each. The rule only reaches a driver while one
+        # is owed, so any result on file is not the answer - the missing one is named instead.
+        from app import accidents
+        for crash in accidents.for_driver(conn, accountid, driverid):
+            if crash.get("nottested") or not crash.get("required"):
+                continue
+            missing = [w for w, k in (("alcohol", "alcoholtestid"), ("controlled substances", "drugtestid"))
+                       if not crash.get(k)]
+            if missing:
+                return {"recordid": crash["recordid"], "effectiveon": None, "expireson": None,
+                        "exempt": 0, "documentid": None, "sourcetable": "driveraccidents",
+                        "determination": "testsowed",
+                        "said": (f"The accident on {crash['occurredon']:%m/%d/%Y} needs a post-accident "
+                                 f"{' and '.join(missing)} test, and none is linked to it on the "
+                                 f"accident register. Link the test, or record why it was not given.")}
+        return None
 
     if kind == "drugtest":
         # A negative return-to-duty test answers the pre-employment requirement. 49 CFR 40.305 is
@@ -1817,18 +1836,27 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
     almost nothing in the driver's version applies, and what matters is the part they share, which
     is how a rule becomes a status."""
     today = today or date.today()
+    elected = adopted(conn, accountid)
     out = []
     for rule in rows(conn, """
         SELECT recordid, accountid, code, name, description, authoritytype, authority, citation,
                applieswhen, evidencekind, evidencesource, blocking, gate, grouping, duestage,
-               duetext, recurrence, recurrencedays, recurrencemonths, warndays, note, sortorder
+               duetext, recurrence, recurrencedays, recurrencemonths, warndays, note, sortorder,
+               program, offered
         FROM compliancerules
         WHERE subject = 'vehicle' AND effectiveto IS NULL
           AND (accountid IS NULL OR accountid = :a)
         ORDER BY sortorder, name
     """, a=accountid):
         reaches = applies(condition(rule["applieswhen"]), facts)
-        if reaches is False:
+        # A rule TripProof offers reaches no vehicle until the company adopts it, as for drivers.
+        offeredonly = rule["offered"] and rule["code"] not in elected
+        if offeredonly:
+            status, why, evidence = "notapplicable", (
+                "Offered as a company requirement. Nothing asks it of this vehicle until this "
+                "company adopts it."), None
+            reaches = False
+        elif reaches is False:
             status, why, evidence = "notapplicable", "Does not reach this vehicle.", None
         elif reaches is None:
             waiting = unanswered(condition(rule["applieswhen"]), facts)
@@ -1842,7 +1870,7 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
                                             "authority", "citation", "duestage", "duetext",
                                             "blocking", "gate", "grouping", "note", "evidencekind",
                                             "evidencesource", "recurrence", "recurrencedays",
-                                            "recurrencemonths")},
+                                            "recurrencemonths", "program", "offered")},
                     "scheduled": bool(rule.get("scheduled")),
                     "own": rule["accountid"] is not None,
                     "applies": reaches, "status": status, "why": why,

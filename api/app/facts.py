@@ -55,11 +55,19 @@ def fleet_facts(conn: Connection, accountid: str) -> dict:
     """, a=accountid)
     if not held:
         return {"vehicles": 0, "cmv_federal": None, "cmv_florida": None, "cdl_required": None,
-                "heaviest_gvwr": None, "wheelchair": None,
+                "heaviest_gvwr": None, "wheelchair": None, "multiplecmv": None,
                 "why": "No vehicles are on file, so nothing can be said about what the drivers drive."}
 
     worked = [dict(v, **vehicleclass.facts(v)) for v in held]
     weights = [v["gvwr"] for v in worked if v["gvwr"]]
+    # A determination on file outranks the figures, unit by unit, as it does for the fleet below.
+    judged = {r["vehicleid"]: r["fmcsa"] for r in rows(conn, """
+        SELECT vehicleid, fmcsa FROM vehicleassessments WHERE accountid = :a AND fmcsa IS NOT NULL
+    """, a=accountid)}
+    def cmv(v):
+        said = judged.get(v["recordid"])
+        return True if said == "covered" else False if said == "notcovered" else v["cmv_federal"]
+    counted = [cmv(v) for v in worked]
     out = {
         "vehicles": len(worked),
         # Derived, never asked. The lift is already recorded per vehicle, and asking the office to
@@ -69,6 +77,11 @@ def fleet_facts(conn: Connection, accountid: str) -> dict:
         "cmv_florida": _any(worked, "cmv_florida"),
         "cdl_required": _any(worked, "cdl_required"),
         "heaviest_gvwr": max(weights) if weights else None,
+        # 49 CFR 396.11(a)(1): a carrier operating only one commercial motor vehicle does not
+        # prepare driver vehicle inspection reports. Two or more settles it; one, with units
+        # nobody has measured, does not.
+        "multiplecmv": (True if counted.count(True) >= 2
+                        else None if counted.count(True) + counted.count(None) >= 2 else False),
     }
     # Which vehicle carried the answer, so a surprising result can be traced to the unit that caused
     # it rather than to the fleet in general.
@@ -92,6 +105,9 @@ def _postaccident_owed(conn: Connection, accountid: str, driverid: str) -> bool 
     unsure = False
     for crash in accidents.for_driver(conn, accountid, driverid):
         call = accidents.decide(crash)
+        # 382.303(d)(2): where a test was not given, the reason recorded is the answer.
+        if crash.get("nottested"):
+            continue
         if call["required"] is None:
             unsure = True
         elif call["required"] and not (crash.get("alcoholtestid") and crash.get("drugtestid")):
@@ -397,6 +413,7 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
         "fleet.cdl_required": fleet["cdl_required"],
         "fleet.heaviest_gvwr": fleet["heaviest_gvwr"],
         "fleet.wheelchair": fleet["wheelchair"],
+        "fleet.multiplecmv": fleet.get("multiplecmv"),
     }
 
     # A vehicle somebody has determined to be FMCSA-covered is covered, whatever its weight and
@@ -428,7 +445,7 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
                         "WHERE accountid = :a", a=accountid) or {}
     # The programs are whatever the company's active payer lines carry - nobody enters them twice.
     programs = rows(conn, f"""
-        SELECT program FROM companycontracts c
+        SELECT program, state FROM companycontracts c
         WHERE accountid = :a AND status = 'active' AND program IS NOT NULL AND {_payerlines.live("c")}
           AND (effectivefrom IS NULL OR effectivefrom <= CURDATE())
           AND (effectiveto IS NULL OR effectiveto >= CURDATE())
@@ -436,6 +453,14 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
     if row(conn, "SELECT 1 AS x FROM companycontracts WHERE accountid = :a LIMIT 1", a=accountid):
         facts["company.medicaid"] = any(p_["program"] == "medicaid" for p_ in programs)
     facts["company.programs"] = sorted({p_["program"] for p_ in programs})
+    # WHICH state's Medicaid program the company carries for: the states of its Medicaid payer
+    # lines. A Florida provider that drives into Georgia, with no Georgia Medicaid line, is not
+    # held to Georgia's NEMT rules - operating somewhere is not being enrolled there. A line with
+    # no state is the company's home state.
+    if "company.medicaid" in facts:
+        facts["company.medicaidstates"] = sorted({
+            (p_["state"] or company.get("state") or "").upper()
+            for p_ in programs if p_["program"] == "medicaid"} - {""})
     facts["company.employmentmodel"] = profile.get("employmentmodel")
     facts["company.operatingstates"] = [x for x in (profile.get("operatingstates") or "").split(",") if x]
     # Transit safety programs: one determination per program - covered / notcovered / review.
@@ -729,6 +754,10 @@ UNANSWERED = {
                       "screening (Settings - Company).",
     "driver.age21": "The driver's date of birth is not on file, so their age cannot be "
                     "established (Driver Information).",
+    "company.medicaidstates": "Nobody has set up a payer line, so which state's Medicaid program "
+                              "this company carries for is not known (Payers).",
+    "fleet.multiplecmv": "Not enough is recorded about the vehicles to say whether the company runs "
+                         "more than one commercial motor vehicle (Vehicles).",
     "driver.licensecommercial": "Nobody has said whether the license this driver drives on is a "
                                 "commercial license (Licenses).",
     "driver.age18": "The driver's date of birth is not on file, so their age cannot be "

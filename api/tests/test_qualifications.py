@@ -467,3 +467,47 @@ def test_a_bus_transit_vehicle_is_inspected_before_it_goes_out_each_day(q):
                              VALUES ('dvir-bad', :a, :v, :d, :on, 'posttrip', 1, 'BRAKES')"""),
                      {"a": q["acct"], "v": vehicle, "d": q["driver"], "on": today})
         assert driverapp._before_setting_off(conn, driver, vehicle, {})["kind"] == "defect"
+
+
+def test_a_states_medicaid_rules_follow_its_medicaid_payer_lines(client, q):
+    """A Florida Medicaid provider that drives into Georgia, with no Georgia Medicaid line, was held
+    to every Georgia NEMT rule because Georgia was an operating state."""
+    from app import rules
+    with q["db"].connect() as conn:
+        lines = conn.execute(text("""SELECT DISTINCT state FROM companycontracts
+                                     WHERE accountid = :a AND status = 'active' AND program = 'medicaid'"""),
+                             {"a": q["acct"]}).scalars().all()
+        conditions = {json.dumps(json.loads(r)) for r in conn.execute(text(
+            "SELECT applieswhen FROM compliancerules WHERE accountid IS NULL AND effectiveto IS NULL "
+            "AND code LIKE 'GA\\_NET\\_%' AND applieswhen LIKE '%medicaid%'")).scalars()}
+    assert facts(client, q)["company.medicaidstates"] == sorted(lines)
+    assert conditions == {json.dumps({"fact": "company.medicaidstates", "has": "GA"})}, conditions
+    ga = {"fact": "company.medicaidstates", "has": "GA"}
+    floridian = {"company.state": "FL", "company.operatingstates": ["FL", "GA"],
+                 "company.medicaid": True, "company.medicaidstates": ["FL"]}
+    assert rules.applies(ga, floridian) is False
+    assert rules.applies(ga, {**floridian, "company.medicaidstates": ["FL", "GA"]}) is True
+
+
+def test_vehicle_rules_carry_their_program_and_adoption(q):
+    """A vehicle rule offered for adoption reached every vehicle, and a Medicaid-only vehicle rule
+    could stop a private pay trip."""
+    from app import facts as factset, rules
+    with q["db"].connect() as conn:
+        vehicle = conn.execute(text("SELECT recordid FROM vehicles WHERE accountid = :a AND externalid = 'QV1'"),
+                               {"a": q["acct"]}).scalar()
+        got = {v["code"]: v for v in rules.for_vehicle(
+            conn, q["acct"], vehicle, factset.assemble(conn, q["acct"], vehicleid=vehicle)["facts"])}
+    assert got["LIFT_LOAD_TEST"]["status"] == "notapplicable"
+    assert got["GA_NET_VEHICLE_INSPECTION"]["program"] == "medicaid"
+
+
+def test_georgia_training_is_owed_before_driving(q):
+    """DCH 916.1 says before driving; 916.2's 90 days was being granted to every new driver."""
+    with q["db"].connect() as conn:
+        got = conn.execute(text("""SELECT code, duestage, duedays FROM compliancerules
+                                   WHERE accountid IS NULL AND effectiveto IS NULL
+                                     AND code IN ('GA_NET_DRIVER_TRAINING', 'GA_NET_FIRST_AID',
+                                                  'GA_NET_SPILL_KIT', 'GA_NET_PASSENGER_ASSIST',
+                                                  'GA_NET_SAFETY_SENSITIVITY')""")).mappings().all()
+    assert len(got) == 5 and all(r["duestage"] == "predrive" and r["duedays"] is None for r in got), got

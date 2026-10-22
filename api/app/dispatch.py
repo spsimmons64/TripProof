@@ -409,6 +409,8 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
     Decided, not recorded - nobody has assigned anyone."""
     legid = leg.get("legid")
     states = tripcheck.trip_states(leg)
+    full = tripcheck.leg_context(conn, accountid, legid) if legid else leg
+    program = tripcheck.program_of(conn, accountid, full, when)[0] if full else None
 
     def driver_blocks(candidate: str) -> list[str]:
         said = tripcheck.check(conn, accountid, candidate, None, legid=legid,
@@ -427,7 +429,8 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
     for v in vehicles:
         v["blocked"] = v["blocked"] + [
             b.get("reason") or b.get("name") or b["code"]
-            for b in tripcheck.vehicle_blockers(conn, accountid, v["vehicleid"], service, when, states)]
+            for b in tripcheck.vehicle_blockers(conn, accountid, v["vehicleid"], service, when, states,
+                                                program)]
         v.setdefault("warnings", [])
         if v["vehicleid"] in away["vehicles"]:
             v["warnings"] = v["warnings"] + [away["vehicles"][v["vehicleid"]]]
