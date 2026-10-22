@@ -7,7 +7,7 @@
 # Plus the unit tests that need no database: the migration splitter, and the admin customer model.
 ###################################################################################################
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -231,3 +231,92 @@ def test_the_questionnaire_can_be_asked_for(client, q):
     r = client.post(f"/api/drivers/{q['driver']}/upload-requests", headers=q["h"],
                     json={"code": "PREEMP_DA_QUESTIONNAIRE"})
     assert r.status_code == 200, r.text
+
+
+def test_a_record_worked_out_live_never_expires(q):
+    """An at-fault count or a securement clearance is read afresh from the file each time; given an
+    expiry it showed on the Validity-Tracked Documents panel as "Nothing on file"."""
+    with q["db"].connect() as conn:
+        wrong = conn.execute(text("""SELECT code FROM compliancerules
+                                     WHERE effectiveto IS NULL AND evidencekind = 'record'
+                                       AND recurrence IN ('days', 'ondocument')""")).scalars().all()
+    assert not wrong, wrong
+
+
+def test_a_document_signed_on_request_is_one_line_of_activity(client, q):
+    """It is written to the log when signed and is also among the signatures; both were shown, and
+    with the code for a name - "The PREV7_ONDUTY was signed by"."""
+    with q["db"].begin() as conn:
+        conn.execute(text("""INSERT INTO signatures (recordid, accountid, signertype, signername,
+                                                     typedname, verifiedby)
+                             VALUES ('sig-act-1', :a, 'driver', 'PAT QUINN', 'PAT QUINN', 'dob_ssn')"""),
+                     {"a": q["acct"]})
+        conn.execute(text("""INSERT INTO documentsignatures (recordid, accountid, signatureid, doctype,
+                                                             ownertype, ownerid, contentsha256, signedon)
+                             VALUES ('ds-act-1', :a, 'sig-act-1', 'PREV7_ONDUTY', 'driver', :d,
+                                     REPEAT('0', 64), NOW())"""),
+                     {"a": q["acct"], "d": q["driver"]})
+        conn.execute(text("""INSERT INTO activitylog (recordid, action, accountid, entitytype, entityid,
+                                                      detail, added)
+                             VALUES ('log-act-1', 'signed-on-request', :a, 'driver', :d,
+                                     '{"doctype": "PREV7_ONDUTY"}', NOW())"""),
+                     {"a": q["acct"], "d": q["driver"]})
+    events = client.get(f"/api/drivers/{q['driver']}/application/activity",
+                        headers=q["h"]).json()["events"]
+    signed = [e["what"] for e in events if "signed" in e["what"].lower()]
+    assert len(signed) == 1, signed
+    assert "PREV7" not in signed[0] and "On-Duty" in signed[0], signed
+
+
+def test_a_trip_is_held_to_both_states_and_is_interstate_when_it_crosses(q):
+    """Only the pickup was read: a Georgia pickup for a Florida doctor was judged as a Georgia trip
+    within Georgia, and Florida's rules and the federal reach of an interstate trip were lost."""
+    from app import facts as factset, tripcheck
+    assert tripcheck.trip_states({"pickupplace": "12 OAK ST, VALDOSTA, GA 31601",
+                                  "dropoffplace": "40 BAY ST, JACKSONVILLE, FL 32207"}) == ["GA", "FL"]
+    assert tripcheck.trip_states({"pickupplace": "12 OAK ST, VALDOSTA, GA 31601",
+                                  "dropoffplace": "9 ELM ST, MACON, GA 31201"}) == ["GA"]
+    assert tripcheck.trip_states({"pickupplace": "SOMEWHERE", "dropoffplace": None}) == []
+    with q["db"].connect() as conn:
+        crossing = factset.assemble(conn, q["acct"], q["driver"], states=["GA", "FL"])["facts"]
+        within = factset.assemble(conn, q["acct"], q["driver"], states=["GA"])["facts"]
+    assert crossing["company.operatingstates"] == ["GA", "FL"]
+    assert crossing["operation.interstate"] is True
+    assert crossing["reach.authority"] is True
+    assert within["company.operatingstates"] == ["GA"]
+    assert within.get("operation.interstate") is not True
+
+
+def test_a_payer_line_is_matched_by_the_state_the_trip_begins_in(client, q):
+    """A payer with only a Florida line was matched to it for a Georgia pickup, and the trip was
+    checked against the Florida contract. Now it is refused at booking and blocked at the check."""
+    from app import tripcheck
+    h = q["h"]
+    p = client.post("/api/company/payers", json={"name": "Q LINE BROKER", "category": "broker"},
+                    headers=h).json()["recordid"]
+    assert client.post("/api/company/operating-profile/contracts", headers=h,
+                       json={"payerid": p, "state": "FL"}).status_code == 200
+    on = date.today() + timedelta(days=1)
+    trip = {"passenger": "Q PASSENGER", "tripdate": on.isoformat(), "payer": "broker",
+            "brokerid": p, "legs": [{"pickupat": f"{on}T09:00:00",
+                                     "pickupplace": "12 OAK ST, VALDOSTA, GA 31601",
+                                     "dropoffplace": "40 BAY ST, JACKSONVILLE, FL 32207"}]}
+    refused = client.post("/api/trips", headers=h, json=trip)
+    assert refused.status_code == 400 and "not set up for GA" in refused.text, refused.text
+    # Begun in Florida, the same payer is carried for - the return into Georgia included.
+    trip["legs"] = [{"pickupat": f"{on}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+                     "dropoffplace": "12 OAK ST, VALDOSTA, GA 31601"}]
+    assert client.post("/api/trips", headers=h, json=trip).status_code == 200
+    with q["db"].connect() as conn:
+        leg = {"vehicleid": None, "pickupat": datetime.combine(on, datetime.min.time()),
+               "tripdate": on, "brokerid": p, "payer": "broker", "servicelevel": "ambulatory",
+               "pickupplace": "12 OAK ST, VALDOSTA, GA 31601",
+               "dropoffplace": "40 BAY ST, JACKSONVILLE, FL 32207"}
+        said = tripcheck.check(conn, q["acct"], q["driver"], proposed=leg, record=False)
+    assert any(b["code"] == "PAYERLINE" for b in said["blockers"]), said["blockers"]
+    assert said["states"] == ["GA", "FL"]
+    # The booking screen's suggestion is put to the same check.
+    got = client.get("/api/trips/suggest", headers=h, params={
+        "when": f"{on}T09:00:00", "payerid": p, "payer": "broker",
+        "pickupplace": leg["pickupplace"], "dropoffplace": leg["dropoffplace"]})
+    assert got.status_code == 200, got.text

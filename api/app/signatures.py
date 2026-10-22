@@ -171,7 +171,7 @@ def signed(conn: Connection, accountid: str, ownerid: str, ownertype: str = "dri
                -- The signature on file that was used, which is what an audit stamp names -
                -- the same id the signature box shows on screen.
                s.recordid AS signatureid,
-               s.typedname, s.fontkey, s.signername
+               s.typedname, s.fontkey, s.signername, s.signertype
         FROM documentsignatures d JOIN signatures s ON s.recordid = d.signatureid
         WHERE d.accountid = :a AND d.ownertype = :ot AND d.ownerid = :oid
     """, a=accountid, ot=ownertype, oid=ownerid)}

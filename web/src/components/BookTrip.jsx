@@ -52,7 +52,9 @@ export default function BookTrip({ onClose, onBooked }) {
     try {
       const when = `${f.tripdate}T${f.pickupat}:00`
       const qs = new URLSearchParams({ when, minutes: String(f.minutes),
-        service: f.servicelevel, seats: '1' })
+        service: f.servicelevel, seats: '1', payer: f.payer,
+        pickupplace: f.pickupplace.trim(), dropoffplace: f.dropoffplace.trim() })
+      if (f.brokerid) qs.set('payerid', f.brokerid)
       const got = await api.get(`/trips/suggest?${qs}`)
       setWho(got)
       setDriverid(got.suggested.driverid)

@@ -2235,7 +2235,8 @@ def _subject(action: str, d: dict, names: dict | None = None) -> str | None:
     if action in ("accident", "accident-amended") and d.get("occurredon"):
         return _day(d["occurredon"])
     if d.get("doctype"):
-        return _thing(documents.TITLES.get(d["doctype"], d["doctype"]))
+        return _thing(documents.TITLES.get(d["doctype"]) or (names or {}).get(d["doctype"])
+                      or d["doctype"])
     got = d.get("credentialcode") or d.get("code")
     if got:
         # The house phrasing first, then what the catalog calls it, and only then the code itself.
@@ -2419,6 +2420,9 @@ def application_activity(driverid: str, user: dict = Depends(current_user), conn
         SELECT code, question FROM companyquestions
     """)})
 
+    # A document signed on request is written to the log when it is signed, and it is also in the
+    # signatures read below. Said once: the log line stands, the signature does not repeat it.
+    logged = set()
     for r in rows(conn, """
         SELECT l.action, l.entitytype, l.added, l.ip, l.detail, u.name AS username
         FROM activitylog l LEFT JOIN users u ON u.recordid = l.userid
@@ -2428,6 +2432,8 @@ def application_activity(driverid: str, user: dict = Depends(current_user), conn
         said = json.loads(r["detail"]) if r["detail"] else None
         if said and not said.get("code") and asked_for.get(said.get("documentid")):
             said = {**said, "code": asked_for[said["documentid"]]}
+        if r["action"] in ("signed-on-request", "answered-on-request") and said:
+            logged.add(said.get("doctype") or said.get("credentialcode") or said.get("code"))
         sentence, actor = _sentence(r["action"], said or {}, who, r["username"], r["entitytype"],
                                     catalog)
         events.append(entry(r["added"], sentence, actor,
@@ -2435,9 +2441,15 @@ def application_activity(driverid: str, user: dict = Depends(current_user), conn
                             _detail_says(r["action"], said or {}), r["ip"]))
 
     for doc, sig in signatures.signed(conn, acct, driverid).items():
-        events.append(entry(sig["signedon"],
-                            f'{_thing(documents.TITLES.get(doc, doc))} was signed by {who}',
-                            "driver", who, None, sig["ip"]))
+        if doc in logged:
+            continue
+        # Most are the driver's own; Section 2 of the I-9 is signed by somebody in the office.
+        office = sig["signertype"] == "user"
+        signer = (sig["signername"] or "The office").title() if office else who
+        title = (documents.TITLES.get(doc) or signatures.DOC_TYPES.get(doc) or catalog.get(doc)
+                 or doc)
+        events.append(entry(sig["signedon"], f'{_thing(title)} was signed by {signer}',
+                            "office" if office else "driver", signer, None, sig["ip"]))
 
     for kind, up in (data.get("uploads") or {}).items():
         d = row(conn, "SELECT filename, bytes, added FROM documents WHERE recordid = :id",
@@ -4377,15 +4389,22 @@ def driver_dashboard(driverid: str, user: dict = Depends(current_user),
                    if i.get("expireson") and today <= i["expireson"] <= today + timedelta(days=30)],
                   key=lambda x: x["expireson"])
 
-    # Everything this driver must qualify with that CAN go out of date - whether or not anything
-    # is on file for it yet. A document with a life is a different kind of obligation from one that
-    # is done once: it comes back round, and a file that shows only what is outstanding today has
-    # nothing to say about what will be outstanding next month.
+    # Every document on file that CAN go out of date. A document with a life is a different kind of
+    # obligation from one that is done once: it comes back round, and a file that shows only what
+    # is outstanding today has nothing to say about what will be outstanding next month. One not on
+    # file yet is not tracked here - it is outstanding, and the waiting panels above already say who
+    # it is waiting on; listing it twice, as "Nothing on file", says nothing new.
     tracked = []
     for i in live:
         if (i.get("recurrence") or "once") not in ("days", "ondocument"):
             continue
+        # A record worked out afresh from the driver's file - an at-fault count, a clearance after
+        # a securement failure - has no life of its own to run out, whatever its rule says.
+        if i.get("evidencekind") == "record":
+            continue
         ends = i.get("expireson")
+        if not i.get("on"):
+            continue
         # On file, and nothing about it is being tracked. `ondocument` means "it lasts as long as
         # the document says", and some documents say nothing: a wheelchair securement certificate
         # is trained to proficiency with no interval behind it, and its type sets no age limit
@@ -4394,9 +4413,7 @@ def driver_dashboard(driverid: str, user: dict = Depends(current_user),
         # comes back the moment anybody records an expiry for it.
         if i.get("on") and not ends:
             continue
-        if not i.get("on") and not ends:
-            band = "none"
-        elif not ends:
+        if not ends:
             band = "current"
         elif ends < today:
             band = "expired"

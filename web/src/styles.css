@@ -3388,6 +3388,9 @@ button.big { padding: 11px 20px; font-size: 15px; }
    inside a panel is never cut off at its edge. */
 .qualcard { box-shadow: 0 2px 4px rgb(15 58 67 / 8%), 0 10px 24px rgb(15 58 67 / 12%); }
 .qualcard > .infotabs:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+/* The same for a head written as a bare heading (Trip History and the other dashboard panels): its
+   tinted band would otherwise paint square over the card's rounded corners. */
+.qualcard > h3:first-of-type { border-radius: var(--radius) var(--radius) 0 0; }
 
 /* Payers is three columns now; the page, heading and button included, stops at this width. */
 .payerspage { max-width: 960px; }

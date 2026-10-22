@@ -372,7 +372,7 @@ def _or(a: bool | None, b: bool | None) -> bool | None:
 
 
 def assemble(conn: Connection, accountid: str, driverid: str | None = None,
-             vehicleid: str | None = None) -> dict:
+             vehicleid: str | None = None, states: list[str] | None = None) -> dict:
     """Every fact a rule may ask about, flattened to dotted names.
 
     Flat on purpose: a rule says {"fact": "fleet.cmv_federal"} and nothing about how that was
@@ -451,6 +451,17 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
     # beside it would be a second copy free to disagree with the page an inspector reads.
     # None until one is signed, which is "nobody has looked" and not "no exposure".
     facts["company.exposure"] = _exposure.exposed(conn, accountid)
+
+    # A trip's own states, pickup first: where the trip happens decides which state's rules reach
+    # it, not where the company is headquartered. One that crosses a state line is interstate
+    # commerce whatever the company says of itself - 49 CFR 390.5 - and the reach below reads that.
+    if states:
+        facts["company.state"] = states[0]
+        facts["company.operatingstates"] = list(states)
+        facts["trip.state"] = states[0]
+        facts["trip.states"] = list(states)
+        if len(states) > 1:
+            facts["operation.interstate"] = True
 
     # Last, because reach reads what the company has just said about itself.
     facts.update(_reach(facts, fleet, roster))

@@ -42,7 +42,9 @@ def load_legs(conn: Connection, accountid: str, tripids: list[str] | None) -> li
         params.update({f"t{i}": t for i, t in enumerate(tripids)})
         trip_filter = "AND t.recordid IN (" + ", ".join(f":t{i}" for i in range(len(tripids))) + ")"
     return rows(conn, f"""
-        SELECT l.recordid AS legid, l.tripid, l.driverid, l.vehicleid, l.pickupat, l.pickupplace,
+        SELECT l.recordid AS legid, l.tripid, l.driverid, l.vehicleid, l.pickupat, l.pickupplace, l.dropoffplace,
+               (SELECT f.pickupplace FROM triplegs f WHERE f.tripid = l.tripid
+                ORDER BY f.legnumber LIMIT 1) AS originplace,
                COALESCE(l.servicelevel, t.servicelevel) AS servicelevel,
                t.brokerid, t.payer, t.tripdate, t.billedamount
         FROM triplegs l JOIN trips t ON t.recordid = l.tripid
@@ -88,7 +90,7 @@ def evaluate(conn: Connection, accountid: str, tripids: list[str] | None = None,
             continue
         key = (leg["driverid"], leg["vehicleid"], leg["pickupat"].date() if leg["pickupat"] else None,
                leg["brokerid"], leg["payer"], leg["servicelevel"],
-               tripcheck.pickup_state(leg["pickupplace"]))
+               tuple(tripcheck.trip_states(leg)), tripcheck.pickup_state(leg["originplace"]))
         if key not in decided:
             decided[key] = tripcheck.check(conn, accountid, leg["driverid"], leg["vehicleid"],
                                            legid=leg["legid"], at=leg["pickupat"], userid=userid,

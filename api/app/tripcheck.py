@@ -42,6 +42,14 @@ def pickup_state(place: str | None) -> str | None:
     return found[-1] if found else None
 
 
+def trip_states(leg: dict | None) -> list[str]:
+    """The states a leg is in, pickup first: one where it starts and ends in the same state, two
+    where it crosses a line. A Georgia pickup for a Florida doctor is held to both."""
+    found = (pickup_state((leg or {}).get("pickupplace")),
+             pickup_state((leg or {}).get("dropoffplace")))
+    return list(dict.fromkeys(s for s in found if s))
+
+
 # Wheelchair securement is what a wheelchair trip asks of the driver; which levels need a lift is
 # dispatch's own table, read rather than restated.
 SECUREMENT = "TRN-003"
@@ -52,27 +60,48 @@ def leg_context(conn: Connection, accountid: str, legid: str) -> dict | None:
     return row(conn, """
         SELECT l.recordid, l.driverid, l.vehicleid, l.pickupat, t.payer, t.tripdate,
                t.brokerid, COALESCE(l.servicelevel, t.servicelevel) AS servicelevel,
-               l.pickupplace
+               l.pickupplace, l.dropoffplace,
+               -- Where the trip began: its payer line is the one for that state on every leg,
+               -- the return included, as its price is.
+               (SELECT f.pickupplace FROM triplegs f WHERE f.tripid = l.tripid
+                ORDER BY f.legnumber LIMIT 1) AS originplace
         FROM triplegs l JOIN trips t ON t.recordid = l.tripid
         WHERE l.recordid = :l AND l.accountid = :a
     """, l=legid, a=accountid)
 
 
-def contract_for(conn: Connection, accountid: str, payerid: str | None, on) -> dict | None:
-    """The current broker contract a trip billed to this payer falls under, if any."""
+def line_state(conn: Connection, accountid: str, state: str | None) -> str | None:
+    """The state a trip's payer line is read for: where it was picked up, or the company's home
+    state where the address does not say - as the fee schedule is (app/rates.py in_force)."""
+    return (state or (row(conn, "SELECT state FROM accounts WHERE recordid = :a",
+                          a=accountid) or {}).get("state") or "").upper()[:2] or None
+
+
+def contract_for(conn: Connection, accountid: str, payerid: str | None, on,
+                 state: str | None = None) -> dict | None:
+    """The payer line a trip billed to this payer falls under: the one for the state the trip
+    began in, or a line for every state. None where the payer is not carried for there."""
     if not payerid:
         return None
     return row(conn, f"""
         SELECT recordid, broker, state, program, reviewed, requiresapproval FROM companycontracts c
         WHERE accountid = :a AND payerid = :p AND status = 'active' AND {payerlines.live("c")}
+          AND (c.state IS NULL OR c.state = :st)
           AND (effectivefrom IS NULL OR effectivefrom <= :on)
           AND (effectiveto IS NULL OR effectiveto >= :on)
-        ORDER BY reviewed DESC, effectivefrom DESC LIMIT 1
-    """, a=accountid, p=payerid, on=on)
+        ORDER BY c.state IS NOT NULL DESC, reviewed DESC, effectivefrom DESC LIMIT 1
+    """, a=accountid, p=payerid, st=line_state(conn, accountid, state), on=on)
+
+
+def no_line(conn: Connection, accountid: str, payerid: str, state: str | None) -> str:
+    """What to say when a payer has no line where the trip begins."""
+    name = (row(conn, "SELECT name FROM payers WHERE recordid = :p", p=payerid) or {}).get("name")
+    where = line_state(conn, accountid, state) or "this state"
+    return f"{name or 'This payer'} is not set up for {where}. Add a {where} line on the Payers page."
 
 
 def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: str | None,
-                     at: datetime) -> list[dict]:
+                     at: datetime, states: list[str] | None = None) -> list[dict]:
     """What stops this vehicle carrying this trip: a lift the service needs and it lacks, and any
     blocking vehicle requirement failed or expired on the day."""
     out = []
@@ -84,7 +113,7 @@ def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: 
             out.append({"code": "LIFT", "enforceable": True, "vehicle": True,
                         "reason": f"A {SERVICE[service]['label'].lower()} trip needs a "
                                   f"lift-equipped vehicle."})
-    vfacts = factset.assemble(conn, accountid, None, vehicleid)["facts"]
+    vfacts = factset.assemble(conn, accountid, None, vehicleid, states=states)["facts"]
     for v in rules.for_vehicle(conn, accountid, vehicleid, vfacts, today=at.date()):
         if v["applies"] is True and v.get("blocking") and v["status"] in ("failed", "expired"):
             out.append({"code": v["code"], "name": v["name"], "status": v["status"],
@@ -94,28 +123,38 @@ def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: 
 
 def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None = None, *,
           legid: str | None = None, program: str | None = None, at: datetime | None = None,
-          userid: str | None = None, shadow: bool = False, record: bool = True) -> dict:
+          userid: str | None = None, shadow: bool = False, record: bool = True,
+          proposed: dict | None = None) -> dict:
     """Decide, record, and return the decision with its reasons.
 
     `record=False` decides without keeping it - dispatch trying candidates for a leg, or the
-    evaluator judging a batch of imported trips. Only an actual assignment is a decision on file."""
-    leg = leg_context(conn, accountid, legid) if legid else None
+    evaluator judging a batch of imported trips. Only an actual assignment is a decision on file.
+
+    `proposed` is a leg not yet booked - payer, places, pickup time - asked about before it exists."""
+    leg = leg_context(conn, accountid, legid) if legid else proposed
     if leg:
         vehicleid = vehicleid or leg["vehicleid"]
         at = at or leg["pickupat"] or (datetime.combine(leg["tripdate"], datetime.min.time())
                                        if leg["tripdate"] else None)
     at = at or utcnow()
-    contract = contract_for(conn, accountid, (leg or {}).get("brokerid"), at.date()) if leg else None
+    origin = pickup_state((leg or {}).get("originplace") or (leg or {}).get("pickupplace"))
+    contract = (contract_for(conn, accountid, leg.get("brokerid"), at.date(), origin)
+                if leg else None)
     if leg:
         # The contract's own program, where it names one, decides; otherwise the payer's kind.
         program = program or (contract or {}).get("program") or PAYER_PROGRAM.get(
             leg["payer"] or "private", "privatepay")
     program = program or "privatepay"
     service = (leg or {}).get("servicelevel")
+    states = trip_states(leg)
     from app import ruleversions
     versions = ruleversions.current(conn)
 
     blockers, warnings, read = [], [], []
+    # About the trip, not the driver: a payer not carried for where it begins cannot be billed.
+    if leg and leg.get("brokerid") and not contract:
+        blockers.append({"code": "PAYERLINE", "enforceable": True,
+                         "reason": no_line(conn, accountid, leg["brokerid"], origin)})
     driver = row(conn, "SELECT status FROM drivers WHERE recordid = :d AND accountid = :a "
                        "AND deleted IS NULL", d=driverid, a=accountid)
     if not driver:
@@ -125,14 +164,8 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
         blockers.append({"code": "HIRED", "enforceable": True,
                          "reason": "The driver has not been hired."})
     else:
-        facts = factset.assemble(conn, accountid, driverid, vehicleid)["facts"]
-        # Where the trip happens decides which state's rules reach it - not where the company is
-        # headquartered. A Florida company's Georgia trip is held to Georgia's rules.
-        here = pickup_state((leg or {}).get("pickupplace"))
-        if here:
-            facts["company.state"] = here
-            facts["company.operatingstates"] = [here]
-            facts["trip.state"] = here
+        # Held to the rules of every state the trip is in, and to the federal ones if it crosses.
+        facts = factset.assemble(conn, accountid, driverid, vehicleid, states=states)["facts"]
         if contract:
             # The trip itself brings the contract's requirements with it.
             facts["trip.contract"] = contract["recordid"]
@@ -182,7 +215,7 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
             elif i["applies"] is True and i["status"] == "expiring":
                 warnings.append(said)
     if vehicleid:
-        blockers += vehicle_blockers(conn, accountid, vehicleid, service, at)
+        blockers += vehicle_blockers(conn, accountid, vehicleid, service, at, states)
 
     undecided = any(w.get("code") == "CONTRACT" or w.get("status") in WAITING
                     or str(w.get("reason") or "").startswith("Applicability undecided")
@@ -200,7 +233,7 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
             w=json.dumps(warnings, default=str), r=json.dumps(read), s=int(shadow), **{"for": at})
     return {"evaluationid": evalid, "eligible": decision == "eligible", "decision": decision,
             "program": program, "service": service, "evaluatedfor": at, "blockers": blockers,
-            "state": pickup_state((leg or {}).get("pickupplace")),
+            "state": states[0] if states else None, "states": states,
             "warnings": warnings, "rulesread": read, "shadow": shadow,
             # What may actually be refused: approved rules and the structural facts.
             "enforceable": [b for b in blockers if b.get("enforceable")]}

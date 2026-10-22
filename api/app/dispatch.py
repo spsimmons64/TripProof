@@ -312,12 +312,18 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
 
 
 def best(conn: Connection, accountid: str, **terms) -> dict:
-    """The ranked lists, and the pair the office would get if it pressed nothing."""
+    """The ranked lists, and the pair the office would get if it pressed nothing.
+
+    `trip` is the trip being booked - its payer and where it goes - so the suggestion is put to
+    the same trip check the assignment will be. Without it, only who may drive at all is known."""
     who = drivers_for(conn, accountid, when=terms["when"], minutes=terms["minutes"],
                       pickup=terms.get("pickup"))
     what = vehicles_for(conn, accountid, when=terms["when"], minutes=terms["minutes"],
                         service=terms.get("service", "ambulatory"),
                         seats=terms.get("seats", 1))
+    if terms.get("trip"):
+        _judge(conn, accountid, who, what, leg=terms["trip"], when=terms["when"],
+               service=terms.get("service", "ambulatory"))
     pick = next((d for d in who if d["available"] and not d["warnings"]),
                 next((d for d in who if d["available"]), None))
     van = next((v for v in what if v["available"]), None)
@@ -355,6 +361,7 @@ def for_leg(conn: Connection, accountid: str, legid: str) -> dict:
     leg = row(conn, """
         SELECT l.recordid AS legid, l.tripid, l.driverid, l.vehicleid, l.pickupat, l.dropoffat,
                l.pickuplat, l.pickuplng, l.signature, l.gps, l.servicelevel AS legservice,
+               l.pickupplace, l.dropoffplace,
                t.externalid, t.brokerid, t.servicelevel, t.billedamount, t.passenger
         FROM triplegs l JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
         WHERE l.recordid = :id AND l.accountid = :a
@@ -376,35 +383,7 @@ def for_leg(conn: Connection, accountid: str, legid: str) -> dict:
     vehicles = vehicles_for(conn, accountid, when=when, minutes=minutes, service=service,
                             seats=1, exceptleg=legid)
 
-    def requirement_blocks(subject: str, candidate: str, vehicleid: str | None) -> list[str]:
-        """What this candidate fails on this leg, by the trip check an assignment goes through. A
-        failure is a block, not a warning: a trip run by somebody who does not meet its
-        requirements is a trip that cannot be billed, and offering it as a choice with a caution
-        beside it is offering somebody a loss. Decided, not recorded - nobody has assigned anyone."""
-        if subject == "vehicle":
-            return [b.get("reason") or b.get("name") or b["code"]
-                    for b in tripcheck.vehicle_blockers(conn, accountid, candidate, service, when)]
-        said = tripcheck.check(conn, accountid, candidate, None, legid=legid, at=when,
-                               record=False)
-        # The vehicle's own problems are the vehicle's, shown against it rather than every driver;
-        # and whether they are hired is already said by the candidate list itself.
-        return [b.get("reason") or b.get("name") or b["code"] for b in said["blockers"]
-                if not b.get("vehicle") and b["code"] not in ("HIRED", "DRIVER")]
-
-    away = _unavailable(conn, accountid, when)
-    for d in drivers:
-        d["blocked"] = d["blocked"] + requirement_blocks("driver", d["driverid"], leg["vehicleid"])
-        if d["driverid"] in away["drivers"]:
-            d["warnings"] = d["warnings"] + [away["drivers"][d["driverid"]]]
-        d["available"] = not d["blocked"]
-    for v in vehicles:
-        v["blocked"] = v["blocked"] + requirement_blocks("vehicle", v["vehicleid"], v["vehicleid"])
-        v.setdefault("warnings", [])
-        if v["vehicleid"] in away["vehicles"]:
-            v["warnings"] = v["warnings"] + [away["vehicles"][v["vehicleid"]]]
-        v["available"] = not v["blocked"]
-    drivers.sort(key=lambda x: (not x["available"], bool(x["warnings"]), x["name"]))
-    vehicles.sort(key=lambda x: (not x["available"], bool(x["warnings"]), x["name"]))
+    _judge(conn, accountid, drivers, vehicles, leg=leg, when=when, service=service)
 
     return {
         "leg": {k: leg[k] for k in ("legid", "tripid", "externalid", "passenger", "pickupat",
@@ -413,6 +392,46 @@ def for_leg(conn: Connection, accountid: str, legid: str) -> dict:
         "released": leg["pickupat"] is not None,
         "drivers": drivers, "vehicles": vehicles,
     }
+
+
+def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list[dict], *,
+           leg: dict, when: datetime, service: str) -> None:
+    """Put every candidate to the trip check an assignment goes through, and add what it fails.
+
+    `leg` is a leg on file (it has a legid) or one being booked. A failure is a block, not a
+    warning: a trip run by somebody who does not meet its requirements is a trip that cannot be
+    billed, and offering it as a choice with a caution beside it is offering somebody a loss.
+    Decided, not recorded - nobody has assigned anyone."""
+    legid = leg.get("legid")
+    states = tripcheck.trip_states(leg)
+
+    def driver_blocks(candidate: str) -> list[str]:
+        said = tripcheck.check(conn, accountid, candidate, None, legid=legid,
+                               proposed=None if legid else leg, at=when, record=False)
+        # The vehicle's own problems are the vehicle's, shown against it rather than every driver;
+        # and whether they are hired is already said by the candidate list itself.
+        return [b.get("reason") or b.get("name") or b["code"] for b in said["blockers"]
+                if not b.get("vehicle") and b["code"] not in ("HIRED", "DRIVER")]
+
+    away = _unavailable(conn, accountid, when)
+    for d in drivers:
+        d["blocked"] = d["blocked"] + driver_blocks(d["driverid"])
+        if d["driverid"] in away["drivers"]:
+            d["warnings"] = d["warnings"] + [away["drivers"][d["driverid"]]]
+        d["available"] = not d["blocked"]
+    for v in vehicles:
+        v["blocked"] = v["blocked"] + [
+            b.get("reason") or b.get("name") or b["code"]
+            for b in tripcheck.vehicle_blockers(conn, accountid, v["vehicleid"], service, when, states)]
+        v.setdefault("warnings", [])
+        if v["vehicleid"] in away["vehicles"]:
+            v["warnings"] = v["warnings"] + [away["vehicles"][v["vehicleid"]]]
+        v["available"] = not v["blocked"]
+    # The same order drivers_for gives - nearest first among equals - with the check's answer in it.
+    drivers.sort(key=lambda x: (not x["available"], bool(x["warnings"]),
+                                x["miles"] if x.get("miles") is not None else FAR_MILES * 2,
+                                x["name"]))
+    vehicles.sort(key=lambda x: (not x["available"], bool(x["warnings"]), x["name"]))
 
 
 def _unavailable(conn: Connection, accountid: str, when: datetime) -> dict:

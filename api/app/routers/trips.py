@@ -177,12 +177,16 @@ class Booking(BaseModel):
 @router.get("/trips/suggest")
 def who_should_take_it(when: datetime, minutes: int = 60, service: str = "ambulatory",
                        seats: int = 1, pickup: str | None = None,
+                       payerid: str | None = None, payer: str = "private",
+                       pickupplace: str | None = None, dropoffplace: str | None = None,
                        user: dict = Depends(current_user),
                        conn: Connection = Depends(get_conn)):
     """Which driver and which vehicle suit a job, and the reasons for the order.
 
-    `pickup` is "lat,lng" where the office has it. Without it the ranking still works - it
-    just cannot sort by who is nearest, and says so against each driver."""
+    `pickup` is "lat,lng" where the office has it; otherwise the pickup address is placed. Without
+    either the ranking still works - it just cannot sort by who is nearest, and says so against
+    each driver. With the payer and the addresses, every candidate is put to the trip check the
+    assignment will go through: the payer's line and approvals, and the rules of both states."""
     at = None
     if pickup:
         try:
@@ -190,8 +194,15 @@ def who_should_take_it(when: datetime, minutes: int = 60, service: str = "ambula
             at = (lat, lng)
         except ValueError:
             raise HTTPException(400, "pickup must be lat,lng") from None
+    elif pickupplace:
+        at = wheremap.place(pickupplace)
+    trip = None
+    if pickupplace or dropoffplace or payerid:
+        trip = {"vehicleid": None, "pickupat": when, "tripdate": when.date(), "brokerid": payerid,
+                "payer": payer, "servicelevel": service, "pickupplace": pickupplace,
+                "dropoffplace": dropoffplace, "originplace": pickupplace}
     return dispatch.best(conn, user["accountid"], when=when, minutes=minutes,
-                         service=service, seats=seats, pickup=at)
+                         service=service, seats=seats, pickup=at, trip=trip)
 
 
 @router.post("/trips")
@@ -207,6 +218,11 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
         raise HTTPException(400, "A trip needs at least one leg")
     if body.servicelevel not in dispatch.SERVICE:
         raise HTTPException(400, f"Unknown service level {body.servicelevel}")
+    # A payer not carried for where the trip begins cannot be billed for it - refused here rather
+    # than found when every driver comes back blocked.
+    origin = tripcheck.pickup_state(body.legs[0].pickupplace)
+    if body.brokerid and not tripcheck.contract_for(conn, acct, body.brokerid, body.tripdate, origin):
+        raise HTTPException(400, tripcheck.no_line(conn, acct, body.brokerid, origin))
     # Priced before it is written, under the schedule in force for this payer on that day. The
     # figure is the base fare: nobody has driven anywhere yet, so mileage is added when they have.
     priced = rateset.quote(conn, acct, payerid=body.brokerid, servicelevel=body.servicelevel,
@@ -506,18 +522,19 @@ def what_it_comes_to(servicelevel: str, on: date, payerid: str | None = None, le
                            state=state)
     # What the payer's program asks of a driver on top of what every trip asks: the rules written
     # for that program that reach this company, counted once per thing they ask for.
-    program = _program_of(conn, acct, payerid, on)
+    program = _program_of(conn, acct, payerid, on, state)
     priced["program"] = program
     priced["extrarequirements"] = _program_requirements(conn, acct, program) if program else 0
     return priced
 
 
-def _program_of(conn: Connection, accountid: str, payerid: str | None, on) -> str | None:
+def _program_of(conn: Connection, accountid: str, payerid: str | None, on,
+                state: str | None = None) -> str | None:
     """The program a trip billed to this payer belongs to: the payer line's contract where it says,
     otherwise the payer's kind. No payer is the passenger."""
     if not payerid:
         return "privatepay"
-    contract = tripcheck.contract_for(conn, accountid, payerid, on)
+    contract = tripcheck.contract_for(conn, accountid, payerid, on, state)
     if contract and contract.get("program"):
         return contract["program"]
     kind = (row(conn, "SELECT category FROM payers WHERE recordid = :p", p=payerid) or {}).get("category")
