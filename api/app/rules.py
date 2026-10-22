@@ -180,7 +180,7 @@ REVIEWING = ("review", "notshown", "residenceunknown")
 # of the others: an auditor reading this file should see the word the query returned.
 FAILING = ("disqualified", "flagged", "positive", "refusal", "adulterated", "substituted",
            "prohibited", "notcertified", "conflict", "missing", "notage21", "notage18", "notenglish",
-           "notgeorgia", "testsowed",
+           "notgeorgia", "testsowed", "ineligible", "inspectionfailed", "notqualified",
            "notregistered", "noqueryplan", "shorttraining", "opendefect",
            "nodraws", "hoursexceeded", "registershort", "noauthority",
            "nolicense", "licenseinactive", "wrongclass", "newermvr", "removal",
@@ -236,6 +236,12 @@ SAYS = {
     "notage21": "This driver is under 21. 49 CFR 391.11(b)(1) does not permit them to operate a "
                 "commercial motor vehicle in interstate commerce, and nothing can be filed that "
                 "changes it.",
+    "notqualified": "The last annual review found this driver disqualified to drive under 49 CFR "
+                    "391.15 and removed from safety-sensitive functions.",
+    "inspectionfailed": "The latest inspection on file was recorded as failed. The vehicle does not "
+                        "meet this requirement until a passing inspection is recorded.",
+    "ineligible": "The screening on file was read and recorded as not eligible. The driver does "
+                  "not meet this requirement until a later screening is recorded eligible.",
     "notgeorgia": "Georgia Medicaid accepts a Georgia license, or a license from the bordering state "
                   "the driver lives in (DCH 914.2.1). The active license is neither. Add the "
                   "license that is, or correct the driver's address if it is wrong.",
@@ -453,10 +459,13 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
                         -- A negative-dilute is a negative result (49 CFR 40.197) unless the
                         -- MRO directed a recollection, which is filed as its own screen.
                         WHEN c.result IN ('negative', 'negativedilute') THEN 'negative'
+                        -- A screening read and found against the driver fails, whoever read it.
+                        WHEN c.result = 'ineligible' THEN 'ineligible'
                         -- A screening that must say where it came from, and does not, or came
                         -- from a vendor rather than the authority itself.
                         WHEN t.requiresprovenance = 1
                              AND COALESCE(c.provenance, 'vendor') = 'vendor' THEN 'noprovenance'
+                        WHEN c.result = 'eligible' THEN 'qualified'
                         END AS determination,
                    c.testedon, c.testedby
             FROM credentials c JOIN credentialtypes t ON t.recordid = c.credentialtypeid
@@ -591,7 +600,7 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
     if kind == "annualreview":
         got = row(conn, """
             SELECT recordid, reviewedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
-                   'annualreviews' AS sourcetable, finding AS determination
+                   'annualreviews' AS sourcetable, finding AS determination, note AS findingnote
             FROM annualreviews WHERE accountid = :a AND driverid = :d AND reviewedon IS NOT NULL
             ORDER BY reviewedon DESC, COALESCE(completedon, createdon) DESC, createdon DESC LIMIT 1
         """, a=accountid, d=driverid)
@@ -1413,6 +1422,13 @@ def stand(rule: dict, evidence: dict | None, today: date,
         return "pending", f"Nothing on file yet. {due}." if due else "Nothing on file yet."
 
     finding = (evidence.get("determination") or "").lower()
+    # 391.25: "qualified, with corrective action noted" does not clear the driver on its own - the
+    # action is outstanding until a later review records it done. Said, and not counted as clear.
+    if finding == "corrective":
+        noted = evidence.get("findingnote")
+        return "review", ("The last annual review found the driver qualified with corrective action "
+                          "required" + (f": {noted}" if noted else "") + ". Once it is done, complete "
+                          "a new annual review recording it.")
     if finding == "nodefect":
         return "satisfied", "No defect has been reported on this vehicle."
     # A report the rule asks somebody to read is not answered by the vendor's one-word summary:
@@ -1828,7 +1844,10 @@ def _vehicle_evidence(conn: Connection, accountid: str, vehicleid: str,
     return _credential_life(row(conn, """
         SELECT c.recordid, c.issuedon AS effectiveon, c.expireson, c.exempt, c.documentid,
                t.maxagedays, t.defaultvaliddays,
-               'credentials' AS sourcetable, NULL AS determination
+               'credentials' AS sourcetable,
+               -- An inspection's own result, where one is recorded: the latest one decides.
+               CASE c.result WHEN 'passed' THEN 'inspected' WHEN 'failed' THEN 'inspectionfailed'
+                    END AS determination
         FROM credentials c JOIN credentialtypes t ON t.recordid = c.credentialtypeid
         WHERE c.accountid = :a AND c.subject = 'vehicle' AND c.subjectid = :v AND t.code = :code
           AND c.deleted IS NULL AND c.revokedon IS NULL
@@ -1851,7 +1870,7 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
         SELECT recordid, accountid, code, name, description, authoritytype, authority, citation,
                applieswhen, evidencekind, evidencesource, blocking, gate, grouping, duestage,
                duetext, recurrence, recurrencedays, recurrencemonths, warndays, note, sortorder,
-               program, offered
+               program, offered, legalreview, reviewrequired
         FROM compliancerules
         WHERE subject = 'vehicle' AND effectiveto IS NULL
           AND (accountid IS NULL OR accountid = :a)
@@ -1875,11 +1894,19 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
         else:
             evidence = _vehicle_evidence(conn, accountid, vehicleid, rule["evidencesource"])
             status, why = stand(rule, evidence, today)
+            if rule.get("reviewrequired") and evidence and status == "review" \
+                    and not evidence.get("determination"):
+                why = "Record whether the inspection passed."
+            window = INITIAL_WINDOW.get(rule["code"])
+            if window:
+                status, why = _initial_inspection(conn, accountid, vehicleid, rule, window,
+                                                  today, status, why)
         out.append({**{k: rule[k] for k in ("code", "name", "description", "authoritytype",
                                             "authority", "citation", "duestage", "duetext",
                                             "blocking", "gate", "grouping", "note", "evidencekind",
                                             "evidencesource", "recurrence", "recurrencedays",
-                                            "recurrencemonths", "program", "offered")},
+                                            "recurrencemonths", "program", "offered",
+                                            "legalreview", "reviewrequired")},
                     "scheduled": bool(rule.get("scheduled")),
                     "own": rule["accountid"] is not None,
                     "applies": reaches, "status": status, "why": why,
@@ -1887,6 +1914,51 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
                     "on": (evidence or {}).get("effectiveon"),
                     "expireson": horizon(rule, evidence)})
     return out
+
+
+# A vehicle's first inspection for a broker falls in a window before it enters that service:
+# DCH 910.2, no earlier than sixty days before. The state whose lines it is, and the days.
+INITIAL_WINDOW = {"GA_NET_VEHICLE_INSPECTION": ("GA", 60)}
+
+
+def _initial_inspection(conn: Connection, accountid: str, vehicleid: str, rule: dict,
+                        window: tuple, today: date, status: str, why: str | None):
+    """Whether the inspection that let the vehicle into the broker's service fell in the window.
+    A later inspection keeps it in date; it does not make up for a first one that never happened."""
+    state, days = window
+    entry = row(conn, """
+        SELECT MIN(a.servicefrom) AS servicefrom, MIN(c.broker) AS broker
+        FROM vehicleauthorizations a JOIN companycontracts c ON c.recordid = a.contractid
+        WHERE a.accountid = :a AND a.vehicleid = :v AND a.endedon IS NULL
+          AND c.program = 'medicaid' AND c.state = :s
+    """, a=accountid, v=vehicleid, s=state) or {}
+    begins = entry.get("servicefrom")
+    if not begins:
+        return status, why
+    opens = begins - timedelta(days=days)
+    which = (rule["evidencesource"] or "").partition(":")[2]
+    inwindow = rows(conn, """
+        SELECT c.issuedon, c.result FROM credentials c
+        JOIN credentialtypes t ON t.recordid = c.credentialtypeid
+        WHERE c.accountid = :a AND c.subject = 'vehicle' AND c.subjectid = :v AND t.code = :w
+          AND c.deleted IS NULL AND c.issuedon BETWEEN :o AND :b
+        ORDER BY c.issuedon
+    """, a=accountid, v=vehicleid, w=which, o=opens, b=begins)
+    # A satisfactory initial inspection (910.2) - a failed one in the window does not count, and
+    # one whose result nobody has recorded is said rather than counted either way.
+    if any(i["result"] == "passed" for i in inwindow):
+        return status, why
+    unread = next((i for i in inwindow if not i["result"]), None)
+    if unread:
+        return "review", (f"Record whether the inspection of {unread['issuedon']:%m/%d/%Y} passed - "
+                          f"it is the initial inspection before service.")
+    broker = (entry.get("broker") or "the broker").title()
+    if begins > today:
+        return "pending", (f"Its first {broker} inspection is due between {opens:%m/%d/%Y} and "
+                           f"{begins:%m/%d/%Y}, before it enters service.")
+    return "failed", (f"No passed {broker} inspection is dated within the {days} days before it "
+                      f"entered service on {begins:%m/%d/%Y} (DCH 910.2). A later inspection does "
+                      f"not replace the initial one.")
 
 
 def for_company(conn: Connection, accountid: str, facts: dict,
@@ -2130,16 +2202,16 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                     and evidence.get("effectiveon") and evidence["effectiveon"] < violatedon):
                 evidence, instead = None, None
             waiting_on = None if evidence else _ordered(conn, accountid, driverid, rule["evidencesource"])
-            # A credential a rule asks somebody to read - a document or a screening - is answered
-            # by the reading: once it is read, it stands as reviewed. A drug screen is not - what
-            # answers it is a negative result recorded against it, which its own dialog asks for.
+            status, why = stand(rule, evidence, today, waiting_on)
+            # A screening a rule asks somebody to read is answered by what the reading found, not
+            # by the reading: eligible or not eligible, recorded against it - and a drug screen by
+            # its result. Read and not yet recorded, it says so.
             if (rule.get("reviewrequired") and evidence and not evidence.get("determination")
                     and (rule.get("evidencesource") or "").startswith("credential:")
-                    and rule.get("evidencesource") != "credential:DRUG_SCREEN"
-                    and ((evidence.get("sourcetable"), evidence.get("recordid")) in read
-                         or evidence.get("documentid") in readdocs)):
-                evidence = {**evidence, "determination": "reviewed"}
-            status, why = stand(rule, evidence, today, waiting_on)
+                    and status == "review"):
+                why = ("Record the result - negative, or what it came back as."
+                       if rule.get("evidencesource") == "credential:DRUG_SCREEN"
+                       else "Read it and record whether it found the driver eligible.")
             # On file and in date, but nobody can say where the screening came from. It stands
             # under review until somebody records that it came from the authority itself.
             if (evidence or {}).get("determination") == "noprovenance" and status in (

@@ -68,6 +68,9 @@ def loaded(db):
             known |= {"vehicle.cmv_federal", "vehicle.cmv_florida", "vehicle.cdl_required",
                       "vehicle.seats", "vehicle.gvwr", "vehicle.lift", "vehicle.forcompensation"}
             known |= set(_vehicle_transit(conn, acct, nobody))
+        # Which broker lines a vehicle is approved for - read from its approvals, none needed.
+        from app.facts import _vehicle_lines
+        known |= set(_vehicle_lines(conn, acct, vehicle or nobody, None))
         yield catalogcheck.check(conn, known), acct
 
 

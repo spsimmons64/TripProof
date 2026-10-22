@@ -208,7 +208,9 @@ def due(conn: Connection, accountid: str, driverid: str, today: date | None = No
         WHERE accountid = :a AND driverid = :d AND receivedon IS NOT NULL AND cancelledon IS NULL
         ORDER BY receivedon DESC LIMIT 1
     """, a=accountid, d=driverid))
-    startable = not openone and (bool(unread) or bool(last and last["finding"] == "notqualified"))
+    # Or a corrective action noted last time, which a new review is how it is recorded done.
+    startable = not openone and (bool(unread) or bool(last and last["finding"] in ("notqualified",
+                                                                                 "corrective")))
     return {"last": last, "open": openone, "nextdue": nextdue, "newer": newer,
             "startable": startable,
             "owed": bool(openone) or not last or bool(newer)

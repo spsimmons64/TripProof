@@ -110,7 +110,8 @@ def test_full_flow(client, ctx):
 
     # --- trip detail: each check names the rule that judged it -----------------------------------
     d = client.get(f"/api/trips/{t['T1001']['recordid']}", headers=h).json()
-    assert d["run"]["engineversion"] == "2.0"
+    from app.evaluator import ENGINE_VERSION
+    assert d["run"]["engineversion"] == ENGINE_VERSION
     failed = [c for c in d["checks"] if c["outcome"] == "fail"]
     assert failed and all(c["code"] and c["description"] for c in failed)
     with ctx["db"].connect() as conn:

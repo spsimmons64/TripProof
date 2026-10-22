@@ -479,7 +479,8 @@ def test_a_states_medicaid_rules_follow_its_medicaid_payer_lines(client, q):
                              {"a": q["acct"]}).scalars().all()
         conditions = {json.dumps(json.loads(r)) for r in conn.execute(text(
             "SELECT applieswhen FROM compliancerules WHERE accountid IS NULL AND effectiveto IS NULL "
-            "AND code LIKE 'GA\\_NET\\_%' AND applieswhen LIKE '%medicaid%'")).scalars()}
+            "AND code LIKE 'GA\\_NET\\_%' AND applieswhen LIKE '%medicaid%' "
+            "AND code <> 'GA_NET_VEHICLE_INSPECTION'")).scalars()}
     assert facts(client, q)["company.medicaidstates"] == sorted(lines)
     assert conditions == {json.dumps({"fact": "company.medicaidstates", "has": "GA"})}, conditions
     ga = {"fact": "company.medicaidstates", "has": "GA"}

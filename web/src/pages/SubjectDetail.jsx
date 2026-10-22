@@ -8,7 +8,7 @@ import Credentials from '../components/Credentials.jsx'
 import { APPLYING, DriverForm } from './Drivers.jsx'
 import DriverReview, { Requirements } from './DriverReview.jsx'
 import { VehicleForm } from './Vehicles.jsx'
-import { VehicleRequirements } from './VehicleCompliance.jsx'
+import { VehicleBrokerApprovals, VehicleRequirements } from './VehicleCompliance.jsx'
 import { properName } from '../lib/names.js'
 
 // What the office can do with an application in front of it. Each is a decision with consequences,
@@ -290,6 +290,9 @@ export default function SubjectDetail({ kind }) {
           reports its drivers made on it, and what has been done to it. 49 CFR Part 396. */}
       {!applied && !reviewing && kind === 'vehicle' && (
         <VehicleRequirements id={id} credentials={s.credentials || []} onChanged={reload} />
+      )}
+      {!applied && !reviewing && kind === 'vehicle' && (
+        <VehicleBrokerApprovals id={id} onChanged={reload} />
       )}
       
       

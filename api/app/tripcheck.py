@@ -21,6 +21,7 @@ from sqlalchemy.engine import Connection
 
 from app import facts as factset
 from app import payerlines, rules
+from app.engine import ENGINE_VERSION
 from app.db import newid, row, run, utcnow
 
 FAILING = ("failed", "expired", "overdue", "pending")
@@ -115,7 +116,7 @@ def program_of(conn: Connection, accountid: str, leg: dict | None, at: datetime,
 
 def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: str | None,
                      at: datetime, states: list[str] | None = None,
-                     program: str | None = None) -> list[dict]:
+                     program: str | None = None, contract: dict | None = None) -> list[dict]:
     """What stops this vehicle carrying this trip: a lift the service needs and it lacks, and any
     blocking vehicle requirement failed or expired on the day."""
     out = []
@@ -128,14 +129,26 @@ def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: 
                         "reason": f"A {SERVICE[service]['label'].lower()} trip needs a "
                                   f"lift-equipped vehicle."})
     vfacts = factset.assemble(conn, accountid, None, vehicleid, states=states)["facts"]
+    # On a Medicaid trip, only the state of the trip's own line: a Florida trip in a vehicle the
+    # Georgia broker also uses is not held to Georgia's inspection.
+    # And only through an approval for THIS line: a vehicle another Georgia broker approved is not
+    # thereby in this broker's service.
+    if contract and contract.get("program") == "medicaid" and vfacts.get("vehicle.medicaidstates"):
+        line = (contract.get("state") or "").upper()
+        vfacts["vehicle.medicaidstates"] = (
+            [line] if contract["recordid"] in (vfacts.get("vehicle.contracts") or []) else [])
     for v in rules.for_vehicle(conn, accountid, vehicleid, vfacts, today=at.date()):
         # Another program's rule does not stop this trip: a Georgia Medicaid inspection says
         # nothing about a private pay run.
         if program and v.get("program") not in (None, program):
             continue
-        if v["applies"] is True and v.get("blocking") and v["status"] in ("failed", "expired"):
+        # The same shortfalls that stop a driver - a vehicle with no registration on file is no more
+        # fit to go out than one whose registration lapsed - and enforceable on the same terms:
+        # only a rule a reviewer approved.
+        if v["applies"] is True and v.get("blocking") and v["status"] in FAILING:
             out.append({"code": v["code"], "name": v["name"], "status": v["status"],
-                        "reason": v.get("why"), "vehicle": True})
+                        "reason": v.get("why"), "vehicle": True,
+                        "enforceable": v.get("legalreview") == "approved"})
     return out
 
 
@@ -159,9 +172,13 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
     service = (leg or {}).get("servicelevel")
     states = trip_states(leg)
     from app import ruleversions
-    versions = ruleversions.current(conn)
+    versions = ruleversions.current_snapshots(conn)
 
     blockers, warnings, read = [], [], []
+    # What the decision was made FROM, kept with it: the facts as assembled for this trip, and where
+    # each requirement stood and on which record. With the rule hashes in `read`, a decision can be
+    # replayed - the same rules, the same facts, the same evidence.
+    seenfacts, standing = {}, []
     # About the trip, not the driver: a payer not carried for where it begins cannot be billed.
     if leg and leg.get("brokerid") and not contract:
         blockers.append({"code": "PAYERLINE", "enforceable": True,
@@ -193,6 +210,10 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
                 blockers.append({"code": "APPROVAL", "enforceable": True, "reason":
                                  f'The driver is not approved for the {contract["broker"]} contract.'})
         items = rules.for_driver(conn, accountid, driverid, facts, today=at.date())
+        seenfacts = facts
+        standing = [{"code": i["code"], "applies": i.get("applies"), "status": i.get("status"),
+                     "why": i.get("why"), "record": i.get("documentid") or i.get("recordid"),
+                     "on": i.get("on"), "expireson": i.get("expireson")} for i in items]
         if service in WHEELCHAIR_LEVELS:
             held = next((i for i in items if i.get("qualificationcode") == SECUREMENT), None)
             if not held or held["applies"] is not True or held["status"] not in ("satisfied",
@@ -209,8 +230,9 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
             if not i:
                 continue
             for s in i.get("sources") or []:
+                held = versions.get(s["code"]) or {}
                 read.append({"code": s["code"], "legalreview": s.get("legalreview"),
-                             "version": versions.get(s["code"])})
+                             "version": held.get("version"), "sha": held.get("sha")})
             # Only a rule a reviewer approved may be enforced. Anything else is recorded.
             said = {"qualification": i.get("qualificationcode"), "code": i["code"],
                     "name": i["name"], "status": i["status"], "reason": i.get("why"),
@@ -230,7 +252,18 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
             elif i["applies"] is True and i["status"] == "expiring":
                 warnings.append(said)
     if vehicleid:
-        blockers += vehicle_blockers(conn, accountid, vehicleid, service, at, states, program)
+        blockers += vehicle_blockers(conn, accountid, vehicleid, service, at, states, program,
+                                     contract)
+        # A line that approves its vehicles, and this one is not approved for it. Said, not
+        # enforced: which vehicles a broker has approved is new to the file.
+        if contract and contract.get("requiresapproval") and not row(conn, """
+                SELECT 1 AS x FROM vehicleauthorizations WHERE accountid = :a AND vehicleid = :v
+                  AND contractid = :c AND endedon IS NULL""", a=accountid, v=vehicleid,
+                c=contract["recordid"]):
+            warnings.append({"code": "VEHICLEAPPROVAL", "vehicle": True, "reason":
+                             "This vehicle is not recorded as approved for the "
+                             + " ".join(x for x in (contract["broker"], contract.get("state")) if x)
+                             + " line."})
 
     undecided = any(w.get("code") == "CONTRACT" or w.get("status") in WAITING
                     or str(w.get("reason") or "").startswith("Applicability undecided")
@@ -241,14 +274,18 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
         run(conn, """
             INSERT INTO tripeligibility (recordid, accountid, driverid, vehicleid, legid, program,
                                          evaluatedfor, evaluatedon, evaluatedby, decision, blockers,
-                                         warnings, rulesread, shadow)
-            VALUES (:id, :a, :d, :v, :l, :p, :for, :now, :by, :dec, :b, :w, :r, :s)
+                                         warnings, rulesread, shadow, engineversion, factsread,
+                                         standingread)
+            VALUES (:id, :a, :d, :v, :l, :p, :for, :now, :by, :dec, :b, :w, :r, :s, :e, :f, :st)
         """, id=evalid, a=accountid, d=driverid, v=vehicleid, l=legid, p=program, now=utcnow(),
             by=userid, dec=decision, b=json.dumps(blockers, default=str),
-            w=json.dumps(warnings, default=str), r=json.dumps(read), s=int(shadow), **{"for": at})
+            w=json.dumps(warnings, default=str), r=json.dumps(read), s=int(shadow),
+            e=ENGINE_VERSION, f=json.dumps(seenfacts, default=str, sort_keys=True),
+            st=json.dumps(standing, default=str), **{"for": at})
     return {"evaluationid": evalid, "eligible": decision == "eligible", "decision": decision,
             "program": program, "service": service, "evaluatedfor": at, "blockers": blockers,
             "state": states[0] if states else None, "states": states,
             "warnings": warnings, "rulesread": read, "shadow": shadow,
+            "engineversion": ENGINE_VERSION,
             # What may actually be refused: approved rules and the structural facts.
             "enforceable": [b for b in blockers if b.get("enforceable")]}

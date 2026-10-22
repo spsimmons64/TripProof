@@ -70,7 +70,7 @@ def _credentials(conn: Connection, acct: str, subject: str, subjectid: str | Non
     return rows(conn, f"""
         SELECT c.recordid, c.subject, c.subjectid, c.credentialtypeid, t.code AS typecode, t.name AS typename,
                t.maxagedays, t.defaultvaliddays, t.hasamount, c.number, c.issuer, c.amount, c.issuedon, c.expireson, c.revokedon, c.revokereason,
-               c.supersedes, c.documentid, d.filename, c.notes, c.exempt, c.added
+               c.supersedes, c.documentid, d.filename, c.notes, c.exempt, c.added, c.result
         FROM credentials c
         JOIN credentialtypes t ON t.recordid = c.credentialtypeid
         LEFT JOIN documents d ON d.recordid = c.documentid
@@ -3964,6 +3964,8 @@ def end_contract_approval(driverid: str, contractid: str, request: Request,
 # What a drug screen came back as. Recorded on a screen already on file where it was filed without
 # one - from a link, or before the result was in - because a screen with no result answers nothing.
 SCREEN_RESULTS = ("negative", "negativedilute", "positive", "refusal", "cancelled")
+SCREENING_RESULTS = ("eligible", "ineligible")
+INSPECTION_RESULTS = ("passed", "failed")
 
 
 class ScreenResultIn(BaseModel):
@@ -3973,18 +3975,24 @@ class ScreenResultIn(BaseModel):
 @router.put("/credentials/{credentialid}/result")
 def set_screen_result(credentialid: str, body: ScreenResultIn, request: Request,
                       user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
-    if body.result not in SCREEN_RESULTS:
-        raise HTTPException(400, "Unknown result")
     held = row(conn, """
-        SELECT c.subject, c.subjectid FROM credentials c
+        SELECT c.subject, c.subjectid, c.result, t.code, t.category FROM credentials c
         JOIN credentialtypes t ON t.recordid = c.credentialtypeid
-        WHERE c.recordid = :c AND c.accountid = :a AND c.deleted IS NULL AND t.code = 'DRUG_SCREEN'
+        WHERE c.recordid = :c AND c.accountid = :a AND c.deleted IS NULL
     """, c=credentialid, a=user["accountid"])
     if not held:
-        raise HTTPException(404, "No such drug screen")
+        raise HTTPException(404, "No such record")
+    # A drug screen comes back as a laboratory result; any other screening as a finding about
+    # whether the driver may do the work.
+    allowed = (SCREEN_RESULTS if held["code"] == "DRUG_SCREEN"
+               else INSPECTION_RESULTS if held["subject"] == "vehicle" else SCREENING_RESULTS)
+    if body.result not in allowed:
+        raise HTTPException(400, "Unknown result")
     run(conn, "UPDATE credentials SET result = :r, updated = :now WHERE recordid = :c",
         r=body.result, now=utcnow(), c=credentialid)
-    log(conn, user, "update", "credential", credentialid, {"result": body.result},
+    # What it said before, kept with the change: an Ineligible later recorded Eligible stays on the
+    # record as having been Ineligible, and who changed it and when.
+    log(conn, user, "result", "credential", credentialid, {"result": body.result, "was": held["result"]},
         ip=client_ip(request))
     _reevaluate_subject(conn, user, held["subject"], held["subjectid"])
     saved(conn)

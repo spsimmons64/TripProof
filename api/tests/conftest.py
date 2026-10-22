@@ -9,9 +9,15 @@ import tempfile
 
 import pytest
 
+from app.dbguard import refuse_unsafe
+
 INTEGRATION = bool(os.environ.get("TEST_DB_NAME"))
 
+
 if INTEGRATION:
+    unsafe = refuse_unsafe(os.environ["TEST_DB_NAME"], os.environ.get("DB_NAME"))
+    if unsafe:
+        raise pytest.UsageError("Refusing to run: " + unsafe)
     os.environ["DB_HOST"] = os.environ.get("TEST_DB_HOST", "127.0.0.1")
     os.environ["DB_PORT"] = os.environ.get("TEST_DB_PORT", "3306")
     os.environ["DB_USER"] = os.environ.get("TEST_DB_USER", "tripproof")
@@ -33,6 +39,10 @@ def db():
     from app.cli import migrate
     from app.db import engine
     with engine.begin() as conn:
+        # Asked of the server, not the settings: the database actually connected to is the one wiped.
+        connected = conn.exec_driver_sql("SELECT DATABASE()").scalar()
+        if refuse_unsafe(connected, None):
+            pytest.exit(f"Refusing to wipe {connected!r}: " + refuse_unsafe(connected, None), returncode=2)
         conn.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 0")
         for (name, kind) in conn.exec_driver_sql("SHOW FULL TABLES").fetchall():
             conn.exec_driver_sql(f"DROP {'VIEW' if kind == 'VIEW' else 'TABLE'} `{name}`")

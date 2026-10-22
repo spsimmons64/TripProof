@@ -143,6 +143,23 @@ export function LatestDocumentDialog({ act, askForIt, asked, busy, credHistory, 
       ...(renewed ? [{ label: 'Expires', cell: latest.expireson ? date(latest.expireson) : '-' }] : []),
       // Where it came from decides whether it can be relied on, so it can be recorded here when it
       // was not recorded at filing.
+      // What the reading found, where the rule asks for one to be read: a screening on file
+      // answers nothing until somebody records whether it found the driver eligible.
+      ...(r.reviewrequired ? [{
+        label: 'Result',
+        tone: latest.result === 'eligible' ? 'st-active' : latest.result === 'ineligible'
+          ? 'st-expired' : 'st-ordered',
+        cell: (
+          <select value={latest.result || ''} disabled={busy}
+            onChange={(e) => act(async () => {
+              await api.put(`/credentials/${latest.recordid}/result`, { result: e.target.value })
+            })}>
+            <option value="" disabled>Not recorded</option>
+            <option value="eligible">Eligible</option>
+            <option value="ineligible">Not Eligible</option>
+          </select>
+        ),
+      }] : []),
       ...(credentialtype?.requiresprovenance ? [{
         label: 'Source',
         tone: ['fdle', 'ahca'].includes(latest.provenance) ? undefined : 'st-ordered',

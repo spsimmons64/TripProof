@@ -67,8 +67,27 @@ def standing(cov: dict, today: date) -> tuple[str, str] | None:
     def these(pick) -> str:
         return ", ".join(e["state"] for e in required if pick(e))
 
+    # What the reading FOUND decides before anything else about a record that has been read. A
+    # record read as disqualifying fails, whatever else is on file; one read as restricting what the
+    # driver may do clears nobody outright - each trip has to be checked against the restriction,
+    # and the rule that bars the driver outright (Georgia's five years, DCH 914.2.4) is not answered
+    # by a reader calling it a restriction.
+    def read_as(finding):
+        return [e for e in required if e.get("record") and e["record"].get("reviewstate") == "reviewed"
+                and e["record"].get("finding") == finding]
+    barred = read_as("disqualified")
+    if barred:
+        notes = "; ".join(e["record"]["note"] for e in barred if e["record"].get("note"))
+        return "failed", (f"The driving record for {', '.join(e['state'] for e in barred)} was read "
+                          f"as disqualifying" + (f": {notes}" if notes else "") + ".")
     unread = these(lambda e: e.get("record") and not e["record"]["norecord"]
                    and e["record"]["reviewstate"] != "reviewed")
+    limited = read_as("restricted")
+    if limited and not unread:
+        notes = "; ".join(e["record"]["note"] for e in limited if e["record"].get("note"))
+        return "review", (f"The driving record for {', '.join(e['state'] for e in limited)} was read "
+                          f"as restricting what this driver may do" + (f": {notes}" if notes else "")
+                          + ". It does not clear the driver - each trip has to be checked against it.")
     if unread:
         out = these(lambda e: e.get("ordered"))
         return "review", (f"On file for {unread}, waiting to be read."

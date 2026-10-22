@@ -107,7 +107,11 @@ export function VehicleRequirements({ id, credentials = [], onChanged }) {
                               name={r.name} typeid={typeid}
                               credentials={credentials.filter((c) => c.credentialtypeid === typeid)}
                               onAdd={typeid ? () => setFiling({ typeid, name: r.name }) : null}
-                              onView={setViewing} />}
+                              onView={setViewing}
+                              onResult={r.reviewrequired ? async (c, result) => {
+                                await api.put(`/credentials/${c.recordid}/result`, { result })
+                                changed()
+                              } : null} />}
                     </td>
                   </tr>
                 )}
@@ -133,20 +137,33 @@ export function VehicleRequirements({ id, credentials = [], onChanged }) {
 // What is on file for one requirement answered by a document: every one ever filed, newest first,
 // because a renewal does not erase the card it replaced - the old one still covers the trips it
 // covered, and an auditor asking about last March is asking about that one.
-function CredentialRecords({ name, typeid, credentials, onAdd, onView }) {
+// `onResult`, where the rule asks for one: an inspection counts once it is recorded as passed.
+function CredentialRecords({ name, typeid, credentials, onAdd, onView, onResult }) {
   const held = [...credentials].sort(
     (a, b) => String(b.issuedon || '').localeCompare(String(a.issuedon || '')))
   return (
     <Shell bare add={onAdd && (
       <button type="button" onClick={onAdd}><Plus size={13} /> Add record</button>)}>
       <table className="residencetable recordtable credtable">
-        <thead><tr><th>Issued</th><th>Expires</th><th>Number</th><th>Status</th><th /></tr></thead>
+        <thead><tr><th>Issued</th><th>Expires</th><th>Number</th>{onResult && <th>Result</th>}
+          <th>Status</th><th /></tr></thead>
         <tbody>
           {held.map((c) => (
             <tr key={c.recordid}>
               <td>{date(c.issuedon)}</td>
               <td>{c.expireson ? date(c.expireson) : '-'}</td>
               <td>{c.number || '-'}</td>
+              {onResult && (
+                <td className={c.result === 'passed' ? 'st-active' : c.result === 'failed'
+                  ? 'st-expired' : 'st-ordered'}>
+                  <select value={c.result || ''} aria-label="Inspection result"
+                    onChange={(e) => onResult(c, e.target.value)}>
+                    <option value="" disabled>Not recorded</option>
+                    <option value="passed">Passed</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </td>
+              )}
               <td><Badge state={c.state} /></td>
               <td className="actions">
                 {c.documentid
@@ -156,7 +173,7 @@ function CredentialRecords({ name, typeid, credentials, onAdd, onView }) {
               </td>
             </tr>
           ))}
-          {!held.length && <tr><td colSpan={5}>Nothing on file for this requirement.</td></tr>}
+          {!held.length && <tr><td colSpan={onResult ? 6 : 5}>Nothing on file for this requirement.</td></tr>}
         </tbody>
       </table>
     </Shell>
@@ -218,7 +235,7 @@ export function VehicleInspections({ id, bare, onChanged }) {
                 <td className={open ? 'st-expired' : r.defects ? 'st-active' : undefined}>
                   {!r.defects ? 'No defects'
                     : open ? `Defect: ${r.defectnote}`
-                      : `Corrected ${date(r.correctedon)}`}
+                      : `${r.correction === 'notneeded' ? 'No repair needed' : 'Corrected'} ${date(r.correctedon)}${r.certifiedbyname ? ` · certified by ${r.certifiedbyname}` : ''}`}
                 </td>
                 <td className="actions">
                   {open && (
@@ -314,7 +331,7 @@ export function VehicleInspections({ id, bare, onChanged }) {
 // The second half of 396.11(a)(3): the repair, and somebody certifying it. Without this the report is
 // a complaint rather than a record.
 function CertifyRepair({ id, report, onClose, onDone }) {
-  const [f, setF] = useState({ correctedon: '', correctedby: '', note: '' })
+  const [f, setF] = useState({ correction: 'repaired', correctedon: '', correctedby: '', note: '' })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   return (
@@ -325,7 +342,8 @@ function CertifyRepair({ id, report, onClose, onDone }) {
             setBusy(true); setErr(null)
             try {
               await api.put(`/vehicles/${id}/dvirs/${report.recordid}/corrected`, {
-                correctedon: f.correctedon, correctedby: f.correctedby || null,
+                correction: f.correction, correctedon: f.correctedon,
+                correctedby: f.correctedby || null,
                 note: f.note || null,
               })
               onDone()
@@ -341,6 +359,13 @@ function CertifyRepair({ id, report, onClose, onDone }) {
           Reported {date(report.reportedon)}: {report.defectnote}
         </div>
         <div className="profileform">
+          {/* 396.11(a)(3)(ii): repaired, or certified as needing no repair to operate safely. */}
+          <label className="field span-6">Certify That
+            <select value={f.correction} onChange={(e) => setF({ ...f, correction: e.target.value })}>
+              <option value="repaired">The Defect Was Repaired</option>
+              <option value="notneeded">Repair Is Not Needed For Safe Operation</option>
+            </select>
+          </label>
           <label className="field span-3">Corrected On
             <input type="date" value={f.correctedon} min="1900-01-01" max="2100-12-31"
               onChange={(e) => setF({ ...f, correctedon: e.target.value })} />
@@ -468,5 +493,61 @@ export function VehicleMaintenance({ id, bare, onChanged }) {
       {viewing && <DocumentViewer id={viewing.documentid} name={viewing.filename}
         onClose={() => setViewing(null)} />}
     </Shell>
+  )
+}
+
+// The broker lines this vehicle is approved for, and the day it entered each service. A state's
+// broker rules reach the vehicles that broker approved - Georgia's inspection, counted back from the
+// service date for the first one (DCH 910.2) - so this is where that is said. The same panel as a
+// driver's Broker Approvals.
+export function VehicleBrokerApprovals({ id, onChanged }) {
+  const [data, error, reload] = useLoad(() => api.get(`/vehicles/${id}/authorizations`), [id])
+  const [from, setFrom] = useState({})
+  const [busy, setBusy] = useState(null)
+  const [err, setErr] = useState(null)
+  if (!data) return error ? <div className="notice bad">{error}</div> : null
+  if (!data.contracts.length) return null
+  const today = new Date().toISOString().slice(0, 10)
+  const act = async (c, end) => {
+    setBusy(c.recordid); setErr(null)
+    try {
+      if (end) await api.post(`/vehicles/${id}/authorizations/${c.recordid}/end`, {})
+      else await api.post(`/vehicles/${id}/authorizations/${c.recordid}`,
+        { servicefrom: from[c.recordid] || today })
+      await reload(); onChanged?.()
+    } catch (e) { setErr(e.message) } finally { setBusy(null) }
+  }
+  return (
+    <div className="card qualcard">
+      <div className="infotabs"><h3>Broker Approvals</h3></div>
+      <div className="panelbody">
+      {err && <div className="notice bad">{err}</div>}
+      <table className="residencetable recordtable">
+        <thead><tr><th>Line</th><th>In Service From</th><th>Approved</th><th>Status</th><th /></tr></thead>
+        <tbody>
+          {data.contracts.map((c) => (
+            <tr key={c.recordid}>
+              <td>{[c.broker, c.state, c.contractref].filter(Boolean).join(' ')}</td>
+              <td>{c.approvalid ? date(c.servicefrom) : (
+                <input type="date" value={from[c.recordid] || today} min="1900-01-01" max="2100-12-31"
+                  aria-label="In service from"
+                  onChange={(e) => setFrom({ ...from, [c.recordid]: e.target.value })} />
+              )}</td>
+              <td>{c.approvedon ? `${date(c.approvedon)}${c.approvedbyname ? ` · ${c.approvedbyname}` : ''}` : '-'}</td>
+              <td className={c.approvalid ? 'st-active' : 'st-inactive'}>
+                {c.approvalid ? 'Approved' : 'Not Approved'}
+              </td>
+              <td className="actions">
+                <button type="button" className={c.approvalid ? 'linkbtn' : 'linkbtn edit'}
+                  disabled={busy === c.recordid} onClick={() => act(c, Boolean(c.approvalid))}>
+                  {c.approvalid ? 'End Approval' : 'Approve'}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </div>
   )
 }

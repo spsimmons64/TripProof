@@ -48,6 +48,18 @@ def capture(conn: Connection, userid: str | None = None, reason: str | None = No
     return written
 
 
+def current_snapshots(conn: Connection) -> dict[str, dict]:
+    """The version each platform rule is at now, with the hash of its immutable snapshot - what a
+    decision records it read, so the exact rule can be recovered from compliancerulesversions."""
+    return {r["rulecode"]: {"version": r["version"], "sha": r["snapshotsha"]} for r in rows(conn, """
+        SELECT v.rulecode, v.version, v.snapshotsha FROM compliancerulesversions v
+        JOIN (SELECT rulecode, MAX(version) AS version FROM compliancerulesversions
+              WHERE accountid IS NULL GROUP BY rulecode) m
+          ON m.rulecode = v.rulecode AND m.version = v.version
+        WHERE v.accountid IS NULL
+    """)}
+
+
 def current(conn: Connection) -> dict[str, int]:
     """The version each platform rule is at now, by code."""
     return {r["rulecode"]: r["version"] for r in rows(conn, """

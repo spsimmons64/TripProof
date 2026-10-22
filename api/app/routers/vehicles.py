@@ -137,7 +137,8 @@ def vehicle_dvirs(vehicleid: str, user: dict = Depends(current_user),
     _vehicle(conn, acct, vehicleid)
     held = rows(conn, """
         SELECT v.recordid, v.reportedon, v.kind, v.defects, v.defectnote, v.correctedon,
-               v.correctedby, v.certifiedon, v.documentid, v.note,
+               v.correctedby, v.certifiedon, v.correction, v.documentid, v.note,
+               (SELECT u.name FROM users u WHERE u.recordid = v.certifiedby) AS certifiedbyname,
                CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, '')) AS drivername,
                v.driverid
         FROM vehicledvirs v LEFT JOIN drivers d ON d.recordid = v.driverid
@@ -205,25 +206,104 @@ class CorrectionIn(BaseModel):
     correctedon: date
     correctedby: str | None = None
     note: str | None = None
+    # 396.11(a)(3)(ii): the carrier certifies the defect was repaired, OR that repair is unnecessary.
+    correction: str = "repaired"
+
+
+CORRECTIONS = ("repaired", "notneeded")
 
 
 @router.put("/vehicles/{vehicleid}/dvirs/{recordid}/corrected")
 def correct_dvir(vehicleid: str, recordid: str, body: CorrectionIn, request: Request,
                  user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
-    """Certify that a reported defect has been put right, which is what lets the vehicle out."""
+    """Certify that a reported defect has been put right, or that it needs no repair to be operated
+    safely - either lets the vehicle out (49 CFR 396.11(a)(3))."""
     acct = user["accountid"]
     _vehicle(conn, acct, vehicleid)
+    if body.correction not in CORRECTIONS:
+        raise HTTPException(400, "Say whether it was repaired or needs no repair")
     n = run(conn, """
         UPDATE vehicledvirs SET correctedon = :on, correctedby = :by, certifiedon = :now,
-               note = COALESCE(:n, note)
+               certifiedby = :u, correction = :c, note = COALESCE(:n, note)
         WHERE recordid = :id AND accountid = :a AND vehicleid = :v AND deleted IS NULL
           AND defects = 1 AND correctedon IS NULL
-    """, on=body.correctedon, by=(body.correctedby or "").strip()[:160] or None,
+    """, on=body.correctedon, by=(body.correctedby or "").strip()[:160] or None, c=body.correction,
+        u=user["recordid"],
         now=localnow(user["timezone"]).date(), n=(body.note or "").strip()[:512] or None,
         id=recordid, a=acct, v=vehicleid).rowcount
     if not n:
         raise HTTPException(404, "There is no outstanding defect on that report")
-    log(conn, user, "dvir-corrected", "vehicle", vehicleid, {"recordid": recordid},
+    log(conn, user, "dvir-corrected", "vehicle", vehicleid,
+        {"recordid": recordid, "correction": body.correction},
+        ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------------------------------------
+# Which broker lines this vehicle is approved for
+# ------------------------------------------------------------------------------------------------
+# A broker approves vehicles one by one, and a state's broker rules reach the vehicles it approved -
+# from the day each entered that service, which is what Georgia's initial inspection window counts
+# back from (DCH 910.2). The same shape as a driver's approvals: ended, never deleted.
+class VehicleApprovalIn(BaseModel):
+    servicefrom: date
+
+
+@router.get("/vehicles/{vehicleid}/authorizations")
+def vehicle_authorizations(vehicleid: str, user: dict = Depends(current_user),
+                           conn: Connection = Depends(get_conn)):
+    """The lines a vehicle can be approved for - every Medicaid line, and any line that approves
+    its vehicles - and whether this one is."""
+    acct = user["accountid"]
+    _vehicle(conn, acct, vehicleid)
+    return {"contracts": rows(conn, f"""
+        SELECT c.recordid, c.broker, c.state, c.contractref, c.program, a.recordid AS approvalid,
+               a.servicefrom, a.approvedon, u.name AS approvedbyname
+        FROM companycontracts c
+        LEFT JOIN vehicleauthorizations a ON a.contractid = c.recordid AND a.vehicleid = :v
+             AND a.endedon IS NULL
+        LEFT JOIN users u ON u.recordid = a.approvedby
+        WHERE c.accountid = :a AND c.status <> 'ended' AND {payerlines.live("c")}
+          AND (c.program = 'medicaid' OR c.requiresapproval = 1)
+          AND (c.effectiveto IS NULL OR c.effectiveto >= CURDATE())
+        ORDER BY c.broker, c.state
+    """, a=acct, v=vehicleid)}
+
+
+@router.post("/vehicles/{vehicleid}/authorizations/{contractid}")
+def approve_vehicle(vehicleid: str, contractid: str, body: VehicleApprovalIn, request: Request,
+                    user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    acct = user["accountid"]
+    _vehicle(conn, acct, vehicleid)
+    if not row(conn, "SELECT 1 AS x FROM companycontracts WHERE recordid = :c AND accountid = :a",
+               c=contractid, a=acct):
+        raise HTTPException(404, "No such payer line")
+    if row(conn, "SELECT 1 AS x FROM vehicleauthorizations WHERE vehicleid = :v AND contractid = :c "
+                 "AND accountid = :a AND endedon IS NULL", v=vehicleid, c=contractid, a=acct):
+        raise HTTPException(409, "The vehicle is already approved for this line")
+    run(conn, """
+        INSERT INTO vehicleauthorizations (recordid, accountid, vehicleid, contractid, servicefrom,
+                                           approvedon, approvedby)
+        VALUES (:id, :a, :v, :c, :f, :now, :u)
+    """, id=newid(), a=acct, v=vehicleid, c=contractid, f=body.servicefrom, now=utcnow(),
+        u=user["recordid"])
+    log(conn, user, "approve", "vehicle", vehicleid,
+        {"contract": contractid, "servicefrom": str(body.servicefrom)}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+@router.post("/vehicles/{vehicleid}/authorizations/{contractid}/end")
+def end_vehicle_approval(vehicleid: str, contractid: str, request: Request,
+                         user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    n = run(conn, """
+        UPDATE vehicleauthorizations SET endedon = :now, endedby = :u
+        WHERE vehicleid = :v AND contractid = :c AND accountid = :a AND endedon IS NULL
+    """, now=utcnow(), u=user["recordid"], v=vehicleid, c=contractid, a=user["accountid"]).rowcount
+    if not n:
+        raise HTTPException(404, "The vehicle is not approved for this line")
+    log(conn, user, "unapprove", "vehicle", vehicleid, {"contract": contractid},
         ip=client_ip(request))
     saved(conn)
     return {"ok": True}

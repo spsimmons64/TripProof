@@ -498,6 +498,7 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
 
     if vehicleid:
         facts.update(vehicle_facts(conn, accountid, vehicleid))
+        facts.update(_vehicle_lines(conn, accountid, vehicleid, facts.get("company.medicaidstates")))
 
 
     if driverid:
@@ -662,6 +663,23 @@ def _prior_violation(conn: Connection, accountid: str, driverid: str) -> dict:
     }
 
 
+def _vehicle_lines(conn: Connection, accountid: str, vehicleid: str,
+                   companystates: list | None) -> dict:
+    """The broker lines this vehicle is approved for, and the states whose Medicaid program those
+    are. A company running Medicaid for some state, with no approval recorded on this vehicle at
+    all, has not said which broker the vehicle serves - unknown, never "none"."""
+    held = rows(conn, f"""
+        SELECT c.recordid, c.state, c.program FROM vehicleauthorizations a
+        JOIN companycontracts c ON c.recordid = a.contractid
+        WHERE a.accountid = :a AND a.vehicleid = :v AND a.endedon IS NULL
+          AND c.status = 'active' AND {_payerlines.live("c")}
+    """, a=accountid, v=vehicleid)
+    states = sorted({(h["state"] or "").upper() for h in held if h["program"] == "medicaid"} - {""})
+    if not held and companystates:
+        states = None
+    return {"vehicle.contracts": [h["recordid"] for h in held], "vehicle.medicaidstates": states}
+
+
 def _commercial(conn: Connection, accountid: str, driverid: str) -> bool | None:
     held = row(conn, """SELECT commercial FROM driverlicenses
                         WHERE accountid = :a AND driverid = :d AND active = 1 LIMIT 1""",
@@ -756,6 +774,8 @@ UNANSWERED = {
                     "established (Driver Information).",
     "company.medicaidstates": "Nobody has set up a payer line, so which state's Medicaid program "
                               "this company carries for is not known (Payers).",
+    "vehicle.medicaidstates": "Nobody has recorded which broker lines this vehicle is approved for "
+                              "(Broker Approvals on the vehicle).",
     "fleet.multiplecmv": "Not enough is recorded about the vehicles to say whether the company runs "
                          "more than one commercial motor vehicle (Vehicles).",
     "driver.licensecommercial": "Nobody has said whether the license this driver drives on is a "

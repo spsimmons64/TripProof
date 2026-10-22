@@ -23,7 +23,7 @@ from sqlalchemy.engine import Connection
 from app import ruleversions, tripcheck
 from app.db import newid, rows, run, run_many, utcnow
 
-ENGINE_VERSION = "2.0"
+from app.engine import ENGINE_VERSION  # noqa: E402 - kept importable from here, as it was
 
 # The checks that are not a rule in the catalog: they are facts about the leg itself.
 STRUCTURAL = {

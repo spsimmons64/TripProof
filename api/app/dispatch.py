@@ -136,7 +136,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
         FROM drivers WHERE accountid = :a AND deleted IS NULL
         ORDER BY lastname, firstname
     """, a=accountid):
-        why, blocks = [], []
+        why, blocks, drafts = [], [], []
 
         # May they drive at all? The compliance engine owns this question; dispatch does not
         # get a second opinion on it.
@@ -151,8 +151,12 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
                        for r in rules.for_driver(conn, accountid, d["recordid"], f)]
             stops = [r for r in general if r and r["applies"] and r["gate"] == "hardstop"
                      and r["status"] in ("expired", "failed", "overdue")]
-            if stops:
-                blocks.append(f"May not drive - {_because(stops[0])}")
+            # An approved rule stops them; one still in draft is said and stops nobody.
+            held = [r for r in stops if _approved(r)]
+            if held:
+                blocks.append(f"May not drive - {_because(held[0])}")
+            elif stops:
+                drafts.append(f"{_because(stops[0])} (rule not yet approved)")
             else:
                 why.append("Qualified to drive")
 
@@ -163,7 +167,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
 
         # Hours are a warning, not a bar: 14-90.006 is the company's to manage, and a
         # dispatcher looking at a near-limit driver may still have no alternative.
-        warn = []
+        warn = list(drafts)
         off = roster.get(d["recordid"])
         if off:
             warn.append(off)
@@ -291,8 +295,10 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
                    for r in rules.for_vehicle(conn, accountid, v["recordid"], f, today=today)]
         stops = [r for r in general if r and r["applies"] and r["gate"] == "hardstop"
                  and r["status"] in ("expired", "failed", "overdue")]
-        if stops:
-            blocks.append(f"Cannot be dispatched - {_because(stops[0])}")
+        held = [r for r in stops if _approved(r)]
+        drafts = [] if held or not stops else [f"{_because(stops[0])} (rule not yet approved)"]
+        if held:
+            blocks.append(f"Cannot be dispatched - {_because(held[0])}")
         else:
             why.append("Cleared to dispatch")
         if needs["lift"] and not v["lift"]:
@@ -310,7 +316,7 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
         out.append({
             "vehicleid": v["recordid"],
             "name": f"{v['externalid']} · {v['make'] or ''} {v['model'] or ''}".strip(" ·"),
-            "available": not blocks, "blocked": blocks, "because": why,
+            "available": not blocks, "blocked": blocks, "because": why, "warnings": drafts,
         })
     out.sort(key=lambda x: (not x["available"], x["name"]))
     return out
@@ -410,28 +416,41 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
     legid = leg.get("legid")
     states = tripcheck.trip_states(leg)
     full = tripcheck.leg_context(conn, accountid, legid) if legid else leg
-    program = tripcheck.program_of(conn, accountid, full, when)[0] if full else None
+    program, contract, _origin = (tripcheck.program_of(conn, accountid, full, when) if full
+                                  else (None, None, None))
 
-    def driver_blocks(candidate: str) -> list[str]:
+    def said_of(b: dict) -> str:
+        return b.get("reason") or b.get("name") or b["code"]
+
+    def driver_check(candidate: str) -> tuple[list[str], list[str]]:
         said = tripcheck.check(conn, accountid, candidate, None, legid=legid,
                                proposed=None if legid else leg, at=when, record=False)
         # The vehicle's own problems are the vehicle's, shown against it rather than every driver;
         # and whether they are hired is already said by the candidate list itself.
-        return [b.get("reason") or b.get("name") or b["code"] for b in said["blockers"]
+        mine = [b for b in said["blockers"]
                 if not b.get("vehicle") and b["code"] not in ("HIRED", "DRIVER")]
+        return split(mine)
+
+    def split(found: list[dict]) -> tuple[list[str], list[str]]:
+        """What refuses the assignment, and what only warns: the same line the assignment draws.
+        A rule nobody has approved is shown and never blocks - the list must not grey out somebody
+        the assignment itself would accept."""
+        return ([said_of(b) for b in found if b.get("enforceable")],
+                [f"{said_of(b)} (rule not yet approved)" for b in found if not b.get("enforceable")])
 
     away = _unavailable(conn, accountid, when)
     for d in drivers:
-        d["blocked"] = d["blocked"] + driver_blocks(d["driverid"])
+        stop, warn = driver_check(d["driverid"])
+        d["blocked"] = d["blocked"] + stop
+        d["warnings"] = d["warnings"] + warn
         if d["driverid"] in away["drivers"]:
             d["warnings"] = d["warnings"] + [away["drivers"][d["driverid"]]]
         d["available"] = not d["blocked"]
     for v in vehicles:
-        v["blocked"] = v["blocked"] + [
-            b.get("reason") or b.get("name") or b["code"]
-            for b in tripcheck.vehicle_blockers(conn, accountid, v["vehicleid"], service, when, states,
-                                                program)]
-        v.setdefault("warnings", [])
+        stop, warn = split(tripcheck.vehicle_blockers(conn, accountid, v["vehicleid"], service, when,
+                                                      states, program, contract))
+        v["blocked"] = v["blocked"] + stop
+        v["warnings"] = v.get("warnings", []) + warn
         if v["vehicleid"] in away["vehicles"]:
             v["warnings"] = v["warnings"] + [away["vehicles"][v["vehicleid"]]]
         v["available"] = not v["blocked"]
@@ -458,3 +477,9 @@ def _unavailable(conn: Connection, accountid: str, when: datetime) -> dict:
     """, a=accountid, when=when):
         out["vehicles"][r["who"]] = f"Off the road - {r['reason']}"
     return out
+
+
+def _approved(item: dict) -> bool:
+    """Whether a requirement stands on a rule a reviewer approved - the same test the trip check
+    applies before it will refuse anything."""
+    return any(s.get("legalreview") == "approved" for s in (item.get("sources") or [item]))
