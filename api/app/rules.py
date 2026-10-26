@@ -108,6 +108,7 @@ FACT_LABELS = {
     "driver.cmv": "operates a commercial motor vehicle", "driver.cdl": "operates a CDL vehicle",
     "driver.heavy": "operates 26,001 lb or more", "driver.chapter1490": "Chapter 14-90 operation",
     "driver.employee": "employee", "fleet.wheelchair": "wheelchair vehicles in the fleet",
+    "driver.wheelchairvehicle": "drives a wheelchair vehicle",
     "fleet.cmv_federal": "FMCSA-covered vehicles in the fleet",
     "reach.part391interstate": "Part 391 reached by interstate operation",
 }
@@ -1069,6 +1070,10 @@ def _credential_life(got):
     # the record would lapse with no date on screen to explain why. Same call the evaluator makes.
     window = validity.credential_window(out["effectiveon"], out.get("expireson"), None,
                                         None if out.get("exempt") else maxage, 0, default)
+    # Whether the end date is only the type's assumption - nothing printed, no age limit, just "a
+    # certificate like this is usually good for N days". A rule that sets its own interval knows
+    # better, and `horizon` lets it: see there.
+    out["assumedexpiry"] = (out.get("expireson") is None and default is not None and not maxage)
     out["expireson"] = None if window.end is None else (window.end - timedelta(days=1)).date()
     return out
 
@@ -1337,7 +1342,12 @@ def horizon(rule: dict, evidence: dict | None, usdot: str | None = None) -> date
     # Where the rule sets an interval, a date typed onto the record cannot outlast it: a Georgia
     # inspection filed as good for a year is still due six months after it was done (DCH 910.2).
     due = renewed(rule, evidence["effectiveon"]) if evidence.get("effectiveon") else None
-    if due and (not expires or due < expires):
+    # An end date the record only assumed from its type gives way to the rule's own interval: the
+    # type's 183 days ended a Georgia inspection on 02/13 when "every six calendar months" from
+    # 08/15 is 02/15, and its 365 days put an annual inspection a day short across the year.
+    if due and evidence.get("assumedexpiry"):
+        expires = due
+    elif due and (not expires or due < expires):
         expires = due
     if not expires and rule.get("recurrence") == "usdotbiennial" and evidence.get("effectiveon"):
         expires = usdot_next_due(usdot, evidence["effectiveon"])
@@ -1415,6 +1425,17 @@ def deadline(rule: dict, hiredon: date | None, evidence: dict | None = None,
             due = min(d for d in (due, renewed(rule, lastmvr)) if d)
         return due
     return None
+
+
+def cited_by(rule: dict) -> str:
+    """The authority and its citation, without saying one word twice where the citation already
+    begins with the authority's own short name - "Georgia DCH NEMT Part II", not "Georgia DCH DCH
+    NEMT Part II". The same joining the requirements list does on screen."""
+    authority, citation = rule.get("authority") or "", rule.get("citation") or ""
+    tail = authority.split(" ")[-1] if authority else ""
+    if tail and citation.startswith(f"{tail} "):
+        return f"{authority}{citation[len(tail):]}"
+    return " ".join(x for x in (authority, citation) if x)
 
 
 def stand(rule: dict, evidence: dict | None, today: date,
@@ -1548,6 +1569,13 @@ def stand(rule: dict, evidence: dict | None, today: date,
             (f"Training recorded {when:%m/%d/%Y}. " if when else "Training recorded. ")
             + SAYS["untested"])
     if finding in FAILING:
+        # Under 21 is failed by more than one rule - the federal one for interstate CMV drivers,
+        # Georgia DCH and DHS for their own NEMT drivers - and each is said in its own terms. The
+        # federal sentence printed beside a Georgia Medicaid rule (MODIVTEST B-08) cited a rule that
+        # was not the one refusing the trip.
+        if finding == "notage21" and not (rule.get("citation") or "").startswith("49 CFR 391.11"):
+            return "failed", (f"This driver is under 21. {cited_by(rule)} requires a driver to be "
+                              f"at least 21, and nothing can be filed that changes it.")
         return "failed", evidence.get("said") or SAYS.get(finding, f"The record on file came back {finding}.")
     if finding in REVIEWING:
         return "review", SAYS.get(finding, "A possible match was found - somebody has to settle it.")
@@ -2187,6 +2215,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
         }
         if reaches is not True and rule["extendable"] and WIDER.get(choice.get("applyto")):
             reaches, because, asking = True, "company", choice.get("reason")
+        stale = False                     # a query on file that predates a violation - see below
         if reaches is False:
             status = "notapplicable"
             said = "; ".join(dict.fromkeys(explain_false(expr, facts)))
@@ -2221,7 +2250,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
             # old query, there simply is not one that answers this yet.
             if (rule.get("violationresets") and evidence and violatedon
                     and evidence.get("effectiveon") and evidence["effectiveon"] < violatedon):
-                evidence, instead = None, None
+                evidence, instead, stale = None, None, True
             waiting_on = None if evidence else _ordered(conn, accountid, driverid, rule["evidencesource"])
             status, why = stand(rule, evidence, today, waiting_on)
             # A screening a rule asks somebody to read is answered by what the reading found, not
@@ -2366,8 +2395,10 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
         if rule.get("evidencekind") == "fact" and not evidence and status == "pending":
             want = (rule["evidencesource"] or "").partition(":")[2]
             why = UNANSWERED.get(want, why)
+        # Only where there WAS a query and it predates the violation. With none on file at all there
+        # is no "last query" to speak of (MODIVTEST B-09), and the ordinary "nothing on file" stands.
         if (rule.get("violationresets") and violatedon and not evidence
-                and status == "pending"):
+                and status == "pending" and stale):
             why = (f"The last query was run before the violation of "
                    f"{violatedon:%m/%d/%Y}. Run a new one.")
         dueon = deadline(rule, hiredon, evidence, lastmvr)
@@ -2389,6 +2420,9 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                     # red when it lapses; it just does not belong on a screen of exceptions.
                     "scheduled": bool(rule.get("scheduled")),
                     "applies": reaches, "status": status, "why": why, "restricted": restricted,
+                    # Which unanswered facts leave it undecided, so the screen can offer to ask the
+                    # driver the one question that settles it.
+                    "unanswered": unanswered(expr, facts) if reaches is None else [],
                     # Where the company has said another requirement's evidence answers this one
                     # (14-90.0041(1)(b): its own medical standard in place of FDOT's form), the two
                     # are one thing to keep on file, and the row folds into that one.

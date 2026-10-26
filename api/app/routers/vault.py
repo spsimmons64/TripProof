@@ -358,15 +358,15 @@ def _driver_phone(body: DriverIn):
 def create_driver(body: DriverIn, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
     _driver_phone(body)
     did = newid()
+    # The record, then everything the form says written onto it by the same write an edit uses.
     run(conn, """
-        INSERT INTO drivers (recordid, accountid, externalid, drivernumber, firstname, lastname, dob,
-                             licensenumber, licensestate, licensesince, email, phone, hiredon, terminatedon)
-        VALUES (:id, :a, :ext, :num, :f, :l, :dob, :lic, :ls, :lsince, :em, :ph, :h, :t)
-    """, id=did, a=user["accountid"], ext=body.externalid or None,
-        num=drivers.next_number(conn, user["accountid"]), f=body.firstname, l=body.lastname, dob=body.dob,
-        lic=body.licensenumber, ls=body.licensestate, lsince=body.licensesince, em=body.email, ph=body.phone,
-        h=body.hiredon, t=body.terminatedon)
-    log(conn, user, "create", "driver", did)
+        INSERT INTO drivers (recordid, accountid, drivernumber, firstname, lastname)
+        VALUES (:id, :a, :num, :f, :l)
+    """, id=did, a=user["accountid"], num=drivers.next_number(conn, user["accountid"]),
+        f=body.firstname, l=body.lastname)
+    _write_driver(conn, user["accountid"], did, body)
+    randompool.reconcile(conn, user["accountid"], did)
+    log(conn, user, "create", "driver", did, body.model_dump(mode="json"))
     return {"recordid": did}
 
 
@@ -4705,6 +4705,15 @@ def requirement_detail(driverid: str, code: str, user: dict = Depends(current_us
                          for src in (i.get("sources") or [i]))]
         derived = {"status": (me or {}).get("status"), "why": (me or {}).get("why"),
                    "missing": short}
+    # Which unanswered facts leave it undecided for this driver, so the dialog can ask the driver the
+    # question that settles it rather than for a document that may not even be owed.
+    held = row(conn, "SELECT applieswhen FROM compliancerules WHERE recordid = :r", r=rule["recordid"])
+    expr = rules.condition((held or {}).get("applieswhen"))
+    if expr:
+        f = factset.assemble(conn, acct, driverid=driverid)["facts"]
+        rule["unanswered"] = rules.unanswered(expr, f) if rules.applies(expr, f) is None else []
+    else:
+        rule["unanswered"] = []
     return {
         "derived": derived,
         "requirement": rule,
@@ -4928,15 +4937,16 @@ def set_random_pool(driverid: str, body: RandomPoolIn, request: Request,
             "leftpoolon": str(held["leftpoolon"]) if held and held["leftpoolon"] else None}
 
 
-@router.put("/drivers/{driverid}")
-def update_driver(driverid: str, body: DriverIn, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
-    _driver_phone(body)
-    # An application is the driver's own statement, and it is signed. Nobody edits it from this side
-    # while it is in their hands or waiting to be read; decide on it first.
-    standing = row(conn, "SELECT status FROM drivers WHERE recordid = :id AND accountid = :a AND deleted IS NULL",
-                   id=driverid, a=user["accountid"])
-    if standing and standing["status"] in APPLYING:
-        raise HTTPException(409, "This driver is still an applicant. Their application cannot be edited here.")
+def _write_driver(conn: Connection, accountid: str, driverid: str, body: DriverIn) -> bool:
+    """Everything the driver form says, written onto the record. The one write, used by adding a
+    driver and by editing one: adding a driver wrote only the names, licence and dates, so the
+    address, the operation, the emergency contact and English proficiency typed into the same form
+    were dropped - a Georgia license then read as "residence unknown" until somebody re-entered the
+    address through the edit screen.
+
+    Not written, on purpose: the drug and alcohol program and random-pool membership are worked out
+    (migrations 333 and 249), the first-licensed date is read off the licenses (332), and
+    chapter1490 follows the transit program assignments (PUT /drivers/{id}/transit-programs)."""
     r = run(conn, """
         UPDATE drivers SET externalid = :ext, firstname = :f, lastname = :l, dob = :dob, licensenumber = :lic,
                licensestate = :ls, email = :em, phone = :ph,
@@ -4946,20 +4956,29 @@ def update_driver(driverid: str, body: DriverIn, user: dict = Depends(editor), c
                endorsementsneeded = :needs, englishproficient = :english, stub = 0,
                updated = :now
         WHERE recordid = :id AND accountid = :a AND deleted IS NULL
-    """, id=driverid, a=user["accountid"], ext=body.externalid or None, f=body.firstname, l=body.lastname, dob=body.dob,
-        lic=body.licensenumber, ls=body.licensestate, lsince=body.licensesince, em=body.email, ph=body.phone,
+    """, id=driverid, a=accountid, ext=body.externalid or None, f=body.firstname, l=body.lastname, dob=body.dob,
+        lic=body.licensenumber, ls=body.licensestate, em=body.email, ph=body.phone,
         en=(body.emergencyname or None), ep=(body.emergencyphone or None),
         h=body.hiredon, t=body.terminatedon, a1=body.address1, a2=body.address2, city=body.city,
         st=(body.state or "").upper()[:2] or None, zip=body.zip,
         operation=body.operation if body.operation in OPERATION else "noncmv",
-        # chapter1490 is not written here: it follows the driver's transit safety program
-        # assignments (PUT /drivers/{id}/transit-programs), so a save of this form cannot undo them.
         # Kept as the letters themselves, in one order, so "P, S" and "sp" are one answer.
         needs="".join(rules.ENDORSEMENTS(body.endorsementsneeded)) or None,
         english=None if body.englishproficient is None else int(body.englishproficient),
-        dat=body.datprogram if body.datprogram in eligibility.PROGRAMMES else None,
         now=utcnow())
-    if not r.rowcount:
+    return bool(r.rowcount)
+
+
+@router.put("/drivers/{driverid}")
+def update_driver(driverid: str, body: DriverIn, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    _driver_phone(body)
+    # An application is the driver's own statement, and it is signed. Nobody edits it from this side
+    # while it is in their hands or waiting to be read; decide on it first.
+    standing = row(conn, "SELECT status FROM drivers WHERE recordid = :id AND accountid = :a AND deleted IS NULL",
+                   id=driverid, a=user["accountid"])
+    if standing and standing["status"] in APPLYING:
+        raise HTTPException(409, "This driver is still an applicant. Their application cannot be edited here.")
+    if not _write_driver(conn, user["accountid"], driverid, body):
         raise HTTPException(404, "Driver not found")
     # A termination date typed in here, or a move to work Part 382 does not reach, takes the
     # driver out of the random pool for the same reason deactivating them does.

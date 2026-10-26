@@ -115,7 +115,15 @@ export default function UploadDocument() {
   // not a link that may then be used by whoever picks the phone up next.
   const send = async (how = signed) => {
     const body = new FormData()
-    if (asked.questionnaire) {
+    if (asked.licenseaction) {
+      if (!q.licenseaction) { setBad({ licenseaction: 'Please answer' }); return }
+      if (!how) { setBad({ signature: 'Sign it before sending' }); return }
+      body.append('licenseaction', q.licenseaction)
+      if (how.design) {
+        body.append('signature', how.typedname)
+        body.append('fontkey', how.fontkey)
+      }
+    } else if (asked.questionnaire) {
       if (!q.priorviolation) { setBad({ priorviolation: 'Please answer' }); return }
       if (q.priorviolation === 'yes' && !q.prioremployer.trim()) {
         setBad({ prioremployer: 'Say which employer you applied to' })
@@ -158,7 +166,7 @@ export default function UploadDocument() {
     try {
       body.append('dob', v.dob)
       body.append('ssn', v.ssn)
-      if (!asked.license && !asked.questionnaire) {
+      if (!asked.license && !asked.questionnaire && !asked.licenseaction) {
         if (v.exempt) {
           body.append('exempt', 'true')
         } else {
@@ -251,6 +259,35 @@ export default function UploadDocument() {
     </>
   )
 
+  // Whether a license has been revoked, suspended or denied - the question Florida's license-status
+  // notice turns on - answered and signed the same way the questionnaire is.
+  const licenseActionForm = (
+    <>
+      <p>
+        In the last three years, has any driver's license or permit you held been revoked,
+        suspended, or denied?
+      </p>
+      <div className="asklist">
+        <Ask label="Your answer" name="licenseaction"
+          options={[['no', 'No'], ['yes', 'Yes']]} value={q.licenseaction || ''}
+          onChange={(value) => {
+            setBad(({ licenseaction: _g, ...rest }) => rest)
+            setQ({ ...q, licenseaction: value })
+          }} />
+        <div className="fielderrline"><FieldError message={bad.licenseaction} /></div>
+      </div>
+      <div className="signhereblock flush">
+        <p className="muted small">
+          I certify that the answer above is true and complete to the best of my knowledge.
+        </p>
+        <SignHere busy={busy}
+          action="Sign Your Answer" submit="Send It"
+          lookup={async ({ dob, ssn }) => (await call(`/${token}/open`, { dob, ssn })).signature}
+          onSubmit={(how) => { setSigned(how); send(how) }} />
+      </div>
+    </>
+  )
+
   const licenseForm = (
     <>
       <div className="profileform">
@@ -307,7 +344,8 @@ export default function UploadDocument() {
           </div>
         ) : (
           <div className="stack">
-            {asked.questionnaire ? questionnaireForm : asked.license ? licenseForm : (
+            {asked.licenseaction ? licenseActionForm : asked.questionnaire ? questionnaireForm
+              : asked.license ? licenseForm : (
             <div className="profileform">
               {/* A driver who is exempt has nothing to send, and saying so is the answer rather
                   than a gap. It comes first because it decides whether any of the rest is asked.
@@ -346,11 +384,12 @@ export default function UploadDocument() {
               </label>
             </div>
             )}
-            {!asked.license && !asked.questionnaire && !v.exempt && (
+            {!asked.license && !asked.questionnaire && !asked.licenseaction && !v.exempt && (
               <p className="muted small">A clear photograph is fine. PDF or a photo, up to 20 MB.</p>
             )}
-            {/* The questionnaire carries its own action row, with signing beside sending. */}
-            {!asked.questionnaire && (
+            {/* The questionnaire and the license question carry their own action row, with
+                signing beside sending. */}
+            {!asked.questionnaire && !asked.licenseaction && (
               <div className="formactions">
                 <button type="button" className="primary right" disabled={busy} onClick={send}>
                   {busy ? 'Sending…' : <><Upload size={15} /> Send it</>}

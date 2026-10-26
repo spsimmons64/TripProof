@@ -48,11 +48,14 @@ ACCEPTS = ("application/pdf", "image/jpeg", "image/png", "image/heic", "image/he
 
 # What there is no exemption from. A driver either holds a license or does not drive, so offering
 # "I am exempt" against one is offering an answer that cannot be true.
-NO_EXEMPTION = ("DRIVER_LICENSE", "PREEMP_DA_QUESTIONNAIRE")
+NO_EXEMPTION = ("DRIVER_LICENSE", "PREEMP_DA_QUESTIONNAIRE", "LICENSE_ACTION_QUESTION")
 
 # What is asked for is not always a document. 49 CFR 40.25(j) is a question only the applicant can
 # answer, so the link shows the question instead of a file picker and what comes back is an answer.
 QUESTIONNAIRE = "PREEMP_DA_QUESTIONNAIRE"
+# Whether a license has been revoked, suspended or denied in the last three years - the question
+# that decides whether Florida's license-status notice reaches a 14-90 driver.
+LICENSE_QUESTION = "LICENSE_ACTION_QUESTION"
 
 
 def link_for(token: str) -> str:
@@ -70,7 +73,8 @@ def create(conn: Connection, accountid: str, driverid: str, code: str,
     # driver can be asked for one.
     kind = row(conn, "SELECT recordid, code, name FROM credentialtypes "
                      "WHERE code = :c AND subject = 'driver' "
-                     "AND (active = 1 OR code IN ('DRIVER_LICENSE', :q))", c=code, q=QUESTIONNAIRE)
+                     "AND (active = 1 OR code IN ('DRIVER_LICENSE', :q, :l))", c=code, q=QUESTIONNAIRE,
+                     l=LICENSE_QUESTION)
     if not kind:
         raise HTTPException(400, "That is not a document a driver can be asked for")
     run(conn, """
@@ -136,6 +140,7 @@ def what_is_being_asked(token: str, conn: Connection = Depends(get_conn)):
             "firstname": (held["firstname"] or "").title(),
             "license": held["credentialcode"] == "DRIVER_LICENSE",
             "questionnaire": held["credentialcode"] == QUESTIONNAIRE,
+            "licenseaction": held["credentialcode"] == LICENSE_QUESTION,
             "exemptable": held["credentialcode"] not in NO_EXEMPTION}
 
 
@@ -158,9 +163,71 @@ def open_it(token: str, body: Prove, conn: Connection = Depends(get_conn)):
             "firstname": (held["firstname"] or "").title(),
             "license": held["credentialcode"] == "DRIVER_LICENSE",
             "questionnaire": held["credentialcode"] == QUESTIONNAIRE,
+            "licenseaction": held["credentialcode"] == LICENSE_QUESTION,
             "signature": ({"typedname": sig["typedname"], "fontkey": sig["fontkey"]}
                           if sig else None),
             "exemptable": held["credentialcode"] not in NO_EXEMPTION}
+
+
+def _keep_step(conn: Connection, held: dict, app_: dict | None, data: dict, step: str) -> None:
+    """An answer given by link, kept where the engine reads it: on the driver's application where
+    they have one, and in driveranswers - the same step, the same shape - where the office entered
+    them and there is none (MODIVTEST B-04)."""
+    if app_:
+        run(conn, "UPDATE driverapplications SET data = :x, updated = NOW() WHERE recordid = :i",
+            x=json.dumps(data), i=app_["recordid"])
+        return
+    run(conn, """
+        INSERT INTO driveranswers (accountid, driverid, step, data, answeredon, requestid)
+        VALUES (:a, :d, :s, :x, :now, :r)
+        ON DUPLICATE KEY UPDATE data = VALUES(data), answeredon = VALUES(answeredon),
+                                requestid = VALUES(requestid)
+    """, a=held["accountid"], d=held["driverid"], s=step, x=json.dumps(data["steps"][step]),
+        now=utcnow(), r=held["recordid"])
+
+
+async def _take_license_question(conn: Connection, request: Request, held: dict, licenseaction,
+                                 signature=None, fontkey=None, ssn=None, dob=None):
+    """Whether a license of theirs has been revoked, suspended or denied in the last three years -
+    asked of a driver who has not answered it on an application. Signed, like the questionnaire:
+    it is their statement, and it decides whether Florida's license-status notice reaches them."""
+    said = (licenseaction or "").strip().lower()
+    if said not in ("yes", "no"):
+        raise HTTPException(400, "Answer the question")
+    sig = signatures.current(conn, held["accountid"], "driver", held["driverid"])
+    typed = (signature or "").strip()
+    if not sig and not typed:
+        raise HTTPException(400, "Sign your answer before sending it")
+    app_ = row(conn, """
+        SELECT recordid, data FROM driverapplications
+        WHERE driverid = :d AND accountid = :a ORDER BY startedon DESC LIMIT 1
+    """, d=held["driverid"], a=held["accountid"])
+    try:
+        data = json.loads(app_["data"] or "{}") or {} if app_ else {}
+    except ValueError:
+        data = {}
+    data.setdefault("steps", {}).setdefault("2", {})["licenseaction"] = said
+    _keep_step(conn, held, app_, data, "2")
+    run(conn, "UPDATE uploadrequests SET uploadedon = :now WHERE recordid = :id",
+        now=utcnow(), id=held["recordid"])
+    name = f'{held["firstname"]} {held["lastname"]}'.strip()
+    if not sig:
+        try:
+            sig = signatures.adopt(conn, held["accountid"], "driver", held["driverid"], name,
+                                   typed, (fontkey or "modern"), "dob_ssn", client_ip(request),
+                                   request.headers.get("user-agent"), ssn=ssn, dob=dob)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    signatures.sign(conn, held["accountid"], sig["recordid"], LICENSE_QUESTION, held["driverid"],
+                    f"License revoked, suspended or denied in the last three years - answered {said}",
+                    ip=client_ip(request), useragent=request.headers.get("user-agent"))
+    log(conn, None, "answered-on-request", "driver", held["driverid"],
+        {"credentialcode": held["credentialcode"], "answer": said}, ip=client_ip(request),
+        accountid=held["accountid"])
+    events.record(conn, held["accountid"], "driver", held["driverid"], "uploaded",
+                  held["credentialcode"], label=f"{name.title()} answered the license question")
+    saved(conn)
+    return {"ok": True, "accountname": held["accountname"], "document": held["document"]}
 
 
 async def _take_questionnaire(conn: Connection, request: Request, held: dict, priorviolation,
@@ -187,10 +254,8 @@ async def _take_questionnaire(conn: Connection, request: Request, held: dict, pr
         SELECT recordid, data FROM driverapplications
         WHERE driverid = :d AND accountid = :a ORDER BY startedon DESC LIMIT 1
     """, d=held["driverid"], a=held["accountid"])
-    if not app_:
-        raise HTTPException(409, "This driver has no application to record the answer on")
     try:
-        data = json.loads(app_["data"] or "{}") or {}
+        data = json.loads(app_["data"] or "{}") or {} if app_ else {}
     except ValueError:
         data = {}
     # Whatever they hold showing the return-to-duty process was done - the SAP's determination, a
@@ -207,8 +272,7 @@ async def _take_questionnaire(conn: Connection, request: Request, held: dict, pr
         "priorrtd": (priorrtd or "").strip().lower() or None,
         "attached": bool(attachment),
     }
-    run(conn, "UPDATE driverapplications SET data = :x, updated = NOW() WHERE recordid = :i",
-        x=json.dumps(data), i=app_["recordid"])
+    _keep_step(conn, held, app_, data, "10")
     run(conn, "UPDATE uploadrequests SET uploadedon = :now WHERE recordid = :id",
         now=utcnow(), id=held["recordid"])
     name = f'{held["firstname"]} {held["lastname"]}'.strip()
@@ -327,7 +391,7 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
                   front: UploadFile | None = File(None), back: UploadFile | None = File(None),
                   priorviolation: str | None = Form(None), prioremployer: str | None = Form(None),
                   priortestdate: str | None = Form(None), priortesttype: str | None = Form(None),
-                  priorrtd: str | None = Form(None),
+                  priorrtd: str | None = Form(None), licenseaction: str | None = Form(None),
                   signature: str | None = Form(None), fontkey: str | None = Form(None),
                   conn: Connection = Depends(get_conn)):
     """Take the file. It becomes a credential on the driver's file, which is what the requirement
@@ -343,6 +407,9 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
     # A license is not a document that happens to be a license. It is a card with a number, a state,
     # a class and two sides, and the file is the copy OF it - so the whole card is taken here, the
     # same as the office takes it, rather than a photograph with nothing recorded about what it is.
+    if held["credentialcode"] == LICENSE_QUESTION:
+        return await _take_license_question(conn, request, held, licenseaction, signature, fontkey,
+                                            ssn=ssn, dob=dob)
     if held["credentialcode"] == QUESTIONNAIRE:
         return await _take_questionnaire(conn, request, held, priorviolation, prioremployer,
                                          priortestdate, priortesttype, priorrtd, signature,

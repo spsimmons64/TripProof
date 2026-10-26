@@ -114,13 +114,17 @@ def evaluate(conn: Connection, accountid: str, tripids: list[str] | None = None,
                            "approved": None if not rule else int(rule["legalreview"] == "approved"),
                            "reason": (b.get("reason") or "")[:255] or None})
         if not said["blockers"]:
+            # What is waiting, by name - the warnings and the holds alike. A hold accepted for this
+            # trip (a restricted driving record) lives apart from the warnings, so a trip held for
+            # nothing else said "waiting on review: " with nothing after it (MODIVTEST B-07).
+            waiting = list(dict.fromkeys(filter(None, (
+                w.get("name") or w.get("reason") for w in said["warnings"] + said.get("holds", [])))))
             checks.append({**base, "id": newid(), "subject": "driver", "sid": leg["driverid"],
                            "outcome": "pass", "code": said["decision"][:24], "rule": "ELIGIBLE",
                            "name": STRUCTURAL["ELIGIBLE"], "version": None, "approved": None,
-                           "reason": ("Clear to carry." if said["decision"] == "eligible" else
-                                      "Clear, with something waiting on review: "
-                                      + "; ".join(filter(None, (w.get("name") or w.get("reason")
-                                                                for w in said["warnings"])))[:200])})
+                           "reason": ("Clear to carry." if said["decision"] == "eligible" or not waiting
+                                      else ("Clear, with something waiting on review: "
+                                            + "; ".join(waiting))[:255])})
 
     run_many(conn, """
         INSERT INTO legchecks (recordid, runid, accountid, tripid, legid, requirementid, rulecode,

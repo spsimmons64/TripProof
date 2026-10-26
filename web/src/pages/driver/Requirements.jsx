@@ -186,6 +186,12 @@ export function Requirements({ id, onChanged, focus, onGoSection }) {
   const onbooks = Boolean(data.hired)
   const live = data.items.filter((i) => i.applies === true)
   const undecided = data.items.filter((i) => i.applies === null)
+  // Who the open question is for: the driver - their answer to a question only they can give, asked
+  // of them by link - or the company, on its own settings.
+  const fromDriver = (i) => (i.unanswered || []).length > 0
+    && i.unanswered.every((f) => f.startsWith('driver.'))
+  const askDriver = undecided.filter(fromDriver)
+  const askCompany = undecided.filter((i) => !fromDriver(i))
   // A deadline that has gone by is not a deadline. "Before hiring", printed beside a driver who
   // was hired in March, reads as a thing still to be arranged rather than as a thing that is
   // either done or late, so for somebody already on the roster it is not printed at all.
@@ -279,7 +285,18 @@ export function Requirements({ id, onChanged, focus, onGoSection }) {
       })}
 
 
-      {undecided.length > 0 && (
+      {askDriver.length > 0 && (
+        <div className="card factpanel">
+          <h3 className="reqhead">Waiting On An Answer From The Driver</h3>
+          <p className="reqaside">
+            Nothing here is holding this driver up. Each one depends on a question only the driver
+            can answer, so TripProof cannot say whether it reaches them until they do.
+          </p>
+          {rows(askDriver)}
+        </div>
+      )}
+
+      {askCompany.length > 0 && (
         <div className="card factpanel">
           <h3 className="reqhead">Waiting On An Answer From The Company</h3>
           {/* Said once at the top rather than on every row: none of these is stopping anybody. */}
@@ -287,7 +304,7 @@ export function Requirements({ id, onChanged, focus, onGoSection }) {
             Nothing here is holding this driver up. Each one depends on something about the company
             that nobody has answered yet, so TripProof cannot say whether it reaches this driver.
           </p>
-          {rows(undecided)}
+          {rows(askCompany)}
         </div>
       )}
 
@@ -442,9 +459,12 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
       }
     } catch { setPending(null) }
   }
+  // A requirement waiting on the driver's answer to the license question is asked as that question.
+  const asksLicense = (data?.requirement?.unanswered || []).includes('driver.licenseaction')
   useEffect(() => {
-    if (data?.source?.kind) loadPending(data.source.kind, data.source.which)
-  }, [data?.source?.kind, data?.source?.which, id])   // eslint-disable-line react-hooks/exhaustive-deps
+    if (asksLicense) loadPending('credential', 'LICENSE_ACTION_QUESTION')
+    else if (data?.source?.kind) loadPending(data.source.kind, data.source.which)
+  }, [data?.source?.kind, data?.source?.which, id, asksLicense])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Whether this driver may drive today is a different question from whether their file is in
   // order, and the drug and alcohol requirement is where the two meet.
@@ -1059,6 +1079,20 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
   // The questionnaire is one document too, and is worked exactly as a signed one is: read it if it
   // is here, and if it is not, ask the driver for it or put up the paper copy. A table listing one
   // row that opens one document was a table for the sake of having a table.
+  // Undecided until the driver says whether a license of theirs has been revoked, suspended or
+  // denied - asked of the driver by link, as the questionnaire is, and signed by them.
+  if (asksLicense) {
+    return (
+      <SingleDocumentDialog title={r.name} brief={r.why} err={err} notice={asked}
+        emptyActions={(
+          <button type="button" disabled={busy} onClick={() => askForIt('LICENSE_ACTION_QUESTION')}>
+            <FileSignature size={13} /> Ask the driver for it
+          </button>
+        )}
+        onClose={onClose} />
+    )
+  }
+
   if (source.kind === 'applicationanswered' && filing !== 'against') {
     return <QuestionnaireDialog {...{ askForIt, asked, busy, err, markRead, onClose, r, readRecord, records, setFiling, setViewing, unchecked, viewing }} />
   }

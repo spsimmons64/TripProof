@@ -123,8 +123,21 @@ def _spe_variance(conn: Connection, accountid: str, driverid: str) -> bool | Non
           AND medcertstatus IS NOT NULL
         ORDER BY issuedon DESC, receivedon DESC LIMIT 1
     """, a=accountid, d=driverid)
-    # No record carrying medical information at all is not "no variance" - nobody has looked.
-    return None if not got else got["medvariancetype"] == "spe"
+    if got:
+        return got["medvariancetype"] == "spe"
+    # A license that is not a CDL never has a record carrying medical information to read: CDLIS
+    # posts the medical certification of CDL holders only. Waiting for one left a non-CDL commercial
+    # driver's SPE question unanswerable for good (MODIVTEST B-05). For them the certificate itself
+    # is the answer - a driver who drives under a 391.49 SPE carries it, and one on file says so.
+    if _commercial(conn, accountid, driverid) is False:
+        return bool(row(conn, """
+            SELECT 1 AS x FROM credentials c JOIN credentialtypes t ON t.recordid = c.credentialtypeid
+            WHERE c.accountid = :a AND c.subject = 'driver' AND c.subjectid = :d
+              AND t.code = 'SPE_CERTIFICATE' AND c.deleted IS NULL AND c.revokedon IS NULL
+            LIMIT 1
+        """, a=accountid, d=driverid))
+    # A CDL holder with no record carrying medical information yet: nobody has looked.
+    return None
 
 
 def _followup_owed(conn: Connection, accountid: str, driverid: str) -> bool:
@@ -614,6 +627,20 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
                 False if code not in assigned or said == "notcovered"
                 else None if said == "review" else True)
         facts["driver.chapter1490"] = facts.get("driver.transit.FL_1490")
+        # On a trip, the vehicle decides. The ticks on the driver's record say what they are being
+        # QUALIFIED to operate - right for their file, where there is no vehicle - but what a trip
+        # asks of its driver is fixed by what they are actually driving: a driver ticked for vans
+        # only, put in a 15-passenger bus, is operating a commercial motor vehicle (49 CFR 390.5)
+        # and is held to Part 391 for that trip; one ticked for CMVs, in a sedan, is not. And a
+        # vehicle the company runs under Chapter 14-90 brings 14-90's driver requirements with it,
+        # whoever is assigned to the program. Without this the bus took any driver and the sedan
+        # refused a qualified one over a medical card the sedan never needed.
+        # Whether the vehicle this driver drives carries wheelchairs. Their own file has no vehicle,
+        # so it asks it of everybody once the fleet has one - any of them may be put in it; a trip
+        # answers it from the vehicle actually on it, just below.
+        facts["driver.wheelchairvehicle"] = facts.get("fleet.wheelchair")
+        if vehicleid:
+            facts.update(_on_this_vehicle(facts, transit))
         # What the driver said on their own application about a license being revoked or
         # denied. Three-valued, unlike the tick boxes above: an applicant who has not
         # answered it is not the same as one who answered no, and a rule that turns on the
@@ -631,19 +658,54 @@ def assemble(conn: Connection, accountid: str, driverid: str | None = None,
     return {"facts": facts, "fleet": fleet}
 
 
+def _on_this_vehicle(facts: dict, transit: list[str]) -> dict:
+    """What this driver is operating on this trip, read off the vehicle on it. Only what the
+    vehicle actually states: a vehicle with no weight or seating on file leaves the driver's own
+    record standing rather than guessing either way."""
+    out = {}
+    cmv = _or(facts.get("vehicle.cmv_federal"), facts.get("vehicle.cmv_florida"))
+    if cmv is not None:
+        out["driver.cmv"] = cmv
+    if facts.get("vehicle.cdl_required") is not None:
+        out["driver.cdl"] = bool(facts["vehicle.cdl_required"])
+    if facts.get("vehicle.gvwr") is not None:
+        out["driver.heavy"] = facts["vehicle.gvwr"] >= 26001
+    for code in transit:
+        held = facts.get(f"vehicle.transit.{code}")
+        if held is not None:
+            out[f"driver.transit.{code}"] = held
+    if "driver.transit.FL_1490" in out:
+        out["driver.chapter1490"] = out["driver.transit.FL_1490"]
+    # Securement training is to the duties performed (49 CFR 37.173): on a trip, whether THIS
+    # vehicle carries wheelchairs, not whether the company owns one somewhere. A driver taking an
+    # ambulatory passenger in a sedan is not refused over training for a lift van they are not in.
+    if facts.get("vehicle.lift") is not None:
+        out["driver.wheelchairvehicle"] = bool(facts["vehicle.lift"])
+    return out
+
+
 def _application_step(conn: Connection, accountid: str, driverid: str, step: str) -> dict:
     """One step of the driver's own application, as they filled it in."""
     app_ = row(conn, """
         SELECT data FROM driverapplications
         WHERE driverid = :d AND accountid = :a ORDER BY startedon DESC LIMIT 1
     """, d=driverid, a=accountid)
-    if not app_:
-        return {}
-    try:
-        steps = (json.loads(app_["data"] or "{}") or {}).get("steps") or {}
-    except ValueError:
-        return {}
+    steps = {}
+    if app_:
+        try:
+            steps = (json.loads(app_["data"] or "{}") or {}).get("steps") or {}
+        except ValueError:
+            steps = {}
     got = steps.get(step)
+    if isinstance(got, dict) and got:
+        return got
+    # Answered by link, by a driver the office entered and who has no application to carry it.
+    kept = row(conn, "SELECT data FROM driveranswers WHERE driverid = :d AND accountid = :a AND step = :s",
+               d=driverid, a=accountid, s=step)
+    try:
+        got = json.loads(kept["data"]) if kept else {}
+    except ValueError:
+        got = {}
     return got if isinstance(got, dict) else {}
 
 
@@ -693,17 +755,7 @@ def _license_action(conn: Connection, accountid: str, driverid: str) -> bool | N
     Read from the application they filled in rather than copied onto the driver record, so it cannot
     drift away from what they actually signed. None where there is no application, or where the
     question is not answered in it."""
-    app_ = row(conn, """
-        SELECT data FROM driverapplications
-        WHERE driverid = :d AND accountid = :a ORDER BY startedon DESC LIMIT 1
-    """, d=driverid, a=accountid)
-    if not app_:
-        return None
-    try:
-        steps = (json.loads(app_["data"] or "{}") or {}).get("steps") or {}
-    except ValueError:
-        return None
-    said = ((steps.get("2") or {}).get("licenseaction") or "").strip().lower()
+    said = (_application_step(conn, accountid, driverid, "2").get("licenseaction") or "").strip().lower()
     return True if said == "yes" else False if said == "no" else None
 
 
@@ -789,7 +841,9 @@ UNANSWERED = {
     "driver.spevariance": "No driving record carrying medical certification information is on "
                           "file, so it is not known whether this driver holds an SPE certificate.",
     "driver.priorviolation": "The driver has not answered the pre-employment drug and alcohol "
-                             "questionnaire on their application (49 CFR 40.25(j)).",
+                             "questionnaire (49 CFR 40.25(j)).",
+    "driver.licenseaction": "The driver has not said whether a license of theirs has been revoked, "
+                            "suspended or denied in the last three years.",
     "driver.priorrtdcomplete": "The driver has not said whether they completed the return-to-duty "
                                "process for the violation they disclosed.",
 

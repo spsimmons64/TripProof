@@ -642,6 +642,127 @@ def test_5g_a_working_sign_in_is_renewed_and_an_expired_one_is_not(make):
     assert c.post("/api/auth/refresh", headers={"Authorization": f"Bearer {gone}"}, json={}).status_code == 401
 
 
+# 5h. On a trip, the vehicle decides what the driver is operating ---------------------------------
+
+def test_5h_the_vehicle_on_the_trip_decides_whether_the_commercial_and_1490_rules_reach_the_driver(make):
+    """CF-1 and CF-5 from the MODIVTEST run: a driver ticked for no commercial vehicles, put in a
+    15-passenger bus, is held to Part 391 for that trip; one ticked for commercial vehicles, in a
+    sedan, is not. The driver's own file - no vehicle - still reads the ticks."""
+    from app import facts as factset
+    co = make()
+    bus = new_vehicle(co, "BUS15", seats=15, gvwr=14500, forcompensation=True)
+    car = new_vehicle(co, "CAR5", seats=5, gvwr=4500, forcompensation=True)
+    with co["db"].begin() as conn:
+        conn.execute(text("INSERT INTO companyanswers (accountid, code, answer, updated) "
+                          "VALUES (:a, 'INTERSTATE', 1, NOW())"), {"a": co["acct"]})
+    def reach(operation, vehicle):
+        with co["db"].begin() as conn:
+            conn.execute(text("UPDATE drivers SET operation = :o WHERE recordid = :d"),
+                         {"o": operation, "d": co["driver"]})
+            f = factset.assemble(conn, co["acct"], co["driver"], vehicle)["facts"]
+        return f["driver.cmv"], f["reach.part391"]
+    assert reach("noncmv", bus) == (True, True)        # in the bus: a CMV driver for this trip
+    assert reach("cmv", car) == (False, False)          # in the sedan: not one
+    assert reach("cmv", None) == (True, True)           # their file still reads the tick
+    assert reach("noncmv", None)[0] is False
+    # CF-3: a line that approves its vehicles refuses one it has not approved, like a driver.
+    from app import tripcheck
+    line_ = {"requiresapproval": 1, "recordid": "no-such-line", "broker": "TESTBROKER", "state": "GA",
+             "program": "medicaid"}
+    with co["db"].begin() as conn:
+        found = tripcheck.vehicle_blockers(conn, co["acct"], car, None, datetime.now(), ["GA"],
+                                           "medicaid", line_)
+    assert any(b["code"] == "VEHICLEAPPROVAL" and b["enforceable"] for b in found), found
+    # CF-4: securement training follows the vehicle on the trip, and the fleet on the driver's file.
+    lift = new_vehicle(co, "LIFTVAN", seats=7, gvwr=9500, forcompensation=True, lift=True)
+    with co["db"].begin() as conn:
+        def wc(vehicle):
+            return factset.assemble(conn, co["acct"], co["driver"], vehicle)["facts"]["driver.wheelchairvehicle"]
+        assert wc(car) is False and wc(lift) is True and wc(None) is True
+
+
+def test_5i_adding_a_driver_keeps_everything_on_the_form(make):
+    """B-01 from the MODIVTEST run: the create endpoint wrote only names, licence and dates, so the
+    address, the operation, the emergency contact and English proficiency were dropped."""
+    co = make()
+    c, h = co["client"], co["h"]
+    form = {"firstname": "GINA", "lastname": "FORM", "address1": "12 OAK ST", "city": "VALDOSTA",
+            "state": "ga", "zip": "31601", "operation": "cdl", "englishproficient": True,
+            "emergencyname": "PAT FORM", "emergencyphone": "(229) 555-0100",
+            "endorsementsneeded": "p, s", "phone": "(229) 555-0199", "email": "gina@form.test"}
+    made = c.post("/api/drivers", headers=h, json=form)
+    assert made.status_code == 200, made.text
+    kept = c.get(f"/api/drivers/{made.json()['recordid']}", headers=h).json()
+    assert (kept["address1"], kept["city"], kept["state"], kept["zip"]) == ("12 OAK ST", "VALDOSTA", "GA", "31601")
+    assert kept["operation"] == "cdl" and kept["englishproficient"] == 1
+    assert kept["emergencyname"] == "PAT FORM" and kept["endorsementsneeded"] == "PS"
+
+
+def test_5j_a_rules_own_interval_beats_an_expiry_only_assumed_from_the_document_type():
+    """B-02 from the MODIVTEST run: a Georgia inspection on 08/15 ended 02/13, by the type's assumed
+    183 days, instead of 02/15 by the rule's six calendar months. A date printed on the document
+    still stands where it is earlier."""
+    from app import rules
+    six = {"recurrence": "months", "recurrencemonths": 6}
+    assumed = {"effectiveon": date(2026, 8, 15), "expireson": date(2027, 2, 13), "assumedexpiry": True}
+    printed = {"effectiveon": date(2026, 8, 15), "expireson": date(2027, 1, 31), "assumedexpiry": False}
+    assert rules.horizon(six, assumed) == date(2027, 2, 15)
+    assert rules.horizon(six, printed) == date(2027, 1, 31)
+    yearly = {"recurrence": "months", "recurrencemonths": 12}
+    assert rules.horizon(yearly, {"effectiveon": date(2026, 3, 1), "expireson": date(2027, 2, 28),
+                                  "assumedexpiry": True}) == date(2027, 3, 1)
+
+
+def test_5k_a_driver_the_office_entered_answers_both_questions_by_link(make):
+    """B-04 from the MODIVTEST run: the questionnaire and the license question were read only off an
+    online application, so a driver the office entered could never answer either. Both are asked by
+    link now, answered and signed by the driver, and the answers are what the engine reads."""
+    from app import facts as factset, signatures
+    co = make()
+    c, h = co["client"], co["h"]
+    ssn, dob = f"433-{uuid.uuid4().int % 90 + 10:02d}-{uuid.uuid4().int % 9000 + 1000:04d}", "1985-03-04"
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET dob = :b, ssnhash = :h WHERE recordid = :d"),
+                     {"b": dob, "h": signatures.ssn_hash(co["acct"], ssn), "d": co["driver"]})
+        assert not conn.execute(text("SELECT 1 FROM driverapplications WHERE driverid = :d"),
+                                {"d": co["driver"]}).first()
+    def answer(code, **form):
+        asked = c.post(f"/api/drivers/{co['driver']}/upload-requests", headers=h, json={"code": code})
+        assert asked.status_code == 200, asked.text
+        token = asked.json()["link"].rsplit("/upload/", 1)[1]
+        r = c.post(f"/api/upload-request/{token}",
+                   data={"dob": dob, "ssn": ssn, "signature": "ADA TEST", "fontkey": "modern", **form})
+        assert r.status_code == 200, r.text
+    answer("LICENSE_ACTION_QUESTION", licenseaction="no")
+    answer("PREEMP_DA_QUESTIONNAIRE", priorviolation="no")
+    with co["db"].connect() as conn:
+        f = factset.assemble(conn, co["acct"], co["driver"])["facts"]
+    assert f["driver.licenseaction"] is False and f["driver.priorviolation"] is False
+
+
+def test_5l_a_driver_without_a_cdl_has_an_answer_to_the_spe_question(make):
+    """B-05: the SPE question waited for a driving record carrying medical information, which only a
+    CDL holder's record ever carries. Without a CDL, no SPE certificate on file is a definite no."""
+    from app import facts as factset
+    co = make()
+    driving_record(co, "qualified")                       # a Florida Class E, not commercial
+    with co["db"].connect() as conn:
+        assert factset.assemble(conn, co["acct"], co["driver"])["facts"]["driver.spevariance"] is False
+
+
+def test_5m_the_wording_names_the_rule_that_failed_and_reads_as_english():
+    """B-08: under 21 is said in the terms of the rule that failed, not always the federal one.
+    B-10: "an AL line", "a GA line"."""
+    from app import rules, tripcheck
+    georgia = {"code": "GA_NET_AGE21", "authority": "Georgia DCH",
+               "citation": "DCH NEMT Part II (October 2026), Section 914.2.1", "recurrence": "once"}
+    federal = {**georgia, "authority": "FMCSA", "citation": "49 CFR 391.11(b)(1)"}
+    under = {"determination": "notage21", "effectiveon": date.today()}
+    assert "914.2.1" in rules.stand(georgia, under, date.today())[1]
+    assert "391.11(b)(1)" in rules.stand(federal, under, date.today())[1]
+    assert (tripcheck._a("AL"), tripcheck._a("GA"), tripcheck._a("FL")) == ("an", "a", "an")
+
+
 # 6. Drafts never block; approved rules do; the facts of a trip always do -------------------------
 
 def test_6_a_prohibition_and_an_uncorrected_defect_block_while_their_rules_are_draft():
@@ -674,14 +795,21 @@ def test_6_a_draft_rule_never_blocks_dispatch_and_an_approved_one_does(make):
             return next(d for d in dispatch.best(conn, co["acct"], when=when, minutes=60, trip=trip)["drivers"]
                         if d["driverid"] == co["driver"])
         before = mine()
+        from app import tripcheck
+        judged = lambda: tripcheck.check(conn, co["acct"], co["driver"], proposed=trip, at=when,
+                                         record=False)["decision"]
+        # B-03: a draft shortfall is not a refusal, so it is not "not qualified" either.
+        drafted = judged()
         approved(conn, "DRIVER_LICENSE_COPY")
         after = mine()
+        enforced = judged()
     finally:
         trans.rollback()
         conn.close()
     # Said as a note, and nothing has to be accepted for it - not a warning a supervisor signs off.
     assert before["available"] and any("not yet approved" in w for w in before["drafts"]), before
     assert not any("not yet approved" in w for w in before["warnings"]), before
+    assert drafted != "notqualified" and enforced == "notqualified", (drafted, enforced)
     assert not after["available"] and after["blocked"], after
 
 

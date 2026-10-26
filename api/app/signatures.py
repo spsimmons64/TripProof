@@ -56,6 +56,9 @@ DOC_TYPES = {
     "APPLICATION": "Driver application certification",
     "ANNUAL_REVIEW": "Annual review of driving record",
     "PREEMP_DA_QUESTIONNAIRE": "Pre-employment drug and alcohol questionnaire, 49 CFR 40.25(j)",
+    # Whether a license has been revoked, suspended or denied in the last three years: the driver's
+    # own signed answer, which decides whether Florida's license-status notice reaches them.
+    "LICENSE_ACTION_QUESTION": "License revocation, suspension or denial statement",
     # A form the driver fills in rather than a document they are handed: what is signed is their
     # own figures - the hours they had already worked before they got here, 49 CFR 395.8(j)(2).
     "PREV7_ONDUTY": "Previous 7 Days' On-Duty Hours Statement",

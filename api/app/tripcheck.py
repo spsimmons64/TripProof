@@ -6,8 +6,10 @@
 # out tonight leaves the driver qualified for this afternoon and not for tomorrow morning - and
 # only those that reach the trip's program count. HR obligations never do.
 #
-#   notqualified  something the trip's program requires is failed, lapsed or missing
-#   needsreview   something is waiting to be read, or nobody can yet say whether a rule applies
+#   notqualified  something that may refuse the trip - an approved rule or a structural fact - is
+#                 failed, lapsed or missing
+#   needsreview   something is waiting to be read, nobody can yet say whether a rule applies, or
+#                 a rule still in draft finds a shortfall it is not yet allowed to refuse for
 #   eligible      everything that reaches this trip is met
 #
 # Every check is kept, with the rules it read, so an assignment can be explained afterwards from the
@@ -112,7 +114,16 @@ def no_line(conn: Connection, accountid: str, payerid: str, state: str | None) -
     """What to say when a payer has no line where the trip begins."""
     name = (row(conn, "SELECT name FROM payers WHERE recordid = :p", p=payerid) or {}).get("name")
     where = line_state(conn, accountid, state) or "this state"
-    return f"{name or 'This payer'} is not set up for {where}. Add a {where} line on the Payers page."
+    return (f"{name or 'This payer'} is not set up for {where}. "
+            f"Add {_a(where)} {where} line on the Payers page.")
+
+
+def _a(word: str) -> str:
+    """"a" or "an" before a word as it is said: a state's code is read out letter by letter, so it
+    is "an AL line" and "a GA line"; a name is read as a word, so "an Alabama line"."""
+    if len(word) == 2 and word.isupper():
+        return "an" if word[0] in "AEFHILMNORSX" else "a"
+    return "an" if word[:1].lower() in "aeiou" else "a"
 
 
 # What judge_items reads of a requirement, and all it reads - kept with every decision so the same
@@ -285,6 +296,19 @@ def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: 
             out.append({"code": v["code"], "name": v["name"], "status": v["status"],
                         "reason": v.get("why"), "vehicle": True,
                         "enforceable": enforceable(v)})
+    # A line that approves its vehicles, and this one is not approved for it. Refused, the same as a
+    # driver the line has not approved: a broker that vets vehicles does not pay for a trip in one
+    # it never vetted (MODIVTEST CF-3, where Georgia trips ran in vans approved for Florida only).
+    # Here rather than in check() alone, so the dispatch list greys the vehicle out instead of
+    # offering it and the assignment then refusing it.
+    if contract and contract.get("requiresapproval") and not row(conn, """
+            SELECT 1 AS x FROM vehicleauthorizations WHERE accountid = :a AND vehicleid = :v
+              AND contractid = :c AND endedon IS NULL""", a=accountid, v=vehicleid,
+            c=contract["recordid"]):
+        out.append({"code": "VEHICLEAPPROVAL", "vehicle": True, "enforceable": True,
+                    "reason": "The vehicle is not approved for the "
+                    + " ".join(x for x in (contract["broker"], contract.get("state")) if x)
+                    + " line."})
     return out
 
 
@@ -371,21 +395,18 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
     if vehicleid:
         blockers += vehicle_blockers(conn, accountid, vehicleid, service, at, states, program,
                                      contract)
-        # A line that approves its vehicles, and this one is not approved for it. Said, not
-        # enforced: which vehicles a broker has approved is new to the file.
-        if contract and contract.get("requiresapproval") and not row(conn, """
-                SELECT 1 AS x FROM vehicleauthorizations WHERE accountid = :a AND vehicleid = :v
-                  AND contractid = :c AND endedon IS NULL""", a=accountid, v=vehicleid,
-                c=contract["recordid"]):
-            warnings.append({"code": "VEHICLEAPPROVAL", "vehicle": True, "reason":
-                             "This vehicle is not recorded as approved for the "
-                             + " ".join(x for x in (contract["broker"], contract.get("state")) if x)
-                             + " line."})
+
 
     undecided = bool(holds) or any(w.get("code") == "CONTRACT" or w.get("status") in WAITING
                     or str(w.get("reason") or "").startswith("Applicability undecided")
                     for w in warnings)
-    decision = "notqualified" if blockers else "needsreview" if undecided else "eligible"
+    # Not qualified only for what may actually refuse the trip. A shortfall under a rule still in
+    # draft is said - it is on the record and in `blockers` - but nothing is refused for it, and a
+    # label that called it "not qualified" counted every draft shortfall as a refusal (MODIVTEST
+    # B-03: the same 436 "not qualified" with every rule in draft as with every rule approved).
+    refusing = [b for b in blockers if b.get("enforceable")]
+    decision = ("notqualified" if refusing
+                else "needsreview" if undecided or blockers else "eligible")
     evalid = newid() if record else None
     if record:
         run(conn, """
