@@ -38,7 +38,7 @@ RESULTS = {
     "refusal": "Refusal to test",
     "adulterated": "Adulterated",
     "substituted": "Substituted",
-    "cancelled": "Cancelled",
+    "cancelled": "Canceled",
     "pending": "Pending",
 }
 
@@ -475,6 +475,6 @@ def preemployment_state(conn: Connection, accountid: str, driverid: str) -> dict
         return {"state": "todo", "on": None, "why": None}
     if mine[0]["result"] == "cancelled":
         return {"state": "todo", "on": None,
-                "why": "The pre-employment test was cancelled - a cancelled test is not a test, "
+                "why": "The pre-employment test was canceled - a canceled test is not a test, "
                        "so another collection is owed"}
     return {"state": "todo", "on": None, "why": "The pre-employment test result is still pending"}

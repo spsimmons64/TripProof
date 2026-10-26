@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { AlertTriangle, Building2, CalendarClock, Car, CreditCard, DollarSign, FileCheck2, FileText, FlaskConical, Gauge, Handshake, ListChecks, Route as RouteIcon, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
 import { api, auth } from './lib/api.js'
+import { keepAlive, signOut } from './lib/session.js'
+import { Modal } from './admin/common.jsx'
 import { setDisplayTimeZone } from './lib/format.js'
 import TopBar from './components/TopBar.jsx'
 import Login from './pages/Login.jsx'
@@ -130,6 +132,22 @@ if (window.location.pathname === '/map') {
   }
 }
 
+// Two minutes before an idle sign-in ends: one question, Yes or No - the confirmation every other
+// question in the application is, copied from the MVR order. Yes renews it; No signs out now.
+function StillThere({ onYes }) {
+  return (
+    <Modal title="Stay Signed In" onClose={onYes} width={520}
+      footer={<>
+        <button type="button" className="primary" onClick={onYes}>Yes</button>
+        <button type="button" onClick={signOut}>No</button>
+      </>}>
+      <div className="stack">
+        <div className="askorder"><span className="askmark">?</span><p>Do you want to stay signed in?</p></div>
+      </div>
+    </Modal>
+  )
+}
+
 function StaffBanner({ user }) {
   const exit = () => { auth.clear(); window.close(); window.location.assign('/login') }
   return (
@@ -157,6 +175,16 @@ export default function App() {
     document.addEventListener('input', typedInUpperCase, true)
     return () => document.removeEventListener('input', typedInUpperCase, true)
   }, [])
+
+  // Signed in, in the main window: the sign-in is renewed while somebody works and ends after an
+  // hour without. The map window lives on this one's, so it does not run its own.
+  const [idle, setIdle] = useState(false)
+  const keeper = useRef(null)
+  useEffect(() => {
+    if (!user || window.location.pathname === '/map') return undefined
+    keeper.current = keepAlive({ onWarn: setIdle })
+    return () => keeper.current?.stop()
+  }, [user])
 
   useEffect(() => {
     if (!token) { setUser(null); return }
@@ -225,16 +253,18 @@ export default function App() {
   // TripProof staff get the admin portal; their internal account holds no customer data.
   // An online application that isn't finished: the applicant goes back to it, wherever they land.
   if (user.accountstatus === 'setup' && !user.platformrole) return <Apply resume />
+  const stillthere = idle && <StillThere onYes={() => keeper.current?.stay()} />
   // Subscription lapsed: the Billing page is all there is until it's paid.
   if (user.billinghold) {
     return (
       <UserContext.Provider value={user}>
         <div className="app"><TopBar user={user} /><main className="holdmain"><Billing hold /></main></div>
+        {stillthere}
       </UserContext.Provider>
     )
   }
   if (user.platformrole && !user.launched) {
-    return <UserContext.Provider value={user}><AdminApp user={user} /></UserContext.Provider>
+    return <UserContext.Provider value={user}><AdminApp user={user} />{stillthere}</UserContext.Provider>
   }
   return (
     <UserContext.Provider value={user}>
@@ -272,6 +302,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Shell>
+      {stillthere}
     </UserContext.Provider>
   )
 }

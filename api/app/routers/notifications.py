@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app import events
+from app.routers.dashboard import MVR_EXPIRING
 from app.routers import driverapp
 from app.db import get_conn, localnow, rows, run_many, utcnow
 from app.security import current_user
@@ -125,7 +126,8 @@ def _customer(conn: Connection, user: dict) -> list[dict]:
                           WHERE n.accountid = c.accountid AND n.subject = c.subject AND n.subjectid = c.subjectid
                             AND n.credentialtypeid = c.credentialtypeid AND n.deleted IS NULL AND n.issuedon > c.issuedon)
         ORDER BY c.expireson LIMIT 25
-    """, a=acct, today=today, horizon=today + timedelta(days=30)):
+    """, a=acct, today=today, horizon=today + timedelta(days=30)) + rows(
+            conn, MVR_EXPIRING, a=acct, today=today, horizon=today + timedelta(days=30)):
         days = (c["expireson"] - today).days
         link = "/company" if c["subject"] == "company" else f"/{c['subject']}s/{c['subjectid']}"
         out.append(_note(f"expiring:{c['recordid']}", "warn" if days > 7 else "bad",

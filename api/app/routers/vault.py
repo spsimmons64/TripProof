@@ -2164,7 +2164,7 @@ ACTIVITY_WORDS = {
     "review-filed": ("An annual review of the driving record was filed by {by}", "office"),
     "order": ("{what} was sent away for by {by}|A record was sent away for by {by}", "office"),
     "file": ("{what} was filed by {by}|A record that came back was filed by {by}", "office"),
-    "cancel": ("{what} was cancelled by {by}|An order was cancelled by {by}", "office"),
+    "cancel": ("{what} was canceled by {by}|An order was canceled by {by}", "office"),
     "evaluate": ("The driver's requirements were re-evaluated", "office"),
     # A requirement settled by something known rather than by a document - age, English
     # proficiency - where the carrier makes the determination and there is nothing to file.
@@ -4458,33 +4458,45 @@ def driver_dashboard(driverid: str, user: dict = Depends(current_user),
                    if i.get("expireson") and today <= i["expireson"] <= today + timedelta(days=30)],
                   key=lambda x: x["expireson"])
 
-    # Every document on file that CAN go out of date. A document with a life is a different kind of
-    # obligation from one that is done once: it comes back round, and a file that shows only what
-    # is outstanding today has nothing to say about what will be outstanding next month. One not on
-    # file yet is not tracked here - it is outstanding, and the waiting panels above already say who
-    # it is waiting on; listing it twice, as "Nothing on file", says nothing new.
+    # Every document on file that goes out of date - any document, whatever kind of requirement
+    # asks for it. The test is whether it has an end date, not how its rule is set to recur: a
+    # requirement asked for once can still be answered by a document that runs out, and filtering
+    # on the rule's recurrence is how the driving record, and everything renewed by the month,
+    # came to be missing from a panel whose whole claim is that it lists what expires.
+    #
+    # Plus the checks repeated on an interval that are owed and not yet due - the first annual
+    # review of a driving record is not outstanding anywhere else, and this is the one place that
+    # says when it comes round. A document not on file at all is outstanding, and the waiting
+    # panels above already say who it is waiting on.
     tracked = []
+    # A driving record is good for twelve months: 49 CFR 391.25 has a new one pulled and reviewed at
+    # least once a year. Its own row carries that year, so the annual review - the same renewal,
+    # counted from a different day - is folded into it rather than listed beside it with a second
+    # date for the same thing.
+    mvrs = [i for i in live if (i.get("evidencesource") or "").startswith("mvr") and i.get("on")]
+    annual = [i for i in live if i.get("evidencesource") == "annualreview"]
     for i in live:
-        if (i.get("recurrence") or "once") not in ("days", "ondocument"):
-            continue
+        interval = (i.get("recurrence") or "once") in ("days", "months")
         # A record worked out afresh from the driver's file - an at-fault count, a clearance after
         # a securement failure - has no life of its own to run out, whatever its rule says.
         if i.get("evidencekind") == "record":
             continue
+        if mvrs and i in annual:
+            continue
         ends = i.get("expireson")
+        if i in mvrs:
+            ends = renewed({"recurrence": "months", "recurrencemonths": 12}, i["on"])
+            owed = [a.get("dueon") or a.get("expireson") for a in annual]
+            ends = min([ends] + [d for d in owed if d])
         if not i.get("on"):
-            continue
-        # On file, and nothing about it is being tracked. `ondocument` means "it lasts as long as
-        # the document says", and some documents say nothing: a wheelchair securement certificate
-        # is trained to proficiency with no interval behind it, and its type sets no age limit
-        # either. Listed here it is permanent furniture - no date, no countdown, nothing that will
-        # ever change - on a panel whose entire claim is that these things go out of date. It
-        # comes back the moment anybody records an expiry for it.
-        if i.get("on") and not ends:
-            continue
+            if not (interval and i.get("dueon") and i.get("status") in ("pending", "overdue")):
+                continue
+            ends = i["dueon"]
+        # On file and with no end: nothing about it goes out of date, so it is not listed. It comes
+        # back the moment anybody records an expiry for it.
         if not ends:
-            band = "current"
-        elif ends < today:
+            continue
+        if ends < today:
             band = "expired"
         elif ends <= today + timedelta(days=30):
             band = "expiring"
@@ -4494,11 +4506,20 @@ def driver_dashboard(driverid: str, user: dict = Depends(current_user),
         # and is read by two different people, so the record says which kind it is and when it was
         # last done - "expires" against a recheck interval is the wrong word for the right date.
         tracked.append({"code": i["code"], "name": i["name"], "expireson": ends, "band": band,
-                        "recurs": "interval" if (i.get("recurrence") == "days") else "document",
+                        "recurs": "interval" if interval and i not in mvrs else "document",
                         "on": i.get("on"),
-                        "days": (ends - today).days if ends else None})
+                        "days": (ends - today).days})
     tracked.sort(key=lambda x: ({"expired": 0, "expiring": 1, "none": 2, "current": 3}[x["band"]],
                                 x["expireson"] or date.max))
+    # What lapses within thirty days, by the same end dates the panel above uses - so the driving
+    # record, and an annual check about to fall due, are on it as well as the documents whose
+    # requirement carries its own expiry.
+    have = {x["code"] for x in soon}
+    byname = {i["code"]: i for i in live}
+    soon = sorted(soon + [{**card(byname[x["code"]]), "expireson": x["expireson"], "days": x["days"]}
+                          for x in tracked
+                          if x["code"] not in have and today <= x["expireson"] <= today + timedelta(days=30)],
+                  key=lambda x: x["expireson"])
 
     app_ = row(conn, """
         SELECT status, startedon, submittedon FROM driverapplications

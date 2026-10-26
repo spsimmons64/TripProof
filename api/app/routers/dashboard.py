@@ -14,6 +14,23 @@ from app.security import current_user
 router = APIRouter(prefix="/api", tags=["dashboard"])
 
 
+# A driving record is not a credential - it lives in drivermvrs - so a list built from credentials
+# alone never says one is about to run out. It is good for twelve months from the record's date
+# (49 CFR 391.25), and only the newest one per driver counts.
+MVR_EXPIRING = """
+    SELECT CONCAT('mvr-', x.driverid) AS recordid, 'driver' AS subject, x.driverid AS subjectid,
+           'Motor vehicle record' AS typename, DATE_ADD(x.last, INTERVAL 12 MONTH) AS expireson,
+           CONCAT(d.firstname, ' ', d.lastname) AS holder
+    FROM (SELECT m.driverid, MAX(COALESCE(m.issuedon, DATE(m.receivedon))) AS last
+          FROM drivermvrs m
+          WHERE m.accountid = :a AND m.cancelledon IS NULL
+            AND (m.issuedon IS NOT NULL OR m.receivedon IS NOT NULL)
+          GROUP BY m.driverid) x
+    JOIN drivers d ON d.recordid = x.driverid AND d.deleted IS NULL AND d.status = 'hired'
+    WHERE DATE_ADD(x.last, INTERVAL 12 MONTH) BETWEEN :today AND :horizon
+"""
+
+
 @router.get("/dashboard")
 def dashboard(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
     a = user["accountid"]
@@ -93,6 +110,8 @@ def dashboard(user: dict = Depends(current_user), conn: Connection = Depends(get
                             AND n.issuedon > c.issuedon)
         ORDER BY c.expireson LIMIT 25
     """, a=a, today=today, horizon=horizon)
+    expiring = sorted(expiring + rows(conn, MVR_EXPIRING, a=a, today=today, horizon=horizon),
+                      key=lambda x: x["expireson"])[:25]
     unverified = rows(conn, """
         SELECT DISTINCT r.family, r.version, r.name FROM rulesets r
         JOIN requirements q ON q.rulesetid = r.recordid

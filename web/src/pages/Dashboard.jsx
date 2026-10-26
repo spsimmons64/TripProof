@@ -6,6 +6,7 @@ import {
 import DataGrid from '../components/DataGrid.jsx'
 import FleetMap from '../components/FleetMap.jsx'
 import { api, auth } from '../lib/api.js'
+import { rememberMap } from '../lib/session.js'
 import SignedDocViewer from '../components/SignedDocViewer.jsx'
 import { date } from '../lib/format.js'
 import { Loading, Tile, useLoad } from '../components/ui.jsx'
@@ -44,7 +45,7 @@ const TRIPSTATE = {
   Upcoming: 'st-inactive',
   'In progress': 'st-ordered',
   Completed: 'st-active',
-  Cancelled: 'st-inactive',
+  Canceled: 'st-inactive',
 }
 
 export default function Dashboard() {
@@ -150,9 +151,11 @@ export default function Dashboard() {
             const h = Math.min(1000, window.screen.availHeight)
             const left = Math.max(0, Math.round((window.screen.availWidth - w) / 2))
             const top = Math.max(0, Math.round((window.screen.availHeight - h) / 2))
-            window.open(`/map#token=${encodeURIComponent(auth.get() || '')}`,
+            const map = window.open(`/map#token=${encodeURIComponent(auth.get() || '')}`,
               'tripproof-map',
-              `popup=yes,width=${w},height=${h},left=${left},top=${top}`)?.focus()
+              `popup=yes,width=${w},height=${h},left=${left},top=${top}`)
+            rememberMap(map)
+            map?.focus()
           }}>
             <Maximize2 size={14} /> Full screen
           </button>

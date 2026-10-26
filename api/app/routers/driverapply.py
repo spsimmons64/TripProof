@@ -539,6 +539,10 @@ def adopt_signature(body: SignatureIn, request: Request, app_: dict = Depends(se
         _note_miss(client_ip(request))
         raise HTTPException(403, "Incorrect Date Of Birth / Social Security Combination")
     name = f"{app_['firstname']} {app_['lastname']}".strip()
+    try:
+        signatures.recognise(conn, app_["accountid"], "driver", app_["driverid"], name, body.ssn, body.dob)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
     sig = signatures.current(conn, app_["accountid"], "driver", app_["driverid"])
     # The signature on file is the driver's signature. It is adopted once and cannot be redesigned
     # from the application: every document they sign carries the same hand.
@@ -547,7 +551,8 @@ def adopt_signature(body: SignatureIn, request: Request, app_: dict = Depends(se
     try:
         sig = signatures.adopt(conn, app_["accountid"], "driver", app_["driverid"], name,
                                body.typedname or name, body.fontkey, "dob_ssn",
-                               client_ip(request), request.headers.get("user-agent"))
+                               client_ip(request), request.headers.get("user-agent"),
+                               ssn=body.ssn, dob=body.dob)
     except ValueError as e:
         raise HTTPException(400, str(e))
     log(conn, None, "driverapply-signature", "driver", app_["driverid"], None,
@@ -573,6 +578,12 @@ def verify_identity(body: VerifyIn, request: Request, app_: dict = Depends(sessi
     if actual["ssnhash"] != signatures.ssn_hash(app_["accountid"], body.ssn) or actual["dob"] != body.dob:
         _note_miss(ip)
         raise HTTPException(403, "Incorrect Date Of Birth / Social Security Combination")
+    try:
+        signatures.recognise(conn, app_["accountid"], "driver", app_["driverid"],
+                             f"{app_['firstname']} {app_['lastname']}".strip(), body.ssn, body.dob)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
+    saved(conn)
     sig = signatures.current(conn, app_["accountid"], "driver", app_["driverid"])
     return {"ok": True, "signature": {"typedname": sig["typedname"], "fontkey": sig["fontkey"]} if sig else None}
 

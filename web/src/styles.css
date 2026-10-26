@@ -556,18 +556,29 @@ main:has(> .fill) { padding-bottom: 24px; }   /* same gap below the grid as abov
 .quotewhy { font-size: 11px; color: var(--text-2); line-height: 1.3; }
 
 .pickpair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
-.picklist { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
-.pickrow { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
-           text-align: left; padding: 8px 12px; border: 1px solid var(--border);
-           border-radius: 10px; background: var(--surface); }
-.pickrow:hover:not(:disabled) { border-color: var(--teal-500); }
-.pickrow.on { border-color: var(--teal-900); box-shadow: inset 0 0 0 1px var(--teal-900); }
+/* Choosing who takes a leg. The name on its own line and every reason on its own line under
+   it: what stops them in red, what has to be accepted in orange, a draft rule in grey, and the
+   ordinary facts - free, how far away - last and quiet. Named apart from Book A Trip's
+   .pickrow, whose one-line grid was being laid over these and squeezing the name into a
+   column beside a paragraph. */
+.candlist { display: flex; flex-direction: column; gap: 6px; max-height: min(52vh, 440px);
+            overflow-y: auto; padding: 1px; }
+.candrow { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%;
+           text-align: left; padding: 9px 12px; border: 1px solid var(--border);
+           border-radius: 10px; background: var(--surface); font-size: 12px; line-height: 1.35;
+           cursor: pointer; }
+.candrow:hover:not(:disabled) { border-color: var(--teal-500); }
+.candrow.on { border-color: var(--teal-900); box-shadow: inset 0 0 0 1px var(--teal-900); }
 /* Listed, named, and not choosable. A blocked driver is shown because "why is Tim not here" is
    the first thing asked; what is not shown is a way to pick them anyway. */
-.pickrow.barred { opacity: .62; cursor: not-allowed; background: var(--surface-2, #f7f7f6); }
-.pickname { font-weight: 600; font-size: 14px; color: var(--text); }
-.pickwhy { font-size: 12px; color: var(--text-2); line-height: 1.35; white-space: normal; }
-.pickrow.barred .pickwhy { color: var(--bad); }
+.candrow.barred, .candrow:disabled { cursor: not-allowed; background: var(--surface-2, #f7f7f6);
+                                     opacity: 1; }
+.candname { font-weight: 700; font-size: 14px; color: var(--teal-950); }
+.candrow.barred .candname { color: var(--text-2); }
+.candline { padding-left: 8px; border-left: 3px solid var(--border); color: var(--text-2); }
+.candline.bad { color: var(--bad); border-left-color: var(--bad); }
+.candline.warn { color: var(--orange-ink); border-left-color: var(--orange); }
+.candfacts { color: var(--text-2); }
 @media (max-width: 900px) { .pickpair { grid-template-columns: 1fr; } }
 
 .gridcard.isbare table { flex: 0 0 auto; }
@@ -828,8 +839,35 @@ label.check.agree.disabled { opacity: .55; }
 .appviewhead { justify-content: space-between; }
 .actionpanel > h2 { justify-content: center; }
 .appviewhead h2 { margin: 0; padding: 0; border: none; min-height: 0; font-size: 16px; color: var(--teal-950); }
-/* A row of filters above a grid: the one in force is filled in. */
-.filterrow { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
+/* A row of filters above a grid: the one in force is filled in. The choices sit together in one
+   bar - they are one question with several answers, not a scatter of separate buttons - and
+   anything else the row carries (a billing state) follows it. Dispatch's row is in three: the
+   day at the left, the bar in the middle, Someone Is Out at the right. */
+.filterrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 16px; }
+.segs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--border);
+        border-radius: 10px; background: var(--surface); }
+.segs .chip { border: 0; border-radius: 7px; min-width: 0; padding: 6px 14px; background: transparent;
+              color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+.segs .chip:hover { background: var(--teal-50); color: var(--teal-900); }
+.segs .chip.on, .segs .chip.on:hover { background: var(--teal-900); color: #fff; }
+.segcount { min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--bad); color: #fff;
+            font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.filterday { display: flex; align-items: center; gap: 8px; }
+.segs.viewpick { flex-wrap: nowrap; }
+.segs.viewpick .chip { padding: 6px 10px; }
+/* The day, with a step either side of it, in the same bar the view switch uses. Shut while the
+   board shown is one that does not go by the day. */
+.segs.daypick { flex-wrap: nowrap; align-items: center; }
+.segs.daypick .chip { padding: 6px 8px; }
+.segs.daypick input[type="date"] { border: 0; background: transparent; padding: 4px 6px; }
+.segs.daypick.off { opacity: .5; }
+/* One height across the dispatch row: the day, the filters, the view switch and Someone Is Out
+   line up top and bottom, each bar 40px with 32px pieces inside it. */
+.filterrow.threeway .segs { height: 40px; box-sizing: border-box; align-items: center; flex-wrap: nowrap; }
+.filterrow.threeway .segs .chip, .filterrow.threeway .segs input[type="date"] { height: 32px; box-sizing: border-box; }
+.filterrow.threeway .filterout > button { height: 40px; box-sizing: border-box; }
+.filterrow.threeway { display: grid; grid-template-columns: 1fr auto 1fr; }
+.filterrow.threeway > .filterout { justify-self: end; display: flex; align-items: center; gap: 8px; }
 /* A page that fills its height is a flex column with no gap, so each band carries its own, the
    way .filterrow above does. Without it a warning sits welded to the top of the table. */
 .fill > .notice { margin: 0 0 16px; }
@@ -1667,6 +1705,69 @@ embed.docfill, img.docfill { flex: 1; min-height: 0; height: auto; max-height: n
                     border-radius: 999px; padding: 3px 12px; font-size: 12px;
                     min-width: 96px; justify-content: center; }
 .rowacts .linkbtn:hover { background: var(--teal-50); border-color: var(--teal-500); }
+/* The dispatch board's are one width - its longest is "Deal With Problem" - and Edit Trip and
+   View Trip always come last, so every button down the board sits in one of three columns. */
+.dispatchgrid .rowacts .linkbtn { min-width: 112px; padding: 4px 8px; gap: 4px; }
+.dispatchgrid th.actions { padding-right: 20px; }
+/* The leg's own line is bold throughout - one weight across the row - and the FROM / TO line
+   under it stays light, so the two read as the leg and its route. */
+.dispatchgrid tbody tr:not(.subrow) > td:not(.actions) { font-weight: 700; }
+/* The route at the left and what went wrong at the right, starting under the Status column -
+   the board's empty corner, beside the thing it explains. */
+.legunder { display: flex; align-items: flex-start; gap: 24px; }
+.legunder .route { flex: 1; min-width: 0; }
+.legdetail { flex: none; width: 440px; font-size: 13px; line-height: 1.4; }
+
+/* The same grid as cards. The band above keeps the headings that sort, each as wide as its word;
+   the cards fill the rows' scrolling area in as many columns as fit. */
+.gridcard.cardview table.cardsorts { flex: 0 0 auto; }
+.gridcard.cardview table.cardsorts thead { table-layout: auto; }
+.gridcard.cardview table.cardsorts th { white-space: nowrap; width: 1%; padding-right: 22px; }
+.gridcard.cardview table.cardsorts th:last-child { width: auto; }
+/* The scrolling belongs to the frame, not to the cards: a box of fixed height shares its rows out
+   by height instead of making each as tall as its tallest card. */
+.gridcard.cardview .tablewrap { overflow-y: auto; background: #e9f0f1; }
+.gridcard.cardview table.cardsorts { position: sticky; top: 0; z-index: 1; }
+.cardgrid { flex: 0 0 auto; padding: 14px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 14px; align-content: start; background: #e9f0f1;
+            /* Every card the height of the tallest, so the board reads as a grid, not a scatter. */
+            grid-auto-rows: 1fr; }
+.gridcarditem { display: flex; flex-direction: column; border: 1px solid #c9d8da;
+                border-radius: 10px; background: var(--surface);
+                box-shadow: 0 2px 6px rgb(15 58 67 / 12%); }
+.legbody { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; font-size: 13px; }
+.leghead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+           margin: -12px -14px 0; padding: 10px 14px; border-radius: 10px 10px 0 0;
+           border-bottom: 1px solid var(--border); background: var(--teal-50); }
+/* The band takes a pale wash of the card's own colour. */
+.gridcarditem.rowbad .leghead { background: var(--bad-bg); }
+.gridcarditem.rowwarn .leghead { background: #fdf6dc; }
+.gridcarditem.rowmoving .leghead { background: #e8effd; }
+.gridcarditem.rowgood .leghead { background: #e4f3ea; }
+.legwhen b { font-size: 17px; margin-right: 6px; }
+.legstatus { font-weight: 700; }
+.legwho { display: flex; justify-content: space-between; gap: 10px; }
+.legwho b { font-size: 14px; }
+.legcrew { display: flex; gap: 18px; flex-wrap: wrap; font-weight: 600; }
+.legcrew b { font-size: 11px; letter-spacing: .06em; color: var(--text-2); margin-right: 4px; }
+.legnote { font-size: 12.5px; line-height: 1.4; }
+.legfoot { border-top: 1px solid var(--border); padding: 9px 14px; }
+.legfoot .rowacts { justify-content: flex-end; }
+/* A card says its state in its header band only - the band's wash and its text. What is under
+   it stays in the ordinary colours. */
+.gridcarditem.rowbad .leghead, .gridcarditem.rowbad .leghead * { color: var(--bad); }
+.gridcarditem.rowwarn .leghead, .gridcarditem.rowwarn .leghead * { color: #a16207; }
+.gridcarditem.rowmoving .leghead, .gridcarditem.rowmoving .leghead * { color: #1d4ed8; }
+.gridcarditem.rowgood .leghead, .gridcarditem.rowgood .leghead * { color: var(--green); }
+/* A whole row in one colour - every cell and the route under it, the status included. */
+.gridcard tr.rowbad > td:not(.actions), .gridcard tr.rowbad > td:not(.actions) * { color: var(--bad); }
+/* Under way: on the road, at the pickup or with the passenger aboard. No blue in the palette, so
+   its own; 6.7:1 on white. */
+.gridcard tr.rowmoving > td:not(.actions), .gridcard tr.rowmoving > td:not(.actions) * { color: #1d4ed8; }
+.gridcard tr.rowgood > td:not(.actions), .gridcard tr.rowgood > td:not(.actions) * { color: var(--green); }
+/* Yellower than --warn, which beside black bold text read as black. Still 4.9:1 on white. */
+.gridcard tr.rowwarn > td:not(.actions), .gridcard tr.rowwarn > td:not(.actions) * { color: #a16207; }
 
 /* Nothing chosen yet, said where the list would be. Centred and in the warning colour
    because it is the one thing standing between this schedule and being saved. */
@@ -3156,6 +3257,18 @@ main:has(> .stickypage) { padding-top: 0; }
           font-size: 14px; }
 .dverr { background: var(--bad-bg); color: var(--bad); border-radius: 10px; padding: 12px 14px;
          font-size: 15px; font-weight: 600; }
+/* A change from the office: the same wash as the trip's note, bordered so it reads as something
+   to act on, each field with what it was struck through and what it is now beneath it. */
+.dvchanged { display: flex; flex-direction: column; gap: 10px; background: var(--orange-100);
+             color: #5a3600; border: 2px solid var(--orange); border-radius: 12px; padding: 12px 14px; }
+.dvchanged > b { font-size: 16px; }
+.dvchangeset { display: flex; flex-direction: column; gap: 6px; }
+.dvchangewhen { font-size: 12px; font-weight: 600; }
+.dvchangeline { display: grid; gap: 1px; font-size: 14px; }
+.dvchangeline span { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.dvchangeline s { opacity: .7; }
+.dvchangeline b { font-size: 15px; }
+.dvchangedrow { display: block; margin-top: 3px; font-size: 12px; font-weight: 700; color: #8a4b00; }
 .dvdone { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px;
           color: var(--green); font-weight: 700; font-size: 16px; }
 .dvempty, .dvwait { color: var(--text-2); text-align: center; padding: 40px 16px; font-size: 16px; }
@@ -3312,6 +3425,9 @@ main:has(> .stickypage) { padding-top: 0; }
    and says so in the colour the rest of the product uses for "this has gone wrong". */
 .chip.shouting { border-color: var(--bad); color: var(--bad); font-weight: 600; }
 .chip.shouting.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+.segs .chip.shouting { color: var(--bad); }
+.segs .chip.shouting.on, .segs .chip.shouting.on:hover { background: var(--bad); color: #fff; }
+.segs .chip.shouting.on .segcount { background: #fff; color: var(--bad); }
 
 /* A numbered explanation of how something works, on a page that has to teach before it acts.
    Roomier than a bare <ol> because each step is a sentence, not a word. */

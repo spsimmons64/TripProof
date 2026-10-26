@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle, Bell, CheckCheck, ChevronDown, Info, LogOut, ShieldCheck, XCircle } from 'lucide-react'
-import { api, auth } from '../lib/api.js'
+import { api } from '../lib/api.js'
+import { signOut } from '../lib/session.js'
 import { Modal } from '../admin/common.jsx'
 import TimeZoneSelect from './TimeZoneSelect.jsx'
 
@@ -41,7 +42,7 @@ function alarm() {
 
 // Full-width header: brand on the left; notifications, who is signed in, and sign-out on the right.
 export default function TopBar({ user, admin }) {
-  const signOut = () => { auth.clear(); window.location.assign('/login') }
+
   const [settings, setSettings] = useState(false)
   return (
     <header className="topbar">

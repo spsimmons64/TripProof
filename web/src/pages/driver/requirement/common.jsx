@@ -30,7 +30,7 @@ import { CrashDialog } from '../Accidents.jsx'
 export const PROVENANCE = { fdle: 'FDLE', ahca: 'AHCA Clearinghouse', vendor: 'Screening vendor' }
 
 export const SCREEN_RESULTS = { negative: 'Negative', negativedilute: 'Negative-Dilute', positive: 'Positive',
-  refusal: 'Refusal', cancelled: 'Cancelled' }
+  refusal: 'Refusal', cancelled: 'Canceled' }
 
 // How wide a requirement reads. One number, because a dialog whose width changes with whichever
 // requirement opened it looks like a mistake.

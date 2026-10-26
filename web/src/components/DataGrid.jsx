@@ -15,11 +15,16 @@ import SortHeader from './SortHeader.jsx'
 //   onRowClick        optional; makes rows clickable
 //   rowClickable      optional; given an item, says whether that one row opens - a row that does
 //                     not is shown plainly, without the hand cursor or the hover
+//   rowClass  optional; given an item, a class for its row and the line under it - a whole row
+//             said in one colour, such as a missed pickup
+//   card      optional; given an item, the whole of it as one card. When given, the rows are laid
+//             out as cards in the same frame - the sort band above, the pager below - and the
+//             band keeps only the headings that sort, since there are no columns under them
 //   pager     { total, page, pagesize, noun, onPage, onPageSize } - omit for a grid without paging
 //   A column may carry a NODE as its label, which is how a grid holds its own title and its own
 //   actions in the header band - see the driver's hours of service grid.
-export default function DataGrid({ columns, rows, rowKey, cells, sort, dir, onSort, onRowClick, rowClickable, loading, error,
-  empty = 'Nothing here yet.', pager, subrow, className = '' }) {
+export default function DataGrid({ columns, rows, rowKey, cells, sort, dir, onSort, onRowClick, rowClickable, rowClass, loading, error,
+  empty = 'Nothing here yet.', pager, subrow, card: asCard, className = '' }) {
   const card = useRef(null)
   // The header's spacer must be exactly as wide as the rows' scrollbar. Measure this grid's own rows
   // (offsetWidth - clientWidth) rather than trusting a page-wide guess: it varies by browser, zoom
@@ -38,6 +43,34 @@ export default function DataGrid({ columns, rows, rowKey, cells, sort, dir, onSo
   // the message sitting at the bottom of a white expanse - which is where every empty grid on the
   // site was putting it.
   const bare = !rows || rows.length === 0
+  if (asCard) {
+    const sorts = columns.filter((c) => onSort && c.sortable !== false && c.label)
+    return (
+      <div ref={card} className={`card gridcard cardview${bare ? ' isbare' : ''} ${className}`}>
+        <div className="tablewrap">
+          <table className="cardsorts"><thead><tr>
+            {sorts.map((c) => (
+              <SortHeader key={c.id} id={c.id} label={c.label} sort={sort} dir={dir} onSort={onSort}
+                numeric={c.numeric} firstDir={c.firstDir} />
+            ))}
+            <th />
+          </tr></thead></table>
+          {rows && rows.length > 0 && (
+            <div className="cardgrid">
+              {rows.map((item) => (
+                <div key={rowKey(item)} className={['gridcarditem', rowClass?.(item)].filter(Boolean).join(' ')}>
+                  {asCard(item)}
+                </div>
+              ))}
+            </div>
+          )}
+          {!rows && <div className="gridempty">{error ? <span className="error">{error}</span> : loading ?? 'Loading…'}</div>}
+          {rows && rows.length === 0 && <div className="gridempty">{empty}</div>}
+        </div>
+        {pager && <Pager {...pager} total={pager.total || 0} />}
+      </div>
+    )
+  }
   return (
     <div ref={card} className={`card gridcard${bare ? ' isbare' : ''} ${className}`}>
       <div className="tablewrap">
@@ -62,9 +95,10 @@ export default function DataGrid({ columns, rows, rowKey, cells, sort, dir, onSo
             // column and should not be cut to fit one - an address, a route - where squeezing it
             // into a cell means an ellipsis in the middle of a street name.
             const under = subrow?.(item)
+            const tone = rowClass?.(item) || null
             return (
               <Fragment key={rowKey(item)}>
-                <tr className={[opens ? 'click' : null, under ? 'hassub' : null].filter(Boolean).join(' ') || undefined}
+                <tr className={[opens ? 'click' : null, under ? 'hassub' : null, tone].filter(Boolean).join(' ') || undefined}
                     onClick={opens ? () => onRowClick(item) : undefined}>
                   {columns.map((c, i) => (
                     <td key={c.id} className={[c.numeric && 'num', c.className].filter(Boolean).join(' ') || undefined}
@@ -72,7 +106,7 @@ export default function DataGrid({ columns, rows, rowKey, cells, sort, dir, onSo
                   ))}
                 </tr>
                 {under && (
-                  <tr className={`subrow${opens ? ' click' : ''}`}
+                  <tr className={['subrow', opens ? 'click' : null, tone].filter(Boolean).join(' ')}
                       onClick={opens ? () => onRowClick(item) : undefined}>
                     <td colSpan={columns.length + 1}>{under}</td>
                   </tr>

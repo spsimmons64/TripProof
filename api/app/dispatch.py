@@ -48,6 +48,19 @@ SERVICE = {
 # Beyond this a driver is not realistically the right answer for a pickup, however free they
 # are. It is a sort order, not a rule - the office can still choose them.
 FAR_MILES = 40.0
+# The longest a single leg is believed to run. An NEMT leg is a journey to an appointment; a figure
+# past this is an odometer reading typed where a distance belongs - 42,125 "miles" from Jacksonville
+# to Orlando - and it would be billed as written.
+MAX_LEG_MILES = 1000
+
+
+def plausible_miles(miles: float) -> None:
+    from fastapi import HTTPException
+    if miles < 0 or miles > MAX_LEG_MILES:
+        raise HTTPException(400, f"{miles:g} is not how far a trip ran. Enter the distance driven, "
+                                 f"not the odometer reading.")
+
+
 # A position older than this says where somebody was, not where they are.
 STALE = timedelta(hours=2)
 
@@ -64,15 +77,16 @@ def _because(stop: dict) -> str:
     The engine already writes a sentence for every requirement - "A defect reported on this
     vehicle has not been corrected and certified" - and the name on its own says nothing: a
     dispatcher reading "Cannot be dispatched - driver vehicle inspection reports" learns only
-    which heading to go and look under. The first sentence of the reason is what belongs on a
-    row this narrow; the rest is on the vehicle's own page.
+    which heading to go and look under. Nor does the sentence on its own: "Nothing on file yet"
+    does not say what is missing. So the requirement's name, then the first sentence of the
+    reason; the rest, citation and all, is on the driver's or vehicle's own page.
     """
+    name = stop.get("name") or stop.get("code") or ""
     said = (stop.get("why") or "").strip()
-    if said:
-        first = said.split(". ")[0].strip().rstrip(".")
-        if first:
-            return first
-    return stop["name"]
+    first = said.split(". ")[0].strip().rstrip(".") if said else ""
+    if first and name:
+        return f"{name}: {first}"
+    return first or name
 
 
 # How long a leg is assumed to take when nobody has said. Only work that has NOT been driven can
@@ -154,7 +168,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
             # An approved rule stops them; one still in draft is said and stops nobody.
             held = [r for r in stops if _approved(r)]
             if held:
-                blocks.append(f"May not drive - {_because(held[0])}")
+                blocks.append(_because(held[0]))
             elif stops:
                 drafts.append(f"{_because(stops[0])} (rule not yet approved)")
             else:
@@ -191,7 +205,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
             "driverid": d["recordid"], "name": d["name"],
             "available": not blocks,
             "blocked": blocks, "because": why, "warnings": warn, "drafts": drafts,
-            "miles": miles,
+            "miles": miles, "said": [r["code"] for r in stops[:1]] if d["status"] == "hired" else [],
         })
     # Available first, then nearest, then those with a known position, then by name.
     out.sort(key=lambda x: (not x["available"], bool(x["warnings"]),
@@ -298,7 +312,7 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
         held = [r for r in stops if _approved(r)]
         drafts = [] if held or not stops else [f"{_because(stops[0])} (rule not yet approved)"]
         if held:
-            blocks.append(f"Cannot be dispatched - {_because(held[0])}")
+            blocks.append(_because(held[0]))
         else:
             why.append("Cleared to dispatch")
         if needs["lift"] and not v["lift"]:
@@ -318,6 +332,7 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
             "name": f"{v['externalid']} · {v['make'] or ''} {v['model'] or ''}".strip(" ·"),
             "available": not blocks, "blocked": blocks, "because": why, "warnings": [],
             "drafts": drafts,
+            "said": [r["code"] for r in stops[:1]] + (["LIFT"] if needs["lift"] and not v["lift"] else []),
         })
     out.sort(key=lambda x: (not x["available"], x["name"]))
     return out
@@ -421,16 +436,22 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
                                   else (None, None, None))
 
     def said_of(b: dict) -> str:
-        return b.get("reason") or b.get("name") or b["code"]
+        return _because({"name": b.get("name"), "code": b["code"], "why": b.get("reason")})
 
-    def driver_check(candidate: str) -> tuple[list[str], list[str]]:
-        said = tripcheck.check(conn, accountid, candidate, None, legid=legid,
+    def fresh(c: dict, found: list[dict]) -> list[dict]:
+        """What the candidate list has not already said. Both ask the engine, so a failed
+        requirement came back twice - once as a line and once with its citation - and the
+        dispatcher read the same defect two times over in one row."""
+        return [b for b in found if b["code"] not in c.get("said", [])]
+
+    def driver_check(candidate: dict) -> tuple[list[str], list[str], list[str]]:
+        said = tripcheck.check(conn, accountid, candidate["driverid"], None, legid=legid,
                                proposed=None if legid else leg, at=when, record=False)
         # The vehicle's own problems are the vehicle's, shown against it rather than every driver;
         # and whether they are hired is already said by the candidate list itself.
         mine = [b for b in said["blockers"]
                 if not b.get("vehicle") and b["code"] not in ("HIRED", "DRIVER")]
-        stop, drafts = split(mine)
+        stop, drafts = split(fresh(candidate, mine))
         return stop, drafts, [said_of(h) for h in said.get("holds") or []]
 
     def split(found: list[dict]) -> tuple[list[str], list[str]]:
@@ -442,7 +463,7 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
 
     away = _unavailable(conn, accountid, when)
     for d in drivers:
-        stop, drafts, holds = driver_check(d["driverid"])
+        stop, drafts, holds = driver_check(d)
         d["blocked"] = d["blocked"] + stop
         # Drafts are said, and nothing has to be accepted for them; a hold has to be accepted by
         # an owner or admin, so it is a warning - and named as a hold so the assignment knows who.
@@ -453,8 +474,8 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
             d["warnings"] = d["warnings"] + [away["drivers"][d["driverid"]]]
         d["available"] = not d["blocked"]
     for v in vehicles:
-        stop, drafts = split(tripcheck.vehicle_blockers(conn, accountid, v["vehicleid"], service, when,
-                                                        states, program, contract))
+        stop, drafts = split(fresh(v, tripcheck.vehicle_blockers(
+            conn, accountid, v["vehicleid"], service, when, states, program, contract)))
         v["blocked"] = v["blocked"] + stop
         v["drafts"] = v.get("drafts", []) + drafts
         v.setdefault("warnings", [])

@@ -95,9 +95,13 @@ const GROUPS = [
 // than by being singled out.
 const ONE_OFF = ['once', 'perhire']
 
+// Except a driving record. It is pulled before hiring and met, but it is not finished business:
+// its row is where the office orders a new one, files one that arrives and reviews it - after an
+// accident, a suspension notice, or the annual review - so it stays on a hired driver's list.
 const settledHistory = (i) => (i.duestage || 'prehire') === 'prehire'
   && ONE_OFF.includes(i.recurrence || 'once')
   && ['satisfied', 'expiring'].includes(i.status)
+  && !(i.evidencesource || '').startsWith('mvr')
 
 const HIRED_GROUPS = [
   ['regulatory', 'Federal And State Requirements', null],
@@ -313,7 +317,7 @@ export function Requirements({ id, onChanged, focus, onGoSection }) {
 const RESULTS = {
   report: [['clear', 'Clear'], ['review', 'Needs a look'], ['flagged', 'Adverse']],
   drugtest: [['negative', 'Negative'], ['positive', 'Positive'], ['refusal', 'Refusal'],
-    ['cancelled', 'Cancelled']],
+    ['cancelled', 'Canceled']],
   annualreview: [['qualified', 'Qualified'], ['notqualified', 'Disqualified']],
 }
 

@@ -10,7 +10,12 @@ from app import invitations, signatures
 from app.activity import log
 from app.db import get_conn, row, run, saved, utcnow
 from app.timezones import clean_timezone
-from app.security import SIGNIN_ALLOWED, client_ip, current_user, hash_password, issue_token, verify_password
+import jwt
+from fastapi.security import HTTPAuthorizationCredentials
+
+from app.config import settings
+from app.security import (SIGNIN_ALLOWED, bearer, client_ip, current_user, hash_password, issue_token,
+                          renew_token, verify_password)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -120,6 +125,10 @@ def _prove(conn: Connection, user: dict, ip: str | None, dob: date, ssn: str, *,
         if held["ssnhash"] != ssnhash or held["dob"] != dob:
             _recent(ip).append(time.monotonic())
             raise HTTPException(403, "Incorrect Date Of Birth / Social Security Combination")
+        try:
+            signatures.recognise(conn, user["accountid"], "user", user["recordid"], user["name"], ssn, dob)
+        except ValueError as e:
+            raise HTTPException(403, str(e))
         return {"signature": sig, "established": False}
     if establish:
         run(conn, "UPDATE users SET dob = :d, ssnhash = :h, updated = :now WHERE recordid = :u",
@@ -135,6 +144,17 @@ def _shown(sig: dict | None, ip: str | None) -> dict | None:
     return {"recordid": sig["recordid"], "typedname": sig["typedname"], "fontkey": sig["fontkey"],
             "signername": sig["signername"], "verifiedby": sig["verifiedby"],
             "adoptedon": str(sig["createdon"]), "ip": ip}
+
+
+@router.post("/refresh")
+def refresh(user: dict = Depends(current_user),
+            creds: HTTPAuthorizationCredentials | None = Depends(bearer)) -> dict:
+    """The sign-in, extended. Asked for by the office app every few minutes while somebody is using
+    it, so a session ends after a stretch with nobody at the keyboard - never part-way through
+    somebody's work because a clock set at sign-in ran out. `current_user` has already refused a
+    token that is expired, revoked or for an account that may no longer sign in."""
+    claims = jwt.decode(creds.credentials, settings.jwt_secret, algorithms=["HS256"])
+    return {"token": renew_token(claims)}
 
 
 @router.get("/me/signature")
@@ -165,7 +185,8 @@ def adopt_my_signature(body: SignatureIn, request: Request, user: dict = Depends
             sig = signatures.adopt(conn, user["accountid"], "user", user["recordid"], user["name"],
                                    body.typedname or user["name"], body.fontkey, "dob_ssn",
                                    client_ip(request), request.headers.get("user-agent"),
-                                   email=user.get("email"), role=user.get("role"))
+                                   email=user.get("email"), role=user.get("role"),
+                                   ssn=body.ssn, dob=body.dob)
         except ValueError as e:
             raise HTTPException(400, str(e))
         log(conn, user, "signature-adopted", "user", user["recordid"], ip=client_ip(request))

@@ -359,7 +359,10 @@ function VehicleCheck({ me, reporting, vehicle = null, onFiled }) {
   useEffect(() => {
     call('/vehicles').then((got) => {
       setList(got)
-      setVehicle((v) => v ?? got.items[0]?.recordid ?? null)
+      // The vehicle on today's trips, if there is one. Otherwise nothing: the first van in the
+      // list is not the one the driver is standing next to, and a check filed against the wrong
+      // vehicle is a clean report on a van nobody looked at.
+      setVehicle((v) => v ?? got.items.find((x) => x.mine)?.recordid ?? null)
     }).catch((e) => setErr(e.message))
   }, [])
   useEffect(() => {
@@ -392,10 +395,11 @@ function VehicleCheck({ me, reporting, vehicle = null, onFiled }) {
       {err && <div className="dverr">{err}</div>}
 
       <label className="dvfield">Vehicle
-        <select value={vehicleid || ''} onChange={(e) => setVehicle(e.target.value)}>
+        <select value={vehicleid || ''} onChange={(e) => setVehicle(e.target.value || null)}>
+          {!vehicleid && <option value="">Choose the vehicle you are checking</option>}
           {list.items.map((v) => (
             <option key={v.recordid} value={v.recordid}>
-              {[v.externalid, v.make, v.model].filter(Boolean).join(' · ')}{v.mine ? ' — yours today' : ''}
+              {[v.externalid, v.make, v.model].filter(Boolean).join(' · ')}{v.mine ? ' - yours today' : ''}
             </option>
           ))}
         </select>
@@ -420,6 +424,7 @@ function VehicleCheck({ me, reporting, vehicle = null, onFiled }) {
       )}
       {seen && !seen.last && <div className="dvlast">No inspection has ever been filed on this vehicle.</div>}
 
+      {vehicleid && <>
       <div className="dvpick">
         {Object.entries(list.kinds).map(([k, label]) => (
           <button key={k} type="button" className={`dvchip${kind === k ? ' on' : ''}`}
@@ -458,8 +463,29 @@ function VehicleCheck({ me, reporting, vehicle = null, onFiled }) {
         <div className="dverr">Filed. The office has it. This vehicle must not be driven until
           they certify the repair.</div>
       )}
+      </>}
     </>
   )
+}
+
+// The phone says so out loud when the office changes a trip: a buzz and two notes. A driver at the
+// wheel is not reading the screen, and the change has to reach them anyway. Quiet where the phone
+// will not allow it - nothing here may stop the change being shown.
+function chime() {
+  try { navigator.vibrate?.([300, 150, 300, 150, 300]) } catch { /* no vibration */ }
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    const ctx = new Ctx()
+    ;[[0, 660], [0.28, 880]].forEach(([at, hz]) => {
+      const o = ctx.createOscillator()
+      const g = ctx.createGain()
+      o.frequency.value = hz
+      o.connect(g); g.connect(ctx.destination)
+      g.gain.setValueAtTime(0.3, ctx.currentTime + at)
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + at + 0.25)
+      o.start(ctx.currentTime + at); o.stop(ctx.currentTime + at + 0.26)
+    })
+  } catch { /* no sound */ }
 }
 
 function Work({ me, onOut }) {
@@ -469,23 +495,32 @@ function Work({ me, onOut }) {
   const [where, setWhere] = useState('trips') // which of the app's pages
   const [checkFor, setCheckFor] = useState(null) // the trip that sent the driver to inspect
   const go = (to) => { setWhere(to); setOpen(null) }
+  const told = useRef(null)                    // the changes already announced
   const load = useCallback(async () => {
-    try { setData(await call('/trips')); setErr(null) } catch (x) { setErr(x.message) }
+    try {
+      const got = await call('/trips')
+      // A change not heard of before is announced once, the moment it arrives.
+      const now = new Set(got.items.flatMap((x) => (x.changes || []).map((c) => c.changeid)))
+      if (told.current && [...now].some((id) => !told.current.has(id))) chime()
+      told.current = now
+      setData(got); setErr(null)
+    } catch (x) { setErr(x.message) }
   }, [])
   useEffect(() => { load() }, [load])
-  // The list is re-read on a timer as well as after every action: the office can reassign a trip
-  // while a driver is looking at it, and a driver acting on a stale list is a trip done twice.
-  useEffect(() => {
-    const t = setInterval(load, 60000)
-    const wake = () => { if (document.visibilityState === 'visible') load() }
-    document.addEventListener('visibilitychange', wake)
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', wake) }
-  }, [load])
-
   const items = data?.items || []
   // Reporting runs from sign-in to sign-out, not from trip to trip: the office asks "where is
   // everybody" long before a driver has pressed anything.
   const driving = items.some((x) => ['enroute', 'arrived', 'onboard'].includes(x.executionstate))
+  // The list is re-read on a timer as well as after every action: the office can reassign a trip
+  // while a driver is looking at it, and a driver acting on a stale list is a trip done twice.
+  // Every fifteen seconds while a trip is under way, because a change then is a change to where
+  // the driver is going right now.
+  useEffect(() => {
+    const t = setInterval(load, driving ? 15000 : 60000)
+    const wake = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', wake)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', wake) }
+  }, [load, driving])
   const reporting = useReporting(true, driving)
   // The screen is kept awake only while a trip is actually under way. All day would be a flat
   // battery by two o'clock.
@@ -547,6 +582,7 @@ function Work({ me, onOut }) {
               <span className="dvwho">{t.passenger}</span>
             </span>
             <span className="dvaddr">{t.pickupplace}</span>
+            {t.changes?.length > 0 && <span className="dvchangedrow">Trip changed - open it to read</span>}
           </span>
           <Standing leg={t} />
         </button>
@@ -657,6 +693,31 @@ function Trip({ me, leg, reporting, onBack, onDone, onCheck }) {
       right={<button className="dvicon" onClick={onBack} aria-label="Back">✕</button>}>
       {err && <div className="dverr">{err}</div>}
       <Reporting {...reporting} />
+
+      {/* What the office changed, before anything else on the screen, with what it was and what it
+          is now. Nothing on the trip moves on until the driver says they have read it - the server
+          refuses the next step until then, and the button for it is not offered. */}
+      {leg.changes?.length > 0 && (
+        <div className="dvchanged">
+          <b>The Office Changed This Trip</b>
+          {leg.changes.map((c) => (
+            <div key={c.changeid} className="dvchangeset">
+              <span className="dvchangewhen">At {time(c.changedon)}</span>
+              {c.changes.map((x) => (
+                <div key={x.field} className="dvchangeline">
+                  <span>{x.field}</span>
+                  <s>{x.old}</s>
+                  <b>{x.new}</b>
+                </div>
+              ))}
+            </div>
+          ))}
+          <button className="dvgo" type="button" disabled={busy}
+            onClick={() => act(async () => call(`/legs/${leg.legid}/changes/seen`, {}))}>
+            <Check size={20} /> I Have Seen This
+          </button>
+        </div>
+      )}
 
       {/* Where they are going NEXT, which is the passenger until the passenger is aboard and
           the destination afterwards. One button, and it always means the right place.

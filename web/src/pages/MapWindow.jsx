@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { api } from '../lib/api.js'
+import { followMain } from '../lib/session.js'
 import { Loading, useLoad } from '../components/ui.jsx'
 import FleetMap from '../components/FleetMap.jsx'
 
@@ -33,6 +34,8 @@ export default function MapWindow() {
   }, [moving])
 
   useEffect(() => { document.title = 'Current Driver Locations - TripProof' }, [])
+  // On the main window's sign-in: renewed when it renews, closed when it signs out.
+  useEffect(() => followMain(), [])
 
   return (
     <div className="mapwindow">

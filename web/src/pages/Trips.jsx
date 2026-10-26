@@ -57,10 +57,12 @@ export default function Trips() {
       )}
 
       <div className="filterrow">
-        {[['fail', 'At risk'], ['pass', 'Credentialed'], ['all', 'All']].map(([v, l]) => (
-          <button key={v} type="button" className={`chip${status === v ? ' on' : ''}`}
-            onClick={() => g.setFilter('status', v)}>{l}</button>
-        ))}
+        <div className="segs">
+          {[['fail', 'At Risk'], ['pass', 'Credentialed'], ['all', 'All']].map(([v, l]) => (
+            <button key={v} type="button" className={`chip${status === v ? ' on' : ''}`}
+              onClick={() => g.setFilter('status', v)}>{l}</button>
+          ))}
+        </div>
         <select value={g.filters.billing} onChange={(e) => g.setFilter('billing', e.target.value)}>
           {BILLING.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>

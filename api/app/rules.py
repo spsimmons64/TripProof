@@ -1382,7 +1382,8 @@ def _cdlis_reading(got: dict, today: date) -> dict:
     return {"determination": "certified"}
 
 
-def deadline(rule: dict, hiredon: date | None, evidence: dict | None = None) -> date | None:
+def deadline(rule: dict, hiredon: date | None, evidence: dict | None = None,
+             lastmvr: date | None = None) -> date | None:
     """The day an obligation of employment first falls due, or None if it is not one.
 
     A stage on its own is a label. 391.23(d) gives thirty days from the start of employment, and
@@ -1399,7 +1400,14 @@ def deadline(rule: dict, hiredon: date | None, evidence: dict | None = None) -> 
     if stage == "athire" and rule.get("duedays"):
         return hiredon + timedelta(days=int(rule["duedays"]))
     if stage == "ongoing" and evidence is None:
-        return renewed(rule, hiredon)
+        due = renewed(rule, hiredon)
+        # The annual review is of the driving record, and 391.25(a) has a new one pulled at least
+        # every twelve months - counted from the record on file, not from the day of hire. A record
+        # pulled a week before hiring runs out a week before "a year after hire", so the first
+        # review is due by whichever comes first.
+        if (rule.get("evidencesource") or "") == "annualreview" and lastmvr:
+            due = min(d for d in (due, renewed(rule, lastmvr)) if d)
+        return due
     return None
 
 
@@ -2116,6 +2124,12 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
     hired = row(conn, "SELECT hiredon FROM drivers WHERE recordid = :d AND accountid = :a",
                 d=driverid, a=accountid)
     hiredon = (hired or {}).get("hiredon")
+    # The latest driving record on file, which the first annual review is counted from too.
+    lastmvr = (row(conn, """
+        SELECT MAX(COALESCE(issuedon, DATE(receivedon))) AS on_ FROM drivermvrs
+        WHERE accountid = :a AND driverid = :d AND cancelledon IS NULL
+          AND (issuedon IS NOT NULL OR receivedon IS NOT NULL)
+    """, a=accountid, d=driverid) or {}).get("on_")
     # The most recent drug and alcohol violation on file, cleared or not. The Clearinghouse is the
     # register OF these, so a query run before one cannot have been answering about it - see
     # `violationresets` below. Cleared bars count: a violation that happened still happened, and
@@ -2350,7 +2364,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                 and status == "pending"):
             why = (f"The last query was run before the violation of "
                    f"{violatedon:%m/%d/%Y}. Run a new one.")
-        dueon = deadline(rule, hiredon, evidence)
+        dueon = deadline(rule, hiredon, evidence, lastmvr)
         if dueon and today > dueon and status in ("pending", "ordered", "unknown"):
             status = "overdue"
             why = f"Was due by {dueon:%m/%d/%Y}."

@@ -21,7 +21,7 @@ import { useLoad } from './ui.jsx'
 const EMPTY = {
   passenger: '', passengerphone: '', tripdate: '', servicelevel: 'ambulatory',
   payer: 'private', brokerid: '', note: '', pickupplace: '', dropoffplace: '', pickupat: '',
-  minutes: 60, ret: false, returnat: '',
+  minutes: 60, ret: 'no', returnat: '',
 }
 
 export default function BookTrip({ onClose, onBooked }) {
@@ -42,8 +42,9 @@ export default function BookTrip({ onClose, onBooked }) {
   const [err, setErr] = useState(null)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
 
+  // A round trip needs its return time; a will-call return is the one that does not.
   const ready = f.passenger.trim() && f.tripdate && f.pickupat
-    && f.pickupplace.trim() && f.dropoffplace.trim()
+    && f.pickupplace.trim() && f.dropoffplace.trim() && (f.ret !== 'yes' || f.returnat)
 
   // Asked for explicitly rather than on every keystroke: it reads the whole roster against
   // the compliance engine, which is not something to do while somebody is still typing.
@@ -71,12 +72,20 @@ export default function BookTrip({ onClose, onBooked }) {
         dropoffplace: f.dropoffplace.trim(),
         driverid, vehicleid,
       }]
-      if (f.ret && f.returnat) {
+      if (f.ret === 'yes') {
         legs.push({
           pickupat: `${f.tripdate}T${f.returnat}:00`,
           pickupplace: f.dropoffplace.trim(),
           dropoffplace: f.pickupplace.trim(),
           driverid, vehicleid,
+        })
+      } else if (f.ret === 'willcall') {
+        // No time and nobody on it yet: who is free and nearest is a question for when the
+        // passenger rings, not for now.
+        legs.push({
+          pickupat: null,
+          pickupplace: f.dropoffplace.trim(),
+          dropoffplace: f.pickupplace.trim(),
         })
       }
       const got = await api.post('/trips', {
@@ -100,7 +109,7 @@ export default function BookTrip({ onClose, onBooked }) {
   useEffect(() => {
     if (!f.tripdate || !f.servicelevel) { setQuote(null); return }
     let dropped = false
-    const legs = f.ret ? 2 : 1
+    const legs = f.ret === 'no' ? 1 : 2
     api.get(`/dispatch/quote?servicelevel=${f.servicelevel}&on=${f.tripdate}&legs=${legs}`
             + (f.brokerid ? `&payerid=${f.brokerid}` : '')
             + (pickupstate ? `&state=${pickupstate}` : ''))
@@ -203,14 +212,14 @@ export default function BookTrip({ onClose, onBooked }) {
             </select>
           </label>
           <label className="field span-2">Return
-            <select value={f.ret ? 'yes' : 'no'}
-              onChange={(e) => setF({ ...f, ret: e.target.value === 'yes' })}>
+            <select value={f.ret} onChange={(e) => setF({ ...f, ret: e.target.value })}>
               <option value="no">One way</option>
               <option value="yes">Round trip</option>
+              <option value="willcall">Round trip, will-call</option>
             </select>
           </label>
-          {f.ret && (
-            <label className="field span-2">Return Time
+          {f.ret === 'yes' && (
+            <label className="field span-2">Return Time *
               <input type="time" value={f.returnat} onChange={set('returnat')} />
             </label>
           )}

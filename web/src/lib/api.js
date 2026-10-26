@@ -1,5 +1,7 @@
 // Thin fetch wrapper. The token lives in sessionStorage so closing the tab signs out - a shared
 // dispatch-office PC should not stay signed in to a system holding PHI.
+import { signOut } from './session.js'
+
 const TOKEN = 'tripproof.token'
 
 export const auth = {
@@ -27,8 +29,9 @@ async function request(method, path, body, { raw = false } = {}) {
   }
   const res = await fetch(`/api${path}`, { method, headers, body: payload })
   if (res.status === 401 && path !== '/auth/login') {
-    auth.clear()
-    window.location.assign('/login')
+    // The map window has no sign-in page of its own to fall back to: it closes.
+    if (window.location.pathname === '/map') { auth.clear(); window.close() }
+    else signOut()
     throw new ApiError(401, 'Signed out')
   }
   if (!res.ok) {

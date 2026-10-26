@@ -1185,10 +1185,10 @@ function MisReport({ item, typeid, onClose, onChanged }) {
             separate: a specimen and a breath sample are not the same test. */}
         {[['drug', 'Controlled substances',
            ['tests', 'negative', 'positive', 'refusal', 'cancelled'],
-           ['Tests', 'Negative', 'Positive', 'Refusals', 'Cancelled']],
+           ['Tests', 'Negative', 'Positive', 'Refusals', 'Canceled']],
           ['alcohol', 'Alcohol',
            ['tests', 'under02', 'band0202', 'band04', 'refusal', 'cancelled'],
-           ['Tests', 'Under 0.02', '0.02 - 0.039', '0.04 or more', 'Refusals', 'Cancelled']]
+           ['Tests', 'Under 0.02', '0.02 - 0.039', '0.04 or more', 'Refusals', 'Canceled']]
         ].map(([key, title, cols, heads]) => (
           <section key={key}>
             <h3 className="formsection">{title}</h3>

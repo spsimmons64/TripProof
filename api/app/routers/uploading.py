@@ -112,12 +112,18 @@ def _open_request(conn: Connection, token: str) -> dict:
     return held
 
 
-def _prove(held: dict, dob: date, ssn: str) -> None:
-    """The same check the application makes, against the same record."""
+def _prove(conn: Connection, held: dict, dob: date, ssn: str) -> None:
+    """The same check the application makes, against the same record - and a driver who signed
+    before the SSN register existed is put onto it now the number is in hand."""
     if not signatures.valid_ssn(ssn):
         raise HTTPException(400, "That Social Security number doesn't look right")
     if (held["ssnhash"] != signatures.ssn_hash(held["accountid"], ssn) or held["dob"] != dob):
         raise HTTPException(403, "Incorrect Date Of Birth / Social Security Combination")
+    try:
+        signatures.recognise(conn, held["accountid"], "driver", held["driverid"],
+                             f'{held["firstname"]} {held["lastname"]}'.strip(), ssn, dob)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
 
 
 @router.get("/{token}")
@@ -142,7 +148,7 @@ class Prove(BaseModel):
 def open_it(token: str, body: Prove, conn: Connection = Depends(get_conn)):
     """Prove who is at the keyboard, and be shown what to send."""
     held = _open_request(conn, token)
-    _prove(held, body.dob, body.ssn)
+    _prove(conn, held, body.dob, body.ssn)
     # The signature they already adopted on their application, sent back so the page can SHOW it
     # rather than ask for it again. A person has one signature; they adopted it once, on their own
     # application, and everything they sign afterwards is signed with that one. Only once they have
@@ -159,7 +165,7 @@ def open_it(token: str, body: Prove, conn: Connection = Depends(get_conn)):
 
 async def _take_questionnaire(conn: Connection, request: Request, held: dict, priorviolation,
                               prioremployer, priortestdate, priortesttype, priorrtd,
-                              signature=None, fontkey=None, paperwork=None):
+                              signature=None, fontkey=None, paperwork=None, ssn=None, dob=None):
     """The 40.25(j) answer, written onto the driver's own application.
 
     There is no document and no credential: the application IS the record, and the rule already
@@ -213,7 +219,7 @@ async def _take_questionnaire(conn: Connection, request: Request, held: dict, pr
         try:
             sig = signatures.adopt(conn, held["accountid"], "driver", held["driverid"], name,
                                    typed, (fontkey or "modern"), "dob_ssn", client_ip(request),
-                                   request.headers.get("user-agent"))
+                                   request.headers.get("user-agent"), ssn=ssn, dob=dob)
         except ValueError as e:
             raise HTTPException(400, str(e))
     attested = (f'49 CFR 40.25(j) - answered {said}'
@@ -331,7 +337,7 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
     That is the one case where nothing is attached, and it is recorded as an exemption rather than
     as a certificate that happens to be missing."""
     held = _open_request(conn, token)
-    _prove(held, dob, ssn)
+    _prove(conn, held, dob, ssn)
     if exempt and held["credentialcode"] in NO_EXEMPTION:
         raise HTTPException(400, "There is no exemption from this one")
     # A license is not a document that happens to be a license. It is a card with a number, a state,
@@ -340,7 +346,7 @@ async def send_it(token: str, request: Request, dob: date = Form(...), ssn: str 
     if held["credentialcode"] == QUESTIONNAIRE:
         return await _take_questionnaire(conn, request, held, priorviolation, prioremployer,
                                          priortestdate, priortesttype, priorrtd, signature,
-                                         fontkey, file)
+                                         fontkey, file, ssn=ssn, dob=dob)
     if held["credentialcode"] == "DRIVER_LICENSE":
         return await _take_license(conn, request, held, number, state, classification,
                                    endorsements, issuedon, expireson, front, back,

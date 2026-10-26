@@ -429,6 +429,219 @@ def test_5b_only_an_editor_of_the_same_company_may_certify_or_record_a_result(ma
                             {"r": insp}).scalar() is None
 
 
+# 5b. One Social Security number is one person, on every company ---------------------------------
+
+def test_5b_a_signature_is_created_only_for_an_ssn_nobody_else_holds(make):
+    """First come holds the number. The same number is refused to a second company, refused with
+    another birth date, and allowed only to the same person signing at the same company as the
+    other of office user and driver."""
+    from app import signatures
+    one, two = make(), make()
+    ssn, dob = f"433-{uuid.uuid4().int % 90 + 10:02d}-{uuid.uuid4().int % 9000 + 1000:04d}", date(1980, 5, 6)
+    conn = one["db"].connect()
+    trans = conn.begin()
+    try:
+        signatures.claim(conn, one["acct"], "driver", one["driver"], "PAT QUINN", ssn, dob)
+        signatures.claim(conn, one["acct"], "driver", one["driver"], "PAT QUINN", ssn, dob)  # again: fine
+        with pytest.raises(ValueError, match="already used"):
+            signatures.claim(conn, two["acct"], "driver", two["driver"], "PAT QUINN", ssn, dob)
+        with pytest.raises(ValueError, match="already used"):
+            signatures.claim(conn, one["acct"], "user", "some-user", "PAT QUINN", ssn, date(1969, 1, 1))
+        with pytest.raises(ValueError, match="already used"):
+            signatures.claim(conn, one["acct"], "user", "some-user", "SOMEBODY ELSE", ssn, dob)
+        signatures.claim(conn, one["acct"], "user", "some-user", "Pat  Quinn", ssn, dob)       # owner who drives
+        with pytest.raises(ValueError, match="already used"):
+            signatures.claim(conn, one["acct"], "user", "another-user", "PAT QUINN", ssn, dob)
+        with pytest.raises(ValueError, match="needs the signer"):
+            signatures.adopt(conn, one["acct"], "driver", one["driver"], "PAT QUINN", "PAT QUINN",
+                             "modern", "dob_ssn")
+    finally:
+        trans.rollback()
+        conn.close()
+
+
+# 5c. A booked trip can be put right, within what its stage allows ---------------------------------
+
+def test_5c_a_trip_is_edited_within_its_stage_and_the_driver_must_read_the_change(make):
+    from app.routers import driverapp
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=3)
+    made = c.post("/api/trips", headers=h, json={
+        "passenger": "EDIT TEST", "tripdate": str(on),
+        "legs": [{"pickupat": f"{on}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+                  "dropoffplace": "1 MAIN ST, ORLANDO, FL 32801"}]}).json()
+    tripid = made["recordid"]
+    trip = c.get(f"/api/trips/{tripid}", headers=h).json()
+    legid = trip["legs"][0]["recordid"]
+    assert trip["edit"] == {"locked": None, "legs": {legid: "open"}, "tripfields": True,
+                            "reasonrequired": False}
+
+    def body(**over):
+        b = {"passenger": "EDIT TEST", "servicelevel": "ambulatory", "payer": "private",
+             "legs": [{"legid": legid, "pickupat": f"{on}T09:00:00",
+                       "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+                       "dropoffplace": "1 MAIN ST, ORLANDO, FL 32801"}]}
+        for k, v in over.items():
+            if k in ("pickupat", "pickupplace", "dropoffplace", "dropoffat", "miles"):
+                b["legs"][0][k] = v
+            else:
+                b[k] = v
+        return b
+
+    # Before anybody sets off: anything, no reason needed, and nothing changed is said so.
+    assert c.put(f"/api/trips/{tripid}", headers=h, json=body()).status_code == 400
+    r = c.put(f"/api/trips/{tripid}", headers=h, json=body(passenger="Edit  Tested", pickupat=f"{on}T10:30:00"))
+    assert r.status_code == 200, r.text
+    with co["db"].connect() as conn:
+        kept = conn.execute(text("SELECT passenger FROM trips WHERE recordid = :t"), {"t": tripid}).scalar()
+        change = conn.execute(text("SELECT changes, driverid FROM tripchanges WHERE tripid = :t"),
+                              {"t": tripid}).mappings().one()
+    assert kept == "EDIT TESTED"
+    assert {x["field"] for x in json.loads(change["changes"])} == {"Passenger", "Pickup time"}
+    assert change["driverid"] is None                      # nobody on it to tell
+
+    # Under way, with a driver on it: only the drop-off, with a reason, and the driver must read it.
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE triplegs SET driverid = :d, executionstate = 'enroute' WHERE recordid = :l"),
+                     {"d": co["driver"], "l": legid})
+    assert c.get(f"/api/trips/{tripid}", headers=h).json()["edit"]["reasonrequired"] is True
+    refused = c.put(f"/api/trips/{tripid}", headers=h, json=body(passenger="EDIT TESTED", servicelevel="wheelchair",
+                                                                 pickupat=f"{on}T10:30:00"))
+    assert refused.status_code == 409 and "started" in refused.text, refused.text
+    moved = body(passenger="EDIT TESTED", pickupat=f"{on}T10:30:00", dropoffplace="9 ELM ST, ORLANDO, FL 32801")
+    assert c.put(f"/api/trips/{tripid}", headers=h, json=moved).status_code == 400   # no reason
+    r = c.put(f"/api/trips/{tripid}", headers=h, json={**moved, "reason": "PASSENGER ASKED"})
+    assert r.status_code == 200, r.text
+    with co["db"].connect() as conn:
+        driver = {"accountid": co["acct"], "recordid": co["driver"]}
+        unread = driverapp._unread(conn, driver, legid)
+    assert len(unread) == 1 and unread[0]["changes"][0]["new"] == "9 ELM ST, ORLANDO, FL 32801"
+
+    # Billed: nothing.
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE trips SET billingstatus = 'billed' WHERE recordid = :t"), {"t": tripid})
+    billed = c.put(f"/api/trips/{tripid}", headers=h, json={**moved, "reason": "X", "note": "LATE NOTE"})
+    assert billed.status_code == 409 and "billed" in billed.text
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE trips SET billingstatus = 'unbilled' WHERE recordid = :t"), {"t": tripid})
+    # Finished: nothing at all, and the trip says so.
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE tripchanges SET seenon = UTC_TIMESTAMP() WHERE tripid = :t"), {"t": tripid})
+        conn.execute(text("UPDATE triplegs SET executionstate = 'completed', dropoffat = :d WHERE recordid = :l"),
+                     {"d": f"{on} 11:40:00", "l": legid})
+    assert "finished" in c.get(f"/api/trips/{tripid}", headers=h).json()["edit"]["locked"]
+    done = body(passenger="EDIT TESTED", pickupat=f"{on}T10:30:00", dropoffplace="9 ELM ST, ORLANDO, FL 32801")
+    refused = c.put(f"/api/trips/{tripid}", headers=h, json={**done, "reason": "ODOMETER READ WRONG",
+                                                             "legs": [{**done["legs"][0], "miles": 14.2}]})
+    assert refused.status_code == 409 and "finished" in refused.text, refused.text
+    # Leave nothing behind for the grids other tests count.
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE trips SET deleted = UTC_TIMESTAMP() WHERE recordid = :t"), {"t": tripid})
+
+
+def test_5d_a_will_call_is_booked_without_a_time_and_released_when_the_passenger_calls(make):
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=4)
+    there = {"pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, ORLANDO, FL 32801"}
+    back = {"pickupplace": there["dropoffplace"], "dropoffplace": there["pickupplace"], "pickupat": None}
+    assert c.post("/api/trips", headers=h, json={"passenger": "WILL CALL", "tripdate": str(on),
+                                                 "legs": [{**there, "pickupat": None}]}).status_code == 400
+    made = c.post("/api/trips", headers=h, json={"passenger": "WILL CALL", "tripdate": str(on),
+                                                 "legs": [{**there, "pickupat": f"{on}T08:00:00"}, back]})
+    assert made.status_code == 200, made.text
+    with co["db"].connect() as conn:
+        ret = conn.execute(text("SELECT recordid, pickupat FROM triplegs WHERE tripid = :t AND legnumber = 2"),
+                           {"t": made.json()["recordid"]}).mappings().one()
+    assert ret["pickupat"] is None
+    r = c.post(f"/api/legs/{ret['recordid']}/release", headers=h, json={"pickupat": f"{on}T11:45:00", "note": "AT THE FRONT DOOR"})
+    assert r.status_code == 200, r.text
+    assert c.post(f"/api/legs/{ret['recordid']}/release", headers=h,
+                  json={"pickupat": f"{on}T12:00:00"}).status_code == 409
+    with co["db"].connect() as conn:
+        kept = conn.execute(text("SELECT pickupat FROM triplegs WHERE recordid = :l"), {"l": ret["recordid"]}).scalar()
+        said = conn.execute(text("SELECT reason, changes FROM tripchanges WHERE legid = :l"),
+                            {"l": ret["recordid"]}).mappings().one()
+        conn.execute(text("UPDATE trips SET deleted = UTC_TIMESTAMP() WHERE recordid = :t"), {"t": made.json()["recordid"]})
+        conn.commit()
+    assert kept == datetime(on.year, on.month, on.day, 11, 45)
+    assert said["reason"] == "PASSENGER CALLED - AT THE FRONT DOOR"
+    assert json.loads(said["changes"])[0]["old"] == "Will-call"
+
+
+def test_5e_the_validity_panel_carries_what_recurs_by_the_month_and_the_driving_record_stays_listed(make):
+    """An obligation that comes round every twelve months - the annual review of the driving
+    record - is on the validity-tracked panel with when it is next due, before it has ever been
+    done; and the driving record itself stays on a hired driver's requirements."""
+    co = make()
+    driving_record(co, "qualified")
+    with co["db"].begin() as conn:
+        # Interstate, and a commercial-vehicle driver: Part 391 reaches them, so the driving record
+        # and its annual review are theirs to keep.
+        conn.execute(text("INSERT INTO companyanswers (accountid, code, answer, updated) "
+                          "VALUES (:a, 'INTERSTATE', 1, NOW())"), {"a": co["acct"]})
+        conn.execute(text("UPDATE drivers SET status = 'hired', hiredon = CURDATE(), operation = 'cmv' "
+                          "WHERE recordid = :d"), {"d": co["driver"]})
+    dash = co["client"].get(f"/api/drivers/{co['driver']}/dashboard", headers=co["h"]).json()
+    items = co["client"].get(f"/api/drivers/{co['driver']}/requirements", headers=co["h"]).json()["items"]
+    # Every document on file with an end date is on the panel, whatever its rule's recurrence; so
+    # is every interval check owed and not yet due; and the driving record, with its year.
+    live = [i for i in items if i["applies"] is True and i.get("evidencekind") != "record"]
+    mvr_on = any((i.get("evidencesource") or "").startswith("mvr") and i.get("on") for i in live)
+    owed = {i["code"] for i in live
+            if not (mvr_on and i.get("evidencesource") == "annualreview")
+            and ((i.get("on") and i.get("expireson"))
+                 or (not i.get("on") and i.get("dueon") and i.get("recurrence") in ("days", "months")
+                     and i["status"] in ("pending", "overdue")))}
+    owed |= {i["code"] for i in live if (i.get("evidencesource") or "").startswith("mvr") and i.get("on")}
+    shown = {x["code"] for x in dash["tracked"]}
+    assert "MVR_PREEMPLOYMENT" in owed                  # the case this is about is actually here
+    assert owed <= shown, (owed - shown, dash["tracked"])
+    assert all(x["expireson"] for x in dash["tracked"])
+    mvr = next(i for i in items if i["code"] == "MVR_PREEMPLOYMENT")
+    assert mvr["evidencesource"].startswith("mvr")     # what keeps it on the hired driver's list
+
+
+def test_5f_a_driving_record_runs_out_twelve_months_after_it_was_pulled_and_is_said_so_everywhere(make):
+    co = make()
+    driving_record(co, "qualified")
+    pulled = date.today() - timedelta(days=355)          # runs out in about ten days
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivermvrs SET issuedon = :p WHERE driverid = :d"), {"p": pulled, "d": co["driver"]})
+        conn.execute(text("INSERT INTO companyanswers (accountid, code, answer, updated) "
+                          "VALUES (:a, 'INTERSTATE', 1, NOW())"), {"a": co["acct"]})
+        conn.execute(text("UPDATE drivers SET status = 'hired', hiredon = CURDATE(), operation = 'cmv' "
+                          "WHERE recordid = :d"), {"d": co["driver"]})
+    c, h = co["client"], co["h"]
+    runsout = c.get(f"/api/drivers/{co['driver']}/dashboard", headers=h).json()
+    mvr = [x for x in runsout["tracked"] if x["code"] == "MVR_PREEMPLOYMENT"]
+    assert mvr and mvr[0]["band"] == "expiring", runsout["tracked"]
+    assert any(x["code"] == "MVR_PREEMPLOYMENT" for x in runsout["expiring"]), runsout["expiring"]
+    board = c.get("/api/dashboard", headers=h).json()
+    assert any(x["typename"] == "Motor vehicle record" and x["subjectid"] == co["driver"]
+               for x in board["expiring"]), board["expiring"]
+    # The first annual review is counted from the record too, not only from the day of hire.
+    from app import rules
+    rule = {"duestage": "ongoing", "recurrence": "months", "recurrencemonths": 12,
+            "evidencesource": "annualreview"}
+    assert rules.deadline(rule, date.today(), None, pulled) < date.today() + timedelta(days=30)
+
+
+def test_5g_a_working_sign_in_is_renewed_and_an_expired_one_is_not(make):
+    import jwt as pyjwt
+    from app.config import settings
+    co = make()
+    c, h = co["client"], co["h"]
+    renewed = c.post("/api/auth/refresh", headers=h, json={})
+    assert renewed.status_code == 200, renewed.text
+    claims = pyjwt.decode(renewed.json()["token"], settings.jwt_secret, algorithms=["HS256"])
+    assert claims["exp"] - claims["iat"] == settings.jwt_minutes * 60
+    assert c.get("/api/auth/me", headers={"Authorization": f"Bearer {renewed.json()['token']}"}).status_code == 200
+    gone = pyjwt.encode({"sub": claims["sub"], "iat": 1, "exp": 2}, settings.jwt_secret, algorithm="HS256")
+    assert c.post("/api/auth/refresh", headers={"Authorization": f"Bearer {gone}"}, json={}).status_code == 401
+
+
 # 6. Drafts never block; approved rules do; the facts of a trip always do -------------------------
 
 def test_6_a_draft_rule_never_blocks_dispatch_and_an_approved_one_does(make):

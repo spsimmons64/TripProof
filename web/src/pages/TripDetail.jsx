@@ -1,10 +1,11 @@
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import DocumentViewer from '../components/DocumentViewer.jsx'
 import IssueDialog, { ProblemBanner } from '../components/IssueDialog.jsx'
 import OutDialog from '../components/OutDialog.jsx'
 import AssignDialog from '../components/AssignDialog.jsx'
+import EditTrip from '../components/EditTrip.jsx'
 import { Link, useParams } from 'react-router-dom'
-import { AlertTriangle, Eye, FileText, PauseCircle } from 'lucide-react'
+import { AlertTriangle, Eye, FileText, PauseCircle, Pencil } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { date, datetime, money, through, tzDateTime } from '../lib/format.js'
 import { Badge, Loading, useLoad } from '../components/ui.jsx'
@@ -19,7 +20,7 @@ import { Badge, Loading, useLoad } from '../components/ui.jsx'
 //
 // Every line carries its own time. Nothing here is computed from "now", so this page reads the
 // same in a year as it does this afternoon.
-function WhatHappened({ leg, issues, words }) {
+function WhatHappened({ leg, issues, changes, words }) {
   const events = []
   // Two kinds of time land in this one list and they are not read the same way. A pickup is a
   // BUSINESS time - stored as the wall clock the company works to, shown exactly as recorded. A
@@ -67,6 +68,16 @@ function WhatHappened({ leg, issues, words }) {
     add(i.acknowledgedon, 'Problem seen by the office', i.byname)
     add(i.resolvedon, 'Problem resolved', i.resolution)
   }
+  // Every edit, field by field from old to new, with who made it and why - and, where a driver was
+  // on the leg, the moment they said they had read it.
+  for (const c of changes) {
+    add(c.changedon, 'Trip changed',
+        [c.changes.map((x) => `${x.field}: ${x.old} → ${x.new}`).join('; '),
+         c.byname && `by ${c.byname}`, c.reason].filter(Boolean).join(' · '), 'warn')
+    if (c.driverid) {
+      add(c.seenon, 'Driver read the change', c.drivername)
+    }
+  }
   // What the finished leg is worth, rather than a second "completed" line beside the event.
   if (leg.dropoffat) {
     add(leg.dropoffat, 'Leg closed',
@@ -105,6 +116,7 @@ export default function TripDetail() {
   const [assigning, setAssigning] = useState(null)
   const legOf = (i) => (trip.legs || []).find((l) => l.recordid === i.legid)
   const [viewing, setViewing] = useState(null)      // the credential whose file is being read
+  const [editing, setEditing] = useState(false)
   if (!trip) return <Loading error={error} />
   const atRisk = trip.checks.some((c) => c.outcome !== 'pass')
 
@@ -129,6 +141,9 @@ export default function TripDetail() {
           {trip.billingstatus === 'unbilled' && atRisk && <button onClick={() => setBilling('held')}><PauseCircle size={14} /> Hold from billing</button>}
           {trip.billingstatus === 'held' && <button onClick={() => setBilling('unbilled')}>Release hold</button>}
           {!phi && <button onClick={reveal}><Eye size={14} /> Show member details</button>}
+          {!trip.edit?.locked && (
+            <button type="button" onClick={() => setEditing(true)}><Pencil size={14} /> Edit Trip</button>
+          )}
         </div>
       </div>
 
@@ -180,6 +195,8 @@ export default function TripDetail() {
             </div>
             {lp && <div className="small muted" style={{ marginBottom: 12 }}>From {lp.pickupaddress || '-'} to {lp.dropoffaddress || '-'}</div>}
             <WhatHappened leg={leg} issues={trip.issues.filter((i) => i.legid === leg.recordid)}
+              changes={(trip.changes || []).filter((c) => c.legid === leg.recordid
+                || (!c.legid && leg.legnumber === trip.legs[0].legnumber))}
               words={trip} />
             <div className="tablewrap"><table>
               <thead><tr><th>Requirement</th><th>Version</th><th>Result</th><th>Evidence</th><th>Covered</th></tr></thead>
@@ -203,39 +220,11 @@ export default function TripDetail() {
           </div>
         )
       })}
-      {/* What was done to the trip itself, as against to one of its legs: accepted, returned,
-          priced, held. Append-only, so this is the part nobody can quietly correct. */}
-      {(trip.rejections?.length > 0 || trip.activity?.length > 0) && (
-        <div className="card">
-          <h2>The Record</h2>
-          <table className="residencetable recordtable happened">
-            <thead><tr><th>When</th><th>What</th><th>Detail</th></tr></thead>
-            <tbody>
-              {(trip.rejections || []).map((r, n) => (
-                <Fragment key={`r${n}`}>
-                  <tr><td className="mono">{datetime(r.requestedon)}</td>
-                    <td className="st-ordered">Returned to the broker</td>
-                    <td>{[(trip.returnreasons || {})[r.reason] || r.reason, r.note,
-                          r.byname && `by ${r.byname}`].filter(Boolean).join(' · ')}</td></tr>
-                  {r.senton && <tr><td className="mono">{datetime(r.senton)}</td>
-                    <td>Sent to the broker</td><td>{r.sentby}</td></tr>}
-                  {r.acknowledgedon && <tr><td className="mono">{datetime(r.acknowledgedon)}</td>
-                    <td>Broker acknowledged</td><td>{r.acknowledgedref || ''}</td></tr>}
-                </Fragment>
-              ))}
-              {(trip.activity || []).map((a, n) => (
-                <tr key={`a${n}`}>
-                  <td className="mono">{tzDateTime(a.added)}</td>
-                  <td>{a.action}</td>
-                  <td className="small">{[a.byname, a.detail].filter(Boolean).join(' · ')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {trip.run && <div className="small muted">Checked {tzDateTime(trip.run.finished)} by engine {trip.run.engineversion} ({trip.run.reason}). Run {trip.run.recordid}.</div>}
+      {editing && (
+        <EditTrip tripid={trip.recordid} onClose={() => setEditing(false)}
+          onDone={() => { setEditing(false); reload() }} />
+      )}
       {viewing && (
         <DocumentViewer id={viewing.documentid} name={viewing.filename || viewing.typename}
           onClose={() => setViewing(null)} />

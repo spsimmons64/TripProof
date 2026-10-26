@@ -41,6 +41,14 @@ def issue_token(userid: str) -> str:
                       settings.jwt_secret, algorithm="HS256")
 
 
+def renew_token(claims: dict) -> str:
+    """The same sign-in, extended from now. A staff member inside a customer's portal stays
+    inside that one portal - the account rides along - and keeps the shorter launch limit."""
+    if claims.get("acct"):
+        return issue_launch_token(claims["sub"], claims["acct"])
+    return issue_token(claims["sub"])
+
+
 def issue_launch_token(staffid: str, accountid: str) -> str:
     """A staff member's short session inside one customer's portal (see current_user)."""
     now = utcnow()

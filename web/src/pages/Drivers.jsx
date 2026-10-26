@@ -67,10 +67,12 @@ export default function Drivers() {
       </div>
 
       <div className="filterrow">
-        {FILTERS.map(([value, label]) => (
-          <button key={value || 'all'} type="button" className={`chip${g.filters.status === value ? ' on' : ''}`}
-            onClick={() => g.setFilter('status', value)}>{label}</button>
-        ))}
+        <div className="segs">
+          {FILTERS.map(([value, label]) => (
+            <button key={value || 'all'} type="button" className={`chip${g.filters.status === value ? ' on' : ''}`}
+              onClick={() => g.setFilter('status', value)}>{label}</button>
+          ))}
+        </div>
       </div>
 
       {adding && <DriverForm onDone={(id) => { setAdding(false); if (id) navigate(`/drivers/${id}`); else reload() }} />}

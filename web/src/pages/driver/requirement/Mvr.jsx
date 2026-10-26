@@ -124,7 +124,7 @@ export function MvrDialog({ busy, cancelMvr, coverage, data, err, form, mvrHisto
                     <td>{x.receivedon ? date(x.receivedon) : '-'}</td>
                     <td className={x.cancelledon ? 'st-inactive' : x.receivedon
                       ? (x.determination === 'reviewed' ? 'st-active' : 'st-ordered') : 'st-ordered'}>
-                      {x.cancelledon ? 'Cancelled' : x.receivedon
+                      {x.cancelledon ? 'Canceled' : x.receivedon
                         ? (x.determination === 'reviewed' ? 'Reviewed' : 'Not reviewed') : 'Ordered'}
                     </td>
                     <td className="actions">

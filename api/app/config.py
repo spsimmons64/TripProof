@@ -16,7 +16,10 @@ class Settings(BaseSettings):
 
     # HS256 signing secret for access tokens.
     jwt_secret: str
-    jwt_minutes: int = 480
+    # How long a sign-in lasts without being renewed. The office app renews it every few minutes
+    # while somebody is using it, so this is the idle limit, not the length of a working day: a
+    # session ends after this long with nobody at the keyboard, never while they are working.
+    jwt_minutes: int = 60
 
     # PHI keys: "version:base64key" pairs, comma separated. The highest version seals new data;
     # every listed version can still open old data, which is how keys are rotated.

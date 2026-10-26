@@ -87,13 +87,91 @@ def valid_ssn(ssn: str) -> bool:
     return area not in ("000", "666") and not area.startswith("9") and group != "00" and serial != "0000"
 
 
+def _platform_hash(ssn: str, version: int) -> str:
+    """The SSN's lookup value across every company - the one place a number is compared outside the
+    account it was given to, and only to keep one number to one person."""
+    return hmac.new(crypto._KEYS[version], f"platform:{digits(ssn)}".encode(), hashlib.sha256).hexdigest()
+
+
+def _same_name(a: str | None, b: str | None) -> bool:
+    return " ".join((a or "").upper().split()) == " ".join((b or "").upper().split())
+
+
+TAKEN = ("This Social Security number is already used for another signature. "
+         "A signature can only be created for a number that is not already on file.")
+
+
+def claim(conn: Connection, accountid: str, signertype: str, signerid: str, signername: str,
+          ssn: str, dob) -> None:
+    """Register this SSN to this signer, or refuse.
+
+    One number is one person, on every company. It is accepted when it is not registered yet, when
+    this signer already holds it, or when the same person - same company, same date of birth, same
+    name - is signing as the other of office user and driver. Anything else is refused, whatever
+    date of birth comes with it: a number typed with a birth date that is not its owner's is
+    exactly the case this exists to stop."""
+    if not valid_ssn(ssn):
+        raise ValueError("That Social Security number doesn't look right")
+    # Under every key there has been, so a number registered before a key rotation is still found.
+    held = [r for v in crypto._KEYS for r in rows(
+        conn, "SELECT recordid, dob, fullname FROM signatureidentities WHERE ssnhash = :h",
+        h=_platform_hash(ssn, v))]
+    mine = row(conn, """
+        SELECT identityid FROM signatureidentitysigners
+        WHERE accountid = :a AND signertype = :t AND signerid = :s
+    """, a=accountid, t=signertype, s=signerid)
+    if not held:
+        if mine:
+            # This signer is already somebody else on file and is now giving a different number.
+            raise ValueError(TAKEN)
+        identityid = newid()
+        run(conn, """
+            INSERT INTO signatureidentities (recordid, ssnhash, keyversion, dob, fullname)
+            VALUES (:id, :h, :v, :d, :n)
+        """, id=identityid, h=_platform_hash(ssn, crypto.CURRENT_VERSION), v=crypto.CURRENT_VERSION,
+            d=dob, n=" ".join((signername or "").upper().split())[:128])
+    else:
+        identity = held[0]
+        identityid = identity["recordid"]
+        if mine and mine["identityid"] == identityid:
+            return
+        signers = rows(conn, "SELECT accountid, signertype FROM signatureidentitysigners "
+                             "WHERE identityid = :i", i=identityid)
+        alike = (not mine and identity["dob"] == dob and _same_name(identity["fullname"], signername)
+                 and all(s["accountid"] == accountid and s["signertype"] != signertype
+                         and s["signertype"] in ("user", "driver") for s in signers))
+        if not alike:
+            raise ValueError(TAKEN)
+    run(conn, """
+        INSERT INTO signatureidentitysigners (identityid, accountid, signertype, signerid)
+        VALUES (:i, :a, :t, :s)
+    """, i=identityid, a=accountid, t=signertype, s=signerid)
+
+
+def recognise(conn: Connection, accountid: str, signertype: str, signerid: str, signername: str,
+              ssn: str, dob) -> None:
+    """Register a signer who already had a signature before the register existed, the next time they
+    prove their date of birth and SSN - the one moment the number is in hand to register. A signer
+    with no signature yet is left to `adopt`, which claims the number when it creates one."""
+    if current(conn, accountid, signertype, signerid):
+        claim(conn, accountid, signertype, signerid, signername, ssn, dob)
+
+
 def adopt(conn: Connection, accountid: str, signertype: str, signerid: str | None, signername: str,
           typedname: str, fontkey: str, verifiedby: str, ip: str | None = None, useragent: str | None = None,
-          email: str | None = None, role: str | None = None) -> dict:
+          email: str | None = None, role: str | None = None, *, ssn: str | None = None,
+          dob=None) -> dict:
     """Record an adopted signature. Any earlier one for the same signer is revoked, so there is
-    exactly one signature in force and older signings still point at the one that made them."""
+    exactly one signature in force and older signings still point at the one that made them.
+
+    A driver's or office user's signature is created only once their SSN is claimed for them - see
+    `claim`. A third party signs by link and has no number to claim."""
     if signertype not in ("driver", "user", "thirdparty"):
         raise ValueError("Unknown signer type")
+    if signertype in ("driver", "user"):
+        if not ssn or not dob or not signerid:
+            raise ValueError("A signature needs the signer's date of birth and Social Security number")
+        claim(conn, accountid, signertype, signerid, signername, ssn, dob)
     typedname = " ".join((typedname or "").split())
     if len(typedname) < 2:
         raise ValueError("Type your name as your signature")

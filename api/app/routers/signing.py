@@ -169,6 +169,7 @@ def read_it(token: str, body: Prove, conn: Connection = Depends(get_conn)):
     if (held["ssnhash"] != signatures.ssn_hash(held["accountid"], body.ssn)
             or held["dob"] != body.dob):
         raise HTTPException(403, "Incorrect Date Of Birth / Social Security Combination")
+    _recognise(conn, held, body)
     sig = signatures.current(conn, held["accountid"], "driver", held["driverid"])
     if held["doctype"] in FILLED_IN:
         # Nothing to read - something to fill in. The seven days are named for the driver rather
@@ -217,6 +218,15 @@ def _keep_document(conn, requestid: str, documentid: str) -> None:
             doc=documentid, id=requestid)
     except Exception:                                             # noqa: BLE001 - column absent
         pass
+
+
+def _recognise(conn: Connection, held: dict, body) -> None:
+    """Put a driver who signed before the SSN register existed onto it, now the number is in hand."""
+    try:
+        signatures.recognise(conn, held["accountid"], "driver", held["driverid"],
+                             f'{held["firstname"]} {held["lastname"]}'.strip(), body.ssn, body.dob)
+    except ValueError as e:
+        raise HTTPException(403, str(e))
 
 
 def _prove(held: dict, body) -> None:
@@ -320,6 +330,7 @@ def form_pdf(token: str, body: Preview, conn: Connection = Depends(get_conn)):
     if held["doctype"] not in ON_PAPER:
         raise HTTPException(404, "That document is not a form")
     _prove(held, body)
+    _recognise(conn, held, body)
     return Response(_form_for(conn, held, body.answers), media_type="application/pdf",
                     headers={"Content-Disposition": "inline; filename=form.pdf"})
 
@@ -339,6 +350,7 @@ def signed_pdf(token: str, body: Prove, conn: Connection = Depends(get_conn)):
     if not held or not held["signedon"] or not held["documentid"]:
         raise HTTPException(404, "Nothing signed against that link")
     _prove(held, body)
+    _recognise(conn, held, body)
     doc = row(conn, "SELECT storagekey FROM documents WHERE recordid = :id",
               id=held["documentid"])
     if not doc:
@@ -420,12 +432,14 @@ def sign_it(token: str, body: SignIt, request: Request, conn: Connection = Depen
             or held["dob"] != body.dob):
         raise HTTPException(403, "Incorrect Date Of Birth / Social Security Combination")
     name = f'{held["firstname"]} {held["lastname"]}'.strip()
+    _recognise(conn, held, body)
     sig = signatures.current(conn, held["accountid"], "driver", held["driverid"])
     if not sig:
         try:
             sig = signatures.adopt(conn, held["accountid"], "driver", held["driverid"], name,
                                    body.typedname or name, body.fontkey, "dob_ssn",
-                                   client_ip(request), request.headers.get("user-agent"))
+                                   client_ip(request), request.headers.get("user-agent"),
+                                   ssn=body.ssn, dob=body.dob)
         except ValueError as e:
             raise HTTPException(400, str(e))
     if held["doctype"] in FILLED_IN:

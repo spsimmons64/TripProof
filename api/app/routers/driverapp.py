@@ -23,6 +23,7 @@
 #   well as the account's, and the leg is re-read from the database rather than trusted from the
 #   request - an app is a thing somebody else can write.
 ###################################################################################################
+import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -280,7 +281,40 @@ def my_work(driver: dict = Depends(current_driver), conn: Connection = Depends(g
         if i["waitingid"]:
             i["next"] = ()
             i["nextsaid"] = None
+        # What the office changed on this trip and this driver has not read. Until they say they
+        # have, the leg does not move on: a driver finishing a trip at the old address is the one
+        # thing an edit must never cause.
+        i["changes"] = _unread(conn, driver, i["legid"], local)
+        if i["changes"]:
+            i["next"] = ()
+            i["nextsaid"] = None
     return {"items": items}
+
+
+def _unread(conn: Connection, driver: dict, legid: str, local=lambda v: v) -> list[dict]:
+    out = []
+    for c in rows(conn, """
+        SELECT recordid, changedon, changes FROM tripchanges
+        WHERE accountid = :a AND legid = :l AND driverid = :d AND seenon IS NULL
+        ORDER BY changedon
+    """, a=driver["accountid"], l=legid, d=driver["recordid"]):
+        out.append({"changeid": c["recordid"], "changedon": local(c["changedon"]),
+                    "changes": json.loads(c["changes"] or "[]")})
+    return out
+
+
+@router.post("/legs/{legid}/changes/seen")
+def seen_the_change(legid: str, driver: dict = Depends(current_driver),
+                    conn: Connection = Depends(get_conn)):
+    """The driver has read what the office changed. Recorded with the moment, so the office can see
+    that they did and when."""
+    _my_leg(conn, driver, legid)
+    run(conn, """
+        UPDATE tripchanges SET seenon = :now
+        WHERE accountid = :a AND legid = :l AND driverid = :d AND seenon IS NULL
+    """, now=utcnow(), a=driver["accountid"], l=legid, d=driver["recordid"])
+    saved(conn)
+    return {"ok": True}
 
 
 class Moment(BaseModel):
@@ -293,7 +327,7 @@ class Moment(BaseModel):
 
 class StateIn(Moment):
     state: str
-    miles: float | None = None        # the odometer reading at the drop, where the app asks
+    miles: float | None = None        # how far the leg ran - a distance, never an odometer reading
 
 
 class WaitIn(Moment):
@@ -383,6 +417,9 @@ def move_leg(legid: str, body: StateIn, request: Request,
     if body.state == leg["executionstate"]:
         # The same tap twice. Not an error, not a second event.
         return {"ok": True, "state": leg["executionstate"], "repeat": True}
+    if _unread(conn, driver, legid):
+        raise HTTPException(409, "The office changed this trip. Read the change and press "
+                                 "I Have Seen This first.")
     if body.state not in NEXT.get(leg["executionstate"], ()):
         raise HTTPException(409, f"That trip is already {SAID.get(leg['executionstate'], leg['executionstate']).lower()}.")
     if leg["executionstate"] == "scheduled":
@@ -408,6 +445,7 @@ def move_leg(legid: str, body: StateIn, request: Request,
         run(conn, "UPDATE triplegs SET dropoffat = COALESCE(dropoffat, :now) WHERE recordid = :l",
             now=onclock, l=legid)
         if body.miles is not None:
+            dispatch.plausible_miles(body.miles)
             run(conn, "UPDATE triplegs SET miles = :m, milessource = 'app' WHERE recordid = :l",
                 m=body.miles, l=legid)
         _settle_verify(conn, driver["accountid"], leg["tripid"])

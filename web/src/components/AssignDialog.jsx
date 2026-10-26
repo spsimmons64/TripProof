@@ -114,21 +114,24 @@ function Candidates({ title, rows, idkey, chosen, onPick }) {
   return (
     <div>
       <h3 className="formsection">{title}</h3>
-      <div className="picklist">
+      <div className="candlist">
         {rows.map((r) => {
           const id = r[idkey]
           const blocked = !r.available
           return (
             <button key={id} type="button" disabled={blocked}
-              className={`pickrow${chosen === id ? ' on' : ''}${blocked ? ' barred' : ''}`}
+              className={`candrow${chosen === id ? ' on' : ''}${blocked ? ' barred' : ''}`}
               onClick={() => onPick(id)}>
-              <span className="pickname">{r.name}</span>
-              {/* The reason, always. A greyed name with nothing against it sends somebody to
-                  the telephone. */}
-              <span className="pickwhy">
-                {blocked ? r.blocked.join(' · ')
-                  : [...(r.warnings || []), ...(r.drafts || []), ...(r.because || [])].join(' · ')}
-              </span>
+              <span className="candname">{r.name}</span>
+              {/* The reason, always, one to a line. A greyed name with nothing against it sends
+                  somebody to the telephone, and five reasons run together are read as none. */}
+              {blocked
+                ? r.blocked.map((w) => <span key={w} className="candline bad">{w}</span>)
+                : <>
+                    {(r.warnings || []).map((w) => <span key={w} className="candline warn">{w}</span>)}
+                    {(r.drafts || []).map((w) => <span key={w} className="candline draft">{w}</span>)}
+                    {r.because?.length > 0 && <span className="candfacts">{r.because.join(' · ')}</span>}
+                  </>}
             </button>
           )
         })}
