@@ -1140,6 +1140,13 @@ def _georgia_license(conn: Connection, accountid: str, driverid: str, held: dict
     return "qualified" if lives == state else "notgeorgia"
 
 
+def _ticked(heavy: bool) -> str:
+    """The box on the driver's own Driver Information tab that asks for a commercial license, in
+    the words printed beside it - so the reason names the exact thing somebody has to go and find."""
+    return ("Driver will be operating a vehicle rated 26,001 lb or more" if heavy
+            else "Driver will be operating a vehicle that requires a CDL (49 CFR 383.91)")
+
+
 def _wrong_class_says(conn: Connection, accountid: str, driverid: str, held: dict,
                       facts: dict) -> str:
     """Why this license does not fit the work, naming the license, what the work needs and why, and
@@ -1149,18 +1156,17 @@ def _wrong_class_says(conn: Connection, accountid: str, driverid: str, held: dic
         which = " ".join(x for x in (held.get("state"), f"Class {held.get('classification')}"
                                      if held.get("classification") else None) if x)
         return (f"The active license ({which or 'on file'}) is recorded as not a commercial "
-                f"license, and Company Information says this driver will operate a vehicle that "
-                f"{'is rated 26,001 lb or more' if heavy else 'requires a CDL'}. Add the CDL under "
-                f"Licenses, or correct the license if it is in fact commercial.")
+                f"license, and this driver's Driver Information has \"{_ticked(heavy)}\" ticked. "
+                f"Add the CDL under Licenses, correct the license if it is in fact commercial, or "
+                f"untick that box if the driver will not be doing that work.")
     fits = HEAVY_CLASSES if heavy else CDL_CLASSES
     carried = (held.get("classification") or "").upper()
     which = " ".join(x for x in (held.get("state"), f"Class {carried}" if carried else None) if x)
     covers = CLASS_COVERS.get(carried)
-    ticked = "26,001 lb or more" if heavy else "requires a CDL"
     number = f" ({held['number']})" if held.get("number") else ""
     out = (f"The active license is {which or 'on file'}{number}"
-           f"{f', which covers {covers}' if covers else ''}. Company Information says this driver "
-           f"will operate a vehicle that {'is rated ' if heavy else ''}{ticked}, which needs a "
+           f"{f', which covers {covers}' if covers else ''}. This driver's Driver Information has "
+           f"\"{_ticked(heavy)}\" ticked, which needs a "
            f"Class {' or '.join(fits) if len(fits) == 2 else 'A, B or C'} license. ")
     other = row(conn, f"""
         SELECT number, state, classification FROM driverlicenses
@@ -1174,7 +1180,7 @@ def _wrong_class_says(conn: Connection, accountid: str, driverid: str, held: dic
                 f"file but not marked active - open it under Licenses and press Make Active")
     else:
         out += "Add the license that covers this work under Licenses"
-    return out + f", or untick \"{ticked}\" if this driver will not operate such a vehicle."
+    return out + f", or untick \"{_ticked(heavy)}\" if this driver will not operate such a vehicle."
 
 
 def _filed(conn: Connection, accountid: str, driverid: str, ruleid: str,

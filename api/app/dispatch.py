@@ -510,4 +510,4 @@ def _unavailable(conn: Connection, accountid: str, when: datetime) -> dict:
 def _approved(item: dict) -> bool:
     """Whether a requirement stands on a rule a reviewer approved - the same test the trip check
     applies before it will refuse anything."""
-    return any(s.get("legalreview") == "approved" for s in (item.get("sources") or [item]))
+    return tripcheck.enforceable(item)

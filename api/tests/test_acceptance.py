@@ -644,6 +644,21 @@ def test_5g_a_working_sign_in_is_renewed_and_an_expired_one_is_not(make):
 
 # 6. Drafts never block; approved rules do; the facts of a trip always do -------------------------
 
+def test_6_a_prohibition_and_an_uncorrected_defect_block_while_their_rules_are_draft():
+    """382.501 and 396.11(a)(3) are facts on the record, not interpretations: they refuse a trip
+    whether or not a reviewer has approved the rule that states them. Any other draft rule still
+    only warns."""
+    from app import tripcheck
+    def item(code):
+        return {"code": code, "name": code, "applies": True, "blocking": True, "status": "failed",
+                "legalreview": "draft", "why": "x"}
+    got = tripcheck.judge_items([item("DA_PROHIBITION"), item("DVIR"), item("DRIVER_LICENSE_COPY")],
+                                None, datetime.now())
+    refused = {b["code"] for b in got[0] if b["enforceable"]}
+    assert refused == {"DA_PROHIBITION", "DVIR"}, got
+
+
+
 def test_6_a_draft_rule_never_blocks_dispatch_and_an_approved_one_does(make):
     from app import dispatch
     co = make()

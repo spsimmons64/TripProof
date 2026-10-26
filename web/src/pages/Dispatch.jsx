@@ -67,6 +67,21 @@ const SHORT = {
   medical: 'Medical', traffic: 'Held up', equipment: 'Equipment', other: 'A problem',
 }
 
+// The list needs about 1,500px of window to show every column and its buttons. Narrower than that -
+// a laptop - the board is shown as cards, which fit any width, rather than as a list with its
+// actions cut off the right-hand edge.
+const NARROW = '(max-width: 1499px)'
+function useNarrow() {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
+  useEffect(() => {
+    const m = window.matchMedia(NARROW)
+    const on = () => setNarrow(m.matches)
+    m.addEventListener('change', on)
+    return () => m.removeEventListener('change', on)
+  }, [])
+  return narrow
+}
+
 // A day as the date field holds it, and the day either side of it.
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const shift = (day, n) => { const [y, m, d] = day.split('-').map(Number); return ymd(new Date(y, m - 1, d + n)) }
@@ -94,7 +109,9 @@ export default function Dispatch() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   // List or cards: how this dispatcher likes to read the board, kept in their own browser.
-  const [view, setView] = useState(() => { try { return localStorage.getItem('dispatchview') || 'list' } catch { return 'list' } })
+  const [chosen, setView] = useState(() => { try { return localStorage.getItem('dispatchview') || 'list' } catch { return 'list' } })
+  const narrow = useNarrow()
+  const view = narrow ? 'cards' : chosen
   const pickView = (v) => { setView(v); try { localStorage.setItem('dispatchview', v) } catch { /* private window */ } }
 
   const act = async (fn) => {
@@ -254,6 +271,7 @@ export default function Dispatch() {
           <div className="segs viewpick">
             {[['list', 'List', List], ['cards', 'Cards', LayoutGrid]].map(([v, l, Icon]) => (
               <button key={v} type="button" className={`chip${view === v ? ' on' : ''}`}
+                disabled={narrow && v === 'list'}
                 title={l} aria-label={l} onClick={() => pickView(v)}><Icon size={16} /></button>
             ))}
           </div>

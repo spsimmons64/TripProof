@@ -27,6 +27,20 @@ from app.db import newid, row, rows, run, utcnow
 FAILING = ("failed", "expired", "overdue", "pending")
 WAITING = ("review", "ordered")
 
+# Facts that stop a trip whatever the review status of the rule that states them. A rule waits for
+# a reviewer because its wording or its reach is a matter of interpretation; these are not. A
+# driver with a DOT positive and no return to duty is barred by 49 CFR 382.501, and a vehicle with
+# an uncorrected defect may not be dispatched by 396.11(a)(3) - the record says so, and there is
+# nothing for a reviewer to read into it. So they block while their rule is still Draft, the way
+# not hired and no lift always have.
+ALWAYS_ENFORCED = ("DA_PROHIBITION", "DVIR")
+
+
+def enforceable(item: dict) -> bool:
+    """Whether a shortfall may refuse a trip: a rule a reviewer approved, or one of the facts above."""
+    return item.get("code") in ALWAYS_ENFORCED or any(
+        s.get("legalreview") == "approved" for s in (item.get("sources") or [item]))
+
 # Which program a payer's trip belongs to. A transportation broker is taken to be administering
 # Medicaid transportation, which is what an NEMT broker does; a contract record can say otherwise.
 PAYER_PROGRAM = {"medicaid": "medicaid", "broker": "medicaid", "commercial": "commercialinsurance",
@@ -135,8 +149,7 @@ def judge_items(items: list[dict], program: str, at: datetime) -> tuple[list, li
         # Only a rule a reviewer approved may be enforced. Anything else is recorded.
         said = {"qualification": i.get("qualificationcode"), "code": i["code"],
                 "name": i["name"], "status": i["status"], "reason": i.get("why"),
-                "enforceable": any(s.get("legalreview") == "approved"
-                                   for s in (i.get("sources") or [i]))}
+                "enforceable": enforceable(i)}
         if i["applies"] is None:
             warnings.append({**said, "reason": f'Applicability undecided - {i.get("why")}'})
         # Missing but not yet due by the day of the trip - a training allowed 90 days from
@@ -271,7 +284,7 @@ def vehicle_blockers(conn: Connection, accountid: str, vehicleid: str, service: 
         if v["applies"] is True and v.get("blocking") and v["status"] in FAILING:
             out.append({"code": v["code"], "name": v["name"], "status": v["status"],
                         "reason": v.get("why"), "vehicle": True,
-                        "enforceable": v.get("legalreview") == "approved"})
+                        "enforceable": enforceable(v)})
     return out
 
 

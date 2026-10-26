@@ -110,7 +110,8 @@ export default function AssignDialog({ leg, onCancel, onClose, onDone }) {
   )
 }
 
-function Candidates({ title, rows, idkey, chosen, onPick }) {
+// The driver and vehicle lists, shared with Book A Trip so the two ask the question the same way.
+export function Candidates({ title, rows, idkey, chosen, onPick }) {
   return (
     <div>
       <h3 className="formsection">{title}</h3>

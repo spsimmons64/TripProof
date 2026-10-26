@@ -4,6 +4,7 @@ import { api } from '../lib/api.js'
 import { money } from '../lib/format.js'
 import { Modal } from '../admin/common.jsx'
 import { useLoad } from './ui.jsx'
+import { Candidates } from './AssignDialog.jsx'
 
 // Booking a trip by hand - the telephone and private pay case.
 //
@@ -118,18 +119,6 @@ export default function BookTrip({ onClose, onBooked }) {
     return () => { dropped = true }
   }, [f.tripdate, f.servicelevel, f.brokerid, f.ret, pickupstate])
 
-  const row = (c, chosen, pick, id, label) => (
-    <label key={id} className={`pickrow${c.available ? '' : ' barred'}`}>
-      <input type="radio" name={label} checked={chosen === id} disabled={!c.available}
-        onChange={() => pick(id)} />
-      <span className="pickwho">{c.name}</span>
-      <span className="pickwhy">
-        {(c.blocked.length ? c.blocked : [...(c.drafts || []), ...c.because]).join(' · ')}
-        {c.warnings?.length ? <b> · {c.warnings.join(' · ')}</b> : null}
-      </span>
-    </label>
-  )
-
   return (
     <Modal title="Book A Trip" onClose={onClose} width={860} tall
       footer={<>
@@ -236,21 +225,12 @@ export default function BookTrip({ onClose, onBooked }) {
             carry.
           </div>
         ) : (
-          <>
-            <section>
-              <h3 className="formsection">Driver</h3>
-              <div className="picklist">
-                {who.drivers.map((d) => row(d, driverid, setDriverid, d.driverid, 'driver'))}
-              </div>
-            </section>
-            <section>
-              <h3 className="formsection">Vehicle</h3>
-              <div className="picklist">
-                {who.vehicles.map((v) => row(v, vehicleid, setVehicleid, v.vehicleid,
-                  'vehicle'))}
-              </div>
-            </section>
-          </>
+          <div className="pickpair">
+            <Candidates title="Driver" rows={who.drivers} idkey="driverid"
+              chosen={driverid} onPick={setDriverid} />
+            <Candidates title="Vehicle" rows={who.vehicles} idkey="vehicleid"
+              chosen={vehicleid} onPick={setVehicleid} />
+          </div>
         )}
       </div>
     </Modal>
