@@ -41,7 +41,7 @@ export default function Users() {
   })
   const change = (u, patch) => act(u.recordid, () => api.patch(`/account/users/${u.recordid}`, patch))
 
-  if (!data) return <div className="card"><Loading error={error} /></div>
+  if (!data) return <Loading error={error} page />
   const items = data.items || []
   const flip = g.dir === 'desc' ? -1 : 1
   const shown = [...items].sort((a, b) => {

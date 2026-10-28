@@ -41,7 +41,7 @@ export default function ToReview() {
     } catch (e) { setErr(e.message) } finally { setBusy(null) }
   }
 
-  if (!data) return <Loading error={error} />
+  if (!data) return <Loading error={error} page />
   const items = data.items || []
 
   return (

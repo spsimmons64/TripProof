@@ -13,6 +13,9 @@ import BackgroundChecks from './BackgroundChecks.jsx'
 import Billing from './Billing.jsx'
 import OperatingProfile from './OperatingProfile.jsx'
 
+// Monday first, the way the server keys them (0 to 6).
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
 const FIELDS = ['name', 'address1', 'address2', 'city', 'county', 'state', 'zip', 'phone', 'fax',
   'email', 'supportemail', 'billingemail', 'ein', 'usdot', 'mcnumber', 'medicaidid', 'npi',
   'dba']
@@ -95,7 +98,7 @@ function Operations() {
   const [saved, setSaved] = useState(false)
   const [err, setErr] = useState(null)
 
-  if (!data) return <Loading error={error} />
+  if (!data) return <Loading error={error} page />
   const questions = data.questions
   const now = answers ?? Object.fromEntries(questions.map((q) => [q.code, asChoice(q.answer)]))
   const open = questions.filter((q) => now[q.code] === '').length
@@ -156,7 +159,7 @@ function Operations() {
 
 function CompanyProfile() {
   const [company, error, reload] = useLoad(() => api.get('/company'))
-  if (!company) return <Loading error={error} />
+  if (!company) return <Loading error={error} page />
   return (
     <CompanyForm company={company} onSaved={reload} />
   )
@@ -166,9 +169,18 @@ function CompanyForm({ company, onSaved }) {
   const canEdit = ['owner', 'admin'].includes(useUser()?.role)
   const [saved, setSaved] = useState(false)
 
+  // Each weekday: open and close, or closed. A day left blank is not set.
+  const [hours, setHours] = useState(() => DAYS.map((_, d) => {
+    const h = company.hours?.[String(d)]
+    return h === null ? { open: '', close: '', closed: true }
+      : { open: h?.open || '', close: h?.close || '', closed: false }
+  }))
+  const setDay = (d, k, val) => { setSaved(false); setHours(hours.map((h, n) => (n === d ? { ...h, [k]: val } : h))) }
   const f = useForm(Object.fromEntries(FIELDS.map((k) => [k, company[k] || ''])), async (v) => {
     setSaved(false)
-    await api.put('/company', v)
+    const sent = Object.fromEntries(hours.flatMap((h, d) => (h.closed ? [[String(d), null]]
+      : h.open || h.close ? [[String(d), { open: h.open, close: h.close }]] : [])))
+    await api.put('/company', { ...v, hours: sent })
     setSaved(true)
     onSaved()
   })
@@ -227,6 +239,27 @@ function CompanyForm({ company, onSaved }) {
                 <label className="field">Medicaid ID<input value={v.medicaidid} onChange={set('medicaidid')} /></label>
                 <label className="field">NPI<input value={v.npi} onChange={set('npi')} inputMode="numeric" /></label>
               </div>
+              </div>
+            </div>
+            <div className="card qualcard">
+              <div className="infotabs"><h3>Hours Of Operation</h3></div>
+              <div className="panelbody">
+                <table className="residencetable recordtable hourstable">
+                  <thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed</th></tr></thead>
+                  <tbody>
+                    {DAYS.map((day, d) => (
+                      <tr key={day}>
+                        <td>{day}</td>
+                        <td><input type="time" value={hours[d].open} disabled={hours[d].closed}
+                          onChange={(e) => setDay(d, 'open', e.target.value)} /></td>
+                        <td><input type="time" value={hours[d].close} disabled={hours[d].closed}
+                          onChange={(e) => setDay(d, 'close', e.target.value)} /></td>
+                        <td><input type="checkbox" checked={hours[d].closed}
+                          onChange={(e) => setDay(d, 'closed', e.target.checked)} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
         </form>

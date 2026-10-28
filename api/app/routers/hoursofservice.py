@@ -156,11 +156,15 @@ def driver_trips(driverid: str, user: dict = Depends(current_user),
     work: what they drove, when, and in what."""
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
-    return {"trips": rows(conn, """
+    trips = rows(conn, """
         SELECT t.recordid, t.externalid, t.tripdate, t.servicelevel, t.billingstatus,
                GROUP_CONCAT(DISTINCT COALESCE(v.externalid, v.vin) SEPARATOR ', ') AS vehicles,
                MIN(l.pickupat) AS startedat, MAX(l.dropoffat) AS finishedat,
-               COUNT(l.recordid) AS legs
+               COUNT(l.recordid) AS legs,
+               SUM(l.executionstate = 'completed') AS completed,
+               SUM(l.executionstate IN ('enroute', 'arrived', 'onboard')) AS moving,
+               SUM(l.outcomestate IS NOT NULL) AS closed,
+               MAX(l.outcomestate) AS outcome
         FROM triplegs l
           JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
           LEFT JOIN vehicles v ON v.recordid = l.vehicleid AND v.deleted IS NULL
@@ -168,4 +172,19 @@ def driver_trips(driverid: str, user: dict = Depends(current_user),
         GROUP BY t.recordid, t.externalid, t.tripdate, t.servicelevel, t.billingstatus
         ORDER BY t.tripdate DESC, t.externalid DESC
         LIMIT 100
-    """, a=acct, d=driverid)}
+    """, a=acct, d=driverid)
+    # Where each trip stands, said, because the list holds what is coming as well as what was
+    # driven - a canceled run and a completed one read the same without it.
+    for t in trips:
+        t["service"] = dispatch.SERVICE.get(t["servicelevel"] or "", {}).get("label") or t["servicelevel"]
+        if t["completed"] and t["completed"] + t["closed"] >= t["legs"]:
+            t["state"] = "completed"
+        elif t["moving"]:
+            t["state"] = "inprogress"
+        elif t["closed"] >= t["legs"]:
+            t["state"] = t["outcome"]
+        else:
+            t["state"] = "scheduled"
+        for k in ("completed", "moving", "closed", "outcome"):
+            t.pop(k)
+    return {"trips": trips}

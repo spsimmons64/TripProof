@@ -125,7 +125,7 @@ export function LicenseFields({ r, setR, bad, setBad, copies = false,
           when the driver was first licensed, and so how long they have been driving. */}
       {field('originalissued', 'Original Issue Date (If Shown)', 2,
         <input type="date" value={r.originalissued || ''} onChange={set('originalissued')} />)}
-      {field('classification', 'Classification *', 4, (
+      {field('classification', 'Classification *', 2, (
         <select value={r.classification} onChange={setClass}>
           <option value="">Choose</option>
           {LICENSE_CLASSES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}

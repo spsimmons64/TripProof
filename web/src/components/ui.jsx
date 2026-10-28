@@ -33,8 +33,21 @@ export function useLoad(fn, deps = []) {
   return [data, error, () => setN((x) => x + 1)]
 }
 
-export function Loading({ error }) {
-  return error ? <div className="notice bad"><XCircle size={16} /> {error}</div> : <div className="muted">Loading…</div>
+// `page`: the whole page is waiting - the animated mark, in the middle of the work area.
+// `box`: the same mark, in the middle of a dialog whose content is still coming.
+export function Loading({ error, page, box }) {
+  if (error) return <div className="notice bad"><XCircle size={16} /> {error}</div>
+  if (!page && !box) return <div className="muted">Loading…</div>
+  return (
+    <div className={`pageloading${box ? ' inbox' : ''}`} role="status" aria-label="Loading">
+      <svg className="loader" viewBox="0 0 96 96" aria-hidden="true">
+        <circle className="ring" cx="48" cy="48" r="44" />
+        <circle className="orbit" cx="48" cy="48" r="44" />
+        <path className="shield" d="M48 22 L68 29 V46 C68 60 59 69 48 74 C37 69 28 60 28 46 V29 Z" />
+        <path className="tick" d="M38 48 L45 55 L58 41" />
+      </svg>
+    </div>
+  )
 }
 
 const STATE = {

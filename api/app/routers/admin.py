@@ -142,7 +142,10 @@ def list_accounts(q: str | None = None, status: str | None = None, risk: str | N
     if status in STATUSES:
         where.append("a.status = :status"); params["status"] = status
     if risk in ("yes", "no"):
-        where.append(("" if risk == "yes" else "NOT ") + "EXISTS (SELECT 1 FROM tripexposure e WHERE e.accountid = a.recordid)")
+        # The same money the At Risk column shows: a trip at risk with nothing billed on it yet
+        # puts nothing at risk, and an account listed as at risk for $0 reads as a mistake.
+        where.append(("" if risk == "yes" else "NOT ") + "EXISTS (SELECT 1 FROM tripexposure e "
+                     "WHERE e.accountid = a.recordid AND e.billedamount > 0)")
     clause = " AND ".join(where)
     total = row(conn, f"SELECT COUNT(*) AS n FROM accounts a LEFT JOIN users p ON p.recordid = a.primaryuserid WHERE {clause}",
                 **params)["n"]

@@ -12,7 +12,7 @@ export default function AuditDetail() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null)
   const [err, setErr] = useState(null)
-  if (!a) return <Loading error={error} />
+  if (!a) return <Loading error={error} page />
 
   const generate = async (e) => {
     e.preventDefault()

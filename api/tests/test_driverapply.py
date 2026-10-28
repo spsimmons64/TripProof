@@ -120,8 +120,8 @@ def test_application_end_to_end(client, appl):
                         json={"typedname": "Dana Reed", "fontkey": "signature", "dob": DOB, "ssn": "123-45-6789"})
     assert wrong.status_code == 403
     sig = client.post("/api/driverapply/session/signature", headers=h(token),
-                      json={"typedname": "Dana Reed", "fontkey": "fine", "dob": DOB, "ssn": SSN})
-    assert sig.status_code == 200 and sig.json()["fontkey"] == "fine"
+                      json={"typedname": "Dana Reed", "fontkey": "greatvibes", "dob": DOB, "ssn": SSN})
+    assert sig.status_code == 200 and sig.json()["fontkey"] == "greatvibes"
     # Signing again reuses the signature already on file rather than making a second one.
     again = client.post("/api/driverapply/session/signature", headers=h(token), json={"dob": DOB, "ssn": SSN})
     assert again.status_code == 200 and again.json()["recordid"] == sig.json()["recordid"]

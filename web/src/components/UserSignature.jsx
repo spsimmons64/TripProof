@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { SsnInput } from './MaskedInput.jsx'
+import { DEFAULT_FONT, SIGNATURE_FONTS } from '../lib/signatureFonts.js'
 
 // An account user's signature, on the same terms a driver's is.
 //
@@ -12,15 +13,7 @@ import { SsnInput } from './MaskedInput.jsx'
 // document until it has actually been signed.
 
 // The hands to sign in, as the application offers them. All self-hosted; no outside requests.
-const FONTS = [
-  { key: 'modern', label: 'Modern' },
-  { key: 'signature', label: 'Inked' },
-  { key: 'quick', label: 'Quick' },
-  { key: 'hand', label: 'Handwritten' },
-  { key: 'cursive', label: 'Cursive' },
-  { key: 'fine', label: 'Fine' },
-  { key: 'bold', label: 'Bold' },
-]
+const FONTS = SIGNATURE_FONTS
 
 const today = () => new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
@@ -70,7 +63,7 @@ function SignatureStamp({ signature }) {
 // Two stages, as the driver's is: prove who you are, then sign. A user who has never signed is
 // setting the pair that will unlock their signature from now on.
 function UserSignDialog({ title, onClose, onSigned }) {
-  const [v, setV] = useState({ dob: '', ssn: '', typedname: '', fontkey: 'modern' })
+  const [v, setV] = useState({ dob: '', ssn: '', typedname: '', fontkey: DEFAULT_FONT })
   const [bad, setBad] = useState({})
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)

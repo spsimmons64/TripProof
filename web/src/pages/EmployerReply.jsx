@@ -3,6 +3,9 @@ import { useParams } from 'react-router-dom'
 import { Check, Plus, Send, X } from 'lucide-react'
 import PublicShell from '../components/PublicShell.jsx'
 import { FieldError, StateSelect, useFirstField } from '../components/LicenseDialog.jsx'
+import { PhoneInput } from '../components/MaskedInput.jsx'
+import { formatPhone } from '../lib/masks.js'
+import { DEFAULT_FONT, SIGNATURE_FONT_PAIRS } from '../lib/signatureFonts.js'
 
 // A previous employer answering the safety performance history investigation - 49 CFR 391.23.
 //
@@ -35,8 +38,7 @@ const FOURWAY = [['yes', 'Yes'], ['no', 'No'], ['unknown', 'Unknown'], ['na', 'N
 const YESNO = [['yes', 'Yes'], ['no', 'No'], ['na', 'N/A - no records']]
 const ACCIDENT = [['no', 'No'], ['yes', 'Yes'], ['norecords', 'No records available']]
 const MODES = ['FMCSA', 'FTA', 'FRA', 'FAA', 'PHMSA', 'USCG', 'other']
-const FONTS = [['modern', 'Modern'], ['signature', 'Inked'], ['quick', 'Quick'],
-               ['hand', 'Handwritten'], ['cursive', 'Cursive'], ['fine', 'Fine'], ['bold', 'Bold']]
+const FONTS = SIGNATURE_FONT_PAIRS
 
 // The four §391.23(e) questions, in the form's own words.
 const DA_QUESTIONS = [
@@ -86,7 +88,7 @@ export default function EmployerReply() {
     alcohol04: '', positivetest: '', refusedtest: '', otherviolation: '',
     sapevaluated: '', saptreatment: '', rtdtest: '', followupplan: '',
     respondedby: '', title: '', company: '', phone: '', email: '', signature: '',
-    fontkey: 'modern', note: '',
+    fontkey: DEFAULT_FONT, note: '',
   })
   const [accidents, setAccidents] = useState([])
 
@@ -196,7 +198,7 @@ export default function EmployerReply() {
               <dd>{[requestor.address1, requestor.city, requestor.state, requestor.zip]
                 .filter(Boolean).join(', ') || '-'}</dd></div>
             <div><dt>Contact</dt>
-              <dd>{[requestor.phone, requestor.email].filter(Boolean).join(' · ') || '-'}</dd></div>
+              <dd>{[requestor.phone && formatPhone(requestor.phone), requestor.email].filter(Boolean).join(' · ') || '-'}</dd></div>
             <div><dt>Requested</dt><dd>{date(requestor.sent)}</dd></div>
           </dl>
         </section>
@@ -340,7 +342,7 @@ export default function EmployerReply() {
             <label className="field span-3">Company
               <input value={v.company} className="upper" onChange={upper('company')} /></label>
             <label className="field span-3">Phone
-              <input value={v.phone} onChange={set('phone')} /></label>
+              <PhoneInput value={v.phone} onChange={set('phone')} /></label>
             {/* Email keeps its own casing - an address is not free text - and takes the rest of
                 the row rather than leaving half of one empty under it. */}
             <label className="field span-6">Email
@@ -412,7 +414,7 @@ export default function EmployerReply() {
 // does not get done.
 function SignDialog({ name, onClose, onSigned }) {
   const [typedname, setTypedname] = useState(name || '')
-  const [fontkey, setFontkey] = useState('modern')
+  const [fontkey, setFontkey] = useState(DEFAULT_FONT)
   const [bad, setBad] = useState(null)
   const sign = (e) => {
     e.preventDefault()

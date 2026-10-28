@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { Modal } from '../admin/common.jsx'
 import { Loading, useLoad } from './ui.jsx'
+import { PhoneInput } from './MaskedInput.jsx'
 
 // Putting right a booked trip, within what its stage allows.
 //
@@ -100,7 +101,7 @@ export default function EditTrip({ tripid, onClose, onDone }) {
               <input value={f.passenger} className="upper" disabled={shut} onChange={set('passenger', true)} />
             </label>
             <label className="field span-3">Telephone
-              <input value={f.passengerphone} onChange={set('passengerphone')} />
+              <PhoneInput value={f.passengerphone} onChange={set('passengerphone')} />
             </label>
             <label className="field span-3">Service
               <select value={f.servicelevel} disabled={shut} onChange={set('servicelevel')}>

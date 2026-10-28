@@ -555,6 +555,43 @@ def test_5d_a_will_call_is_booked_without_a_time_and_released_when_the_passenger
         ret = conn.execute(text("SELECT recordid, pickupat FROM triplegs WHERE tripid = :t AND legnumber = 2"),
                            {"t": made.json()["recordid"]}).mappings().one()
     assert ret["pickupat"] is None
+
+    def board(day):
+        return {i["legid"] for i in c.get(f"/api/dispatch/board?day={day}&state=all&pagesize=200",
+                                          headers=h).json()["items"]}
+    # Waiting for the call, it is on every day's board; canceled, only on the day it was canceled.
+    other = c.post("/api/trips", headers=h, json={"passenger": "WILL CALL TWO", "tripdate": str(on),
+                                                  "legs": [{**there, "pickupat": f"{on}T08:00:00"}, back]})
+    with co["db"].connect() as conn:
+        gone = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t AND legnumber = 2"),
+                            {"t": other.json()["recordid"]}).scalar()
+    assert gone in board(on + timedelta(days=9))
+    assert c.post(f"/api/trips/{other.json()['recordid']}/cancel", headers=h,
+                  json={"reason": "passenger"}).status_code == 200
+    assert gone not in board(on + timedelta(days=9))
+    assert gone in board(date.today()) or gone in board(date.today() - timedelta(days=1))   # UTC edge
+    assert ret["recordid"] in board(on + timedelta(days=9))
+    # A call is not always "come and get me". Not ready: written down, still waiting. Not needed:
+    # the return is closed as canceled, with why - and "something else" has to say what.
+    third = c.post("/api/trips", headers=h, json={"passenger": "WILL CALL THREE", "tripdate": str(on),
+                                                  "legs": [{**there, "pickupat": f"{on}T08:00:00"}, back]})
+    with co["db"].connect() as conn:
+        late = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t AND legnumber = 2"),
+                            {"t": third.json()["recordid"]}).scalar()
+    assert c.post(f"/api/legs/{late}/call", headers=h,
+                  json={"answer": "notready", "note": "CALL BACK AT 3"}).status_code == 200
+    waiting = next(i for i in c.get(f"/api/dispatch/board?day={on}&state=all&pagesize=200",
+                                    headers=h).json()["items"] if i["legid"] == late)
+    assert waiting["outcomestate"] is None and "NOT READY YET - CALL BACK AT 3" in waiting["lastcall"]
+    assert c.post(f"/api/legs/{late}/call", headers=h,
+                  json={"answer": "notneeded", "reason": "other"}).status_code == 400
+    assert c.post(f"/api/legs/{late}/call", headers=h,
+                  json={"answer": "notneeded", "reason": "admitted"}).status_code == 200
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT outcomestate FROM triplegs WHERE recordid = :l"),
+                            {"l": late}).scalar() == "cancelled"
+        assert conn.execute(text("SELECT outcomestate FROM triplegs WHERE tripid = :t AND legnumber = 1"),
+                            {"t": third.json()["recordid"]}).scalar() is None
     r = c.post(f"/api/legs/{ret['recordid']}/release", headers=h, json={"pickupat": f"{on}T11:45:00", "note": "AT THE FRONT DOOR"})
     assert r.status_code == 200, r.text
     assert c.post(f"/api/legs/{ret['recordid']}/release", headers=h,
@@ -599,6 +636,10 @@ def test_5e_the_validity_panel_carries_what_recurs_by_the_month_and_the_driving_
     assert "MVR_PREEMPLOYMENT" in owed                  # the case this is about is actually here
     assert owed <= shown, (owed - shown, dash["tracked"])
     assert all(x["expireson"] for x in dash["tracked"])
+    # Owed but not yet due is not waiting on anybody today: the annual review sits on the validity
+    # panel with its date, not in "Waiting On Us".
+    waiting = {x["code"] for lst in dash["waiting"].values() for x in lst}
+    assert "MVR_ANNUAL" not in waiting, dash["waiting"]
     mvr = next(i for i in items if i["code"] == "MVR_PREEMPLOYMENT")
     assert mvr["evidencesource"].startswith("mvr")     # what keeps it on the hired driver's list
 
@@ -761,6 +802,135 @@ def test_5m_the_wording_names_the_rule_that_failed_and_reads_as_english():
     assert "914.2.1" in rules.stand(georgia, under, date.today())[1]
     assert "391.11(b)(1)" in rules.stand(federal, under, date.today())[1]
     assert (tripcheck._a("AL"), tripcheck._a("GA"), tripcheck._a("FL")) == ("an", "a", "an")
+
+
+def test_5n_a_programs_own_shortfall_does_not_disqualify_the_driver_from_everything(make):
+    """Faye, 19: only Georgia Medicaid requires 21. Her banner said "Disqualified From Safety-Sensitive
+    Functions" while dispatch put her on Florida trips. The banner reads general sources only, as
+    dispatch does; the program's own shortfall stays on the program's line."""
+    co = make()
+    add_line(co, co["payer"], "GA")
+    nineteen = date.today().replace(year=date.today().year - 19) - timedelta(days=10)
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET dob = :b, status = 'hired', hiredon = CURDATE() "
+                          "WHERE recordid = :d"), {"b": nineteen, "d": co["driver"]})
+    standing = co["client"].get(f"/api/drivers/{co['driver']}/standing", headers=co["h"]).json()
+    assert not any("age" in x["name"].lower() for x in standing["stops"]), standing["stops"]
+
+
+# 5o. The day's shifts ---------------------------------------------------------------------------
+
+def test_5o_a_days_shifts_pair_drivers_with_vehicles_only_where_the_rules_allow(make):
+    """One shift per driver a day, one vehicle per shift at a time, never an unlawful pairing - all
+    refused on the server - and Auto Generate proposes without saving."""
+    co = make()
+    c, h = co["client"], co["h"]
+    day = (date.today() + timedelta(days=5)).isoformat()
+    second = new_vehicle(co, "AV2")
+    bea = new_driver(co, "Bea")
+    applicant = new_driver(co, "Cy", status="new")
+    shift = {"day": day, "driverid": co["driver"], "vehicleid": co["vehicle"],
+             "startsat": "08:00", "endsat": "16:00"}
+    first = c.post("/api/shifts", headers=h, json=shift)
+    assert first.status_code == 200, first.text
+    assert c.post("/api/shifts", headers=h, json=shift).status_code == 409            # driver twice
+    overlap = c.post("/api/shifts", headers=h, json={**shift, "driverid": bea, "startsat": "15:00",
+                                                     "endsat": "23:00"})
+    assert overlap.status_code == 409 and "AV1" in overlap.text                         # vehicle taken
+    later = c.post("/api/shifts", headers=h, json={**shift, "driverid": bea, "startsat": "16:00",
+                                                   "endsat": "23:00"})
+    assert later.status_code == 200, later.text                                         # back to back
+    refused = c.post("/api/shifts", headers=h, json={**shift, "driverid": applicant, "vehicleid": second})
+    assert refused.status_code == 409 and "Not hired" in refused.text
+    # Generating proposes, and saves nothing until the plan is saved.
+    got = c.post("/api/shifts/generate", headers=h, json={"day": day, "drivers": [
+        {"driverid": co["driver"], "startsat": "07:00", "endsat": "17:00"}]})
+    assert got.status_code == 200, got.text
+    proposal = got.json()["proposal"]
+    # AV1 is her usual vehicle, but Bea has it from 16:00 and this runs to 17:00: AV2.
+    assert proposal[0]["vehicleid"] == second, proposal
+    assert co["driver"] in c.post("/api/shifts/eligible", headers=h, json={"day": day}).json()["drivers"]
+    before = c.get(f"/api/shifts?day={day}", headers=h).json()["shifts"]
+    assert {s["startsat"] for s in before if s["driverid"] == co["driver"]} == {"08:00"}
+    saved_ = c.post("/api/shifts/plan", headers=h, json={"day": day, "shifts": [
+        {**{k: proposal[0][k] for k in ("driverid", "vehicleid", "startsat", "endsat")},
+         "day": day, "reasons": proposal[0]["reasons"], "source": "auto"}]})
+    assert saved_.status_code == 200, saved_.text
+    after = c.get(f"/api/shifts?day={day}", headers=h).json()["shifts"]
+    mine = [s for s in after if s["driverid"] == co["driver"]]
+    assert len(mine) == 1 and mine[0]["startsat"] == "07:00" and mine[0]["source"] == "auto"
+    assert mine[0]["vehicleid"] == second
+    # Changing vehicles at noon: the morning shift ends there and the afternoon one starts. Without
+    # saying it is a switch, the overlap is refused.
+    noon = {"day": day, "driverid": co["driver"], "vehicleid": co["vehicle"], "startsat": "12:00",
+            "endsat": "15:00"}
+    assert c.post("/api/shifts", headers=h, json=noon).status_code == 409
+    switched = c.post("/api/shifts", headers=h, json={**noon, "switch": True})
+    assert switched.status_code == 200, switched.text
+    hers = sorted((s["startsat"], s["endsat"], s["vehicleid"]) for s in
+                  c.get(f"/api/shifts?day={day}", headers=h).json()["shifts"] if s["driverid"] == co["driver"])
+    assert hers == [("07:00", "12:00", second), ("12:00", "15:00", co["vehicle"])], hers
+
+
+def test_5p_a_trip_goes_to_a_driver_on_shift_in_the_shifts_vehicle(make):
+    """Dropped on a driver, a trip takes the vehicle of the shift they are on at the pickup - and a
+    driver on no shift then is refused. Auto Assign proposes only drivers on shift, saves nothing,
+    and what it saves passes the ordinary gate."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=6)
+    bea = new_driver(co, "Bea")
+    assert c.post("/api/shifts", headers=h, json={"day": str(on), "driverid": co["driver"],
+                                                  "vehicleid": co["vehicle"], "startsat": "08:00",
+                                                  "endsat": "16:00"}).status_code == 200
+    trip = c.post("/api/trips", headers=h, json={
+        "passenger": "SHIFT TEST", "tripdate": str(on),
+        "legs": [{"pickupat": f"{on}T10:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+                  "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"},
+                 {"pickupat": None, "pickupplace": "1 MAIN ST, JACKSONVILLE, FL 32202",
+                  "dropoffplace": "40 BAY ST, JACKSONVILLE, FL 32207"}]})
+    assert trip.status_code == 200, trip.text
+    with co["db"].connect() as conn:
+        legid, back = [r[0] for r in conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t "
+                                                       "ORDER BY legnumber"), {"t": trip.json()["recordid"]})]
+
+    def leg():
+        with co["db"].connect() as conn:
+            return conn.execute(text("SELECT driverid, vehicleid FROM triplegs WHERE recordid = :l"),
+                                {"l": legid}).mappings().one()
+
+    offshift = c.post("/api/dispatch/place", headers=h, json={"legid": legid, "driverid": bea})
+    assert offshift.status_code == 409 and "has no vehicle assigned on" in offshift.text, offshift.text
+    assert leg()["driverid"] is None
+    planned = c.post("/api/dispatch/autoplan", headers=h, json={"day": str(on)})
+    assert planned.status_code == 200, planned.text
+    item = next(p for p in planned.json()["proposal"] if p["legid"] == legid)
+    assert item["driverid"] in (co["driver"], None) and item["driverid"] != bea, item
+    assert leg()["driverid"] is None                                                    # nothing saved
+    if item["driverid"]:
+        assert item["vehicleid"] == co["vehicle"] and item["reasons"][0] == "On shift in AV1", item
+        got = c.post("/api/dispatch/autoplan/save", headers=h, json={"items": [
+            {"legid": legid, "driverid": item["driverid"], "vehicleid": item["vehicleid"]}]})
+        assert got.status_code == 200 and got.json() == {"saved": 1, "refused": []}, got.text
+    else:
+        assert item["blocked"], item
+        placed = c.post("/api/dispatch/place", headers=h,
+                        json={"legid": legid, "driverid": co["driver"], "overridereason": "TEST"})
+        assert placed.status_code == 200, placed.text
+    assert dict(leg()) == {"driverid": co["driver"], "vehicleid": co["vehicle"]}
+    # The will-call return is not scheduled until the passenger calls: no driver before then.
+    early = c.post("/api/dispatch/place", headers=h,
+                   json={"legid": back, "driverid": co["driver"], "overridereason": "TEST"})
+    assert early.status_code == 409 and "once the passenger calls" in early.text, early.text
+    # Called: it has a time, and goes to the driver in the day's vehicle like any other leg.
+    assert c.post(f"/api/legs/{back}/release", headers=h,
+                  json={"pickupat": f"{on}T14:00:00"}).status_code == 200
+    returned = c.post("/api/dispatch/place", headers=h,
+                      json={"legid": back, "driverid": co["driver"], "overridereason": "TEST"})
+    assert returned.status_code == 200, returned.text
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT vehicleid FROM triplegs WHERE recordid = :l"),
+                            {"l": back}).scalar() == co["vehicle"]
 
 
 # 6. Drafts never block; approved rules do; the facts of a trip always do -------------------------
@@ -1080,3 +1250,72 @@ def test_11_a_stage_of_rules_can_be_tried_against_past_decisions_before_it_is_ap
     assert trial["refused"] == 1 and trial["byrule"] == {failing[0]: 1}, trial
     assert none["refused"] == 0
     assert still == "draft"
+
+
+def test_5q_places_and_passengers_are_kept_to_be_chosen_from(make):
+    """Book A Trip chooses the drop-off and the passenger from the company's own lists: added with a
+    name, an address and a telephone, upper-cased, and never twice."""
+    co = make()
+    c, h = co["client"], co["h"]
+    for kind in ("places", "passengers"):
+        dob = {"dob": "1950-03-04"} if kind == "passengers" else {}
+        assert c.post(f"/api/{kind}", headers=h, json={"name": "BAYFRONT", "address": "", **dob}).status_code == 400
+        if kind == "passengers":                     # a passenger needs a date of birth
+            assert c.post(f"/api/{kind}", headers=h, json={"name": "BAYFRONT HOSPITAL",
+                                                           "address": "1 MAIN ST"}).status_code == 400
+        where = {"city": "St Petersburg", "state": "FL", "zip": "33701"}
+        assert c.post(f"/api/{kind}", headers=h, json={"name": "BAYFRONT HOSPITAL", "address": "701 6TH ST S",
+                                                       **dob}).status_code == 400      # no city/state/ZIP
+        got = c.post(f"/api/{kind}", headers=h, json={"name": "Bayfront Hospital", "address": "701 6th St S",
+                                                     **where, "phone": "727-823-1234", **dob})
+        assert got.status_code == 200, got.text
+        assert got.json()["name"] == "BAYFRONT HOSPITAL"
+        assert got.json()["full"] == "701 6TH ST S, ST PETERSBURG, FL 33701"
+        again = c.post(f"/api/{kind}", headers=h, json={"name": "BAYFRONT HOSPITAL", "address": "701 6TH ST S",
+                                                       **where, **dob})
+        assert again.status_code == 409
+        items = c.get(f"/api/{kind}", headers=h).json()["items"]
+        assert [(i["name"], i["phone"]) for i in items] == [("BAYFRONT HOSPITAL", "727-823-1234")]
+
+
+def test_5r_hours_of_operation_set_the_dispatch_day(make):
+    """The company's hours, day by day, are kept on the Company page and handed to Dispatch with
+    the day: open and close, closed, or not set."""
+    co = make()
+    c, h = co["client"], co["h"]
+    bad = c.put("/api/company", headers=h, json={"hours": {"0": {"open": "08:00", "close": ""}}})
+    assert bad.status_code == 400 and "Monday" in bad.text
+    assert c.put("/api/company", headers=h, json={"hours": {
+        "0": {"open": "07:30", "close": "18:00"}, "6": None}}).status_code == 200
+    kept = c.get("/api/company", headers=h).json()["hours"]
+    assert kept["0"] == {"open": "07:30", "close": "18:00"} and kept["6"] is None and kept["2"] == "unset"
+    monday = date.today() + timedelta(days=(7 - date.today().weekday()) % 7 or 7)
+    assert c.get(f"/api/shifts?day={monday}", headers=h).json()["hours"] == {"open": "07:30", "close": "18:00"}
+    assert c.get(f"/api/shifts?day={monday + timedelta(days=6)}", headers=h).json()["hours"] == {"closed": True}
+    assert c.get(f"/api/shifts?day={monday + timedelta(days=2)}", headers=h).json()["hours"] is None
+
+
+def test_5r_hours_of_operation_set_the_dispatch_day(make):
+    """The company's hours, day by day, are kept on the Company page and handed to Dispatch with
+    the day: open and close, closed, or not set."""
+    co = make()
+    c, h = co["client"], co["h"]
+    bad = c.put("/api/company", headers=h, json={"hours": {"0": {"open": "08:00", "close": ""}}})
+    assert bad.status_code == 400 and "Monday" in bad.text
+    assert c.put("/api/company", headers=h, json={"hours": {
+        "0": {"open": "07:30", "close": "18:00"}, "6": None}}).status_code == 200
+    kept = c.get("/api/company", headers=h).json()["hours"]
+    assert kept["0"] == {"open": "07:30", "close": "18:00"} and kept["6"] is None and kept["2"] == "unset"
+    monday = date.today() + timedelta(days=(7 - date.today().weekday()) % 7 or 7)
+    assert c.get(f"/api/shifts?day={monday}", headers=h).json()["hours"] == {"open": "07:30", "close": "18:00"}
+    assert c.get(f"/api/shifts?day={monday + timedelta(days=6)}", headers=h).json()["hours"] == {"closed": True}
+    assert c.get(f"/api/shifts?day={monday + timedelta(days=2)}", headers=h).json()["hours"] is None
+    # A vehicle assignment falls within those hours, and none is made on a day the company is closed.
+    base = {"driverid": co["driver"], "vehicleid": co["vehicle"]}
+    early = c.post("/api/shifts", headers=h, json={**base, "day": str(monday), "startsat": "06:00", "endsat": "12:00"})
+    assert early.status_code == 409 and "Monday hours are 7:30 AM to 6:00 PM" in early.text, early.text
+    shut = c.post("/api/shifts", headers=h, json={**base, "day": str(monday + timedelta(days=6)),
+                                                 "startsat": "08:00", "endsat": "12:00"})
+    assert shut.status_code == 409 and "closed on Sundays" in shut.text, shut.text
+    inside = c.post("/api/shifts", headers=h, json={**base, "day": str(monday), "startsat": "07:30", "endsat": "18:00"})
+    assert inside.status_code == 200, inside.text

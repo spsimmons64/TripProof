@@ -444,6 +444,13 @@ def move_leg(legid: str, body: StateIn, request: Request,
     if body.state == "completed":
         run(conn, "UPDATE triplegs SET dropoffat = COALESCE(dropoffat, :now) WHERE recordid = :l",
             now=onclock, l=legid)
+        # Held up on the way is over once the trip is done: closed as the driver carrying on.
+        # Anything else they reported stays open for the office to deal with.
+        run(conn, """
+            UPDATE tripissues SET resolvedon = :now, resolutionkind = 'carriedon',
+                   resolution = 'THE TRIP WAS COMPLETED'
+            WHERE legid = :l AND kind = 'traffic' AND resolvedon IS NULL
+        """, now=utcnow(), l=legid)
         if body.miles is not None:
             dispatch.plausible_miles(body.miles)
             run(conn, "UPDATE triplegs SET miles = :m, milessource = 'app' WHERE recordid = :l",

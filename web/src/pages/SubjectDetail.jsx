@@ -224,7 +224,7 @@ export default function SubjectDetail({ kind }) {
   // dashboard, the tabs and the panels all went, and they were left with a bare list. Hiring
   // somebody does not end their file; it is where the file starts earning its keep.
   const reviewing = kind === 'driver' && s && ['pending', 'hired'].includes(s.status)
-  if (!s) return <Loading error={error} />
+  if (!s) return <Loading error={error} page />
   const title = kind === 'driver' ? properName(s.firstname, s.lastname) : (s.externalid || s.vin || 'Vehicle')
   const details = (kind === 'driver'
     ? [s.externalid && `Dispatch ID ${s.externalid}`,

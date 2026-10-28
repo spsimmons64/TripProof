@@ -97,7 +97,7 @@ export default function Dashboard() {
     } catch (e) { setErr(e.message) } finally { setBusy(null) }
   }
 
-  if (!arrivals || !work) return <Loading error={arrivalsError || workError} />
+  if (!arrivals || !work) return <Loading error={arrivalsError || workError} page />
   const items = arrivals.items || []
   const roster = work.roster || []
   const fleet = work.fleet || []

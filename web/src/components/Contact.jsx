@@ -1,3 +1,4 @@
+import { formatPhone } from '../lib/masks.js'
 // An email address and a telephone number are the two things on a screen somebody wants to ACT on
 // rather than read, and on a telephone or a desktop with a mail client the action is one tap. Every
 // place that shows one goes through here, so a number is dialable on the drivers list, in a
@@ -28,8 +29,10 @@ export function Email({ address, children }) {
 }
 
 export function Phone({ number, children }) {
-  const shown = (number || '').trim()
-  const to = shown && dialable(shown)
+  const typed = (number || '').trim()
+  const to = typed && dialable(typed)
   if (!to) return <>-</>
+  // Every number read the same way, (813) 555-1212, however it was typed in.
+  const shown = typed.replace(/\D/g, '').replace(/^1/, '').length === 10 ? formatPhone(typed) : typed
   return <a className="contactlink" href={`tel:${to}`} onClick={stop}>{children || shown}</a>
 }

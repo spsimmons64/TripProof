@@ -8,6 +8,7 @@ import { Modal } from '../admin/common.jsx'
 import DocumentViewer from '../components/DocumentViewer.jsx'
 import SignatureBlock from '../components/UserSignature.jsx'
 import { date } from '../lib/format.js'
+import { formatPhone } from '../lib/masks.js'
 
 // What is asked of the COMPANY, read from the same engine the driver screen reads. An operator
 // looking at a wall of green drivers can still be the thing that fails an audit - no designated
@@ -29,7 +30,7 @@ export default function CompanyRequirements() {
   const [open, setOpen] = useState(null)
   const [viewing, setViewing] = useState(null)
 
-  if (!data) return <div className="card"><Loading error={error} /></div>
+  if (!data) return <Loading error={error} page />
 
   const live = data.items.filter((i) => i.applies === true)
   // What nobody has answered yet still shows, because it is work: somebody has to say whether the
@@ -1468,7 +1469,7 @@ function Mcs150Detail({ item, onClose, onChanged }) {
                 ['Principal address', [data.identity.address1, data.identity.address2,
                   [data.identity.city, data.identity.state, data.identity.zip]
                     .filter(Boolean).join(' ')].filter(Boolean).join(', ')],
-                ['Telephone', data.identity.phone], ['Fax', data.identity.fax],
+                ['Telephone', data.identity.phone && formatPhone(data.identity.phone)], ['Fax', data.identity.fax && formatPhone(data.identity.fax)],
                 ['Email', data.identity.email], ['EIN', data.identity.ein],
                 ['USDOT number', data.usdot], ['MC number', data.mcnumber],
                 ['Company official', data.official]].map(([k, v]) => (

@@ -17,7 +17,7 @@ export default function MerchantConnect() {
   // null means "whatever is on file"; an empty string is a deliberate "none".
   const [picked, setPicked] = useState(null)
 
-  if (!data) return <Loading error={error} />
+  if (!data) return <Loading error={error} page />
   const held = Object.fromEntries(data.configured.map((g) => [g.code, g]))
   const code = picked === null ? (data.chosen || '') : picked
   const gateway = data.available.find((g) => g.code === code)

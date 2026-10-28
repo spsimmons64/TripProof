@@ -18,7 +18,7 @@ export default function Billing({ hold }) {
   const [changing, setChanging] = useState(false)
   const [message, setMessage] = useState(null)
   const stripePromise = useMemo(() => (data?.stripe ? loadStripe(data.stripe) : null), [data?.stripe])
-  if (!data) return <Loading error={error} />
+  if (!data) return <Loading error={error} page />
 
   const { plan, subscription: sub, card, nextplan, invoices } = data
   const due = sub && ['past_due', 'unpaid'].includes(sub.status)

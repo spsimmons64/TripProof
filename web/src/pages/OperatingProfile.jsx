@@ -25,7 +25,7 @@ export default function OperatingProfile() {
   const [err, setErr] = useState(null)
   const [saved, setSaved] = useState(false)
 
-  if (!data) return <Loading error={error} />
+  if (!data) return <Loading error={error} page />
   const { choices } = data
   const p = draft ?? {
     operatingstates: (data.profile.operatingstates || '').split(',').filter(Boolean),

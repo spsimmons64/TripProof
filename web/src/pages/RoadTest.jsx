@@ -4,6 +4,7 @@ import { Check } from 'lucide-react'
 import { FieldError, useFirstField } from '../components/LicenseDialog.jsx'
 import PublicShell from '../components/PublicShell.jsx'
 import OutsideSignDialog from '../components/OutsideSignDialog.jsx'
+import { DEFAULT_FONT, SIGNATURE_FONT_PAIRS } from '../lib/signatureFonts.js'
 
 // A road test, administered by an examiner from a link - 49 CFR 391.31.
 //
@@ -15,8 +16,7 @@ import OutsideSignDialog from '../components/OutsideSignDialog.jsx'
 // operate the vehicle safely; a percentage would invent a threshold the regulation does not have.
 // The certificate is produced from what they enter here, so there is no second form to sign.
 
-const FONTS = [['modern', 'Modern'], ['signature', 'Inked'], ['quick', 'Quick'],
-               ['hand', 'Handwritten'], ['cursive', 'Cursive'], ['fine', 'Fine'], ['bold', 'Bold']]
+const FONTS = SIGNATURE_FONT_PAIRS
 
 const call = async (path, body) => {
   const res = await fetch(`/api/road-test${path}`, {
@@ -45,7 +45,7 @@ export default function RoadTest() {
     examinername: '', examinertitle: '', examinerorg: '',
     vehicledescr: '', vin: '', vehicletype: '', gvwr: '', seats: '',
     airbrakes: null, manual: null, trailer: null, representative: null,
-    ratings: {}, extras: {}, comments: '', result: '', signature: '', fontkey: 'modern',
+    ratings: {}, extras: {}, comments: '', result: '', signature: '', fontkey: DEFAULT_FONT,
   })
 
   useEffect(() => {

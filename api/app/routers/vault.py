@@ -4276,8 +4276,16 @@ def _gate(conn: Connection, accountid: str, driverid: str, items: list[dict],
     if da["status"] == "qualified" and disclosed and disclosed["status"] != "satisfied":
         da = {**da, "status": "prohibited", "why": disclosed["why"], "source": "disclosure"}
     hired = bool(driver.get("hiredon")) or driver["status"] in ("hired", "inactive")
+    # Each row as it stands for EVERY trip - its general sources only. A row merges the federal rule
+    # with a payer program's own and takes the worst of them, which is right for the file and wrong
+    # here: a 19-year-old who only Georgia Medicaid requires to be 21 was "Disqualified From
+    # Safety-Sensitive Functions" on the banner while dispatch and the trip check, which read the
+    # same rows this way, put her on Florida and private pay trips. A program's own shortfall is
+    # said where it belongs - the program's line in the qualification overview - and refuses that
+    # program's trips.
+    general = [g for g in (rules.for_program(i, None) for i in items) if g]
     stops = [{"code": i["code"], "name": i["name"], "status": i["status"], "why": i["why"]}
-             for i in items if i.get("gate") == "hardstop" and _stops(i) and _owed_now(i, hired)]
+             for i in general if i.get("gate") == "hardstop" and _stops(i) and _owed_now(i, hired)]
     if da["status"] in ("prohibited", "rtdinprogress"):
         stops.insert(0, {"code": "DA_STATUS", "name": "Drug and alcohol status",
                          "status": da["status"], "why": da["why"]})
@@ -4422,8 +4430,19 @@ def driver_dashboard(driverid: str, user: dict = Depends(current_user),
         return (today - when.date()).days if when else None
 
     waiting = {"driver": [], "outside": [], "office": []}
-    for i in live:
-        if i["status"] not in ("pending", "ordered", "unknown"):
+    # Everything somebody has to act on, sorted by who. That includes a requirement nobody can yet
+    # say reaches the driver - its open question is itself the task, asked of the driver or answered
+    # by the company - and a record that has run out or a deadline that has passed: a renewal is owed
+    # by somebody, and for a hired driver the adverse panel that also lists it is not on screen.
+    # What is owed but not yet due - next July's annual review - is not outstanding today; the
+    # validity panel says when it comes round.
+    undecided = [i for i in items if i["applies"] is None
+                 and (i["duestage"] or "prehire") in STAGES]
+    for i in live + undecided:
+        if i["status"] not in ("pending", "ordered", "unknown", "overdue", "expired"):
+            continue
+        due = i.get("dueon")
+        if i["status"] == "pending" and due and due > today:
             continue
         # A rollup is not a task. The driver qualification file is answered by the other rules
         # under 49 CFR 391, every one of which is already on this list in its own right, so
@@ -5014,24 +5033,65 @@ class CompanyIn(BaseModel):
     mcnumber: str | None = None
     medicaidid: str | None = None
     npi: str | None = None
+    # Hours of operation by weekday, Monday "0" to Sunday "6": {"open": "08:00", "close": "17:00"},
+    # or null for a day the company is closed.
+    hours: dict[str, dict | None] | None = None
+
+
+def opening_hours(raw: str | None) -> dict[str, dict | None]:
+    """The stored hours, every weekday present: a day never entered reads as not set (absent)."""
+    try:
+        got = json.loads(raw) if raw else {}
+    except ValueError:
+        got = {}
+    return {str(d): got.get(str(d), "unset") for d in range(7)}
+
+
+def _clean_hours(hours: dict) -> str:
+    out = {}
+    for d in range(7):
+        day = hours.get(str(d), "unset")
+        if day == "unset":
+            continue
+        if day is None:
+            out[str(d)] = None
+            continue
+        opens, closes = (day.get("open") or "").strip(), (day.get("close") or "").strip()
+        if not re.fullmatch(r"\d{2}:\d{2}", opens) or not re.fullmatch(r"\d{2}:\d{2}", closes):
+            raise HTTPException(400, f"Give both the opening and the closing time for {WEEKDAY_NAMES[d]}")
+        if closes == opens:
+            raise HTTPException(400, f"{WEEKDAY_NAMES[d]} closes at the time it opens")
+        out[str(d)] = {"open": opens, "close": closes}
+    return json.dumps(out)
+
+
+WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
 @router.get("/company")
 def get_company(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
-    return row(conn, f"SELECT accountnumber, timezone, {', '.join(PROFILE_FIELDS)} "
-                     "FROM accounts WHERE recordid = :a", a=user["accountid"])
+    got = row(conn, f"SELECT accountnumber, timezone, hours, {', '.join(PROFILE_FIELDS)} "
+                    "FROM accounts WHERE recordid = :a", a=user["accountid"])
+    if got:
+        got["hours"] = opening_hours(got["hours"])
+    return got
 
 
 @router.put("/company")
 def put_company(body: CompanyIn, request: Request, user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
     before = row(conn, "SELECT state, county, city FROM accounts WHERE recordid = :a", a=user["accountid"])
-    fields = clean_profile(body.model_dump(exclude_unset=True))
+    sent = body.model_dump(exclude_unset=True)
+    hours = sent.pop("hours", None)
+    fields = clean_profile(sent)
     if "state" in fields and not fields["state"]:
         raise HTTPException(400, "State is required")
     if fields:
         sets = ", ".join(f"{k} = :{k}" for k in fields)
         run(conn, f"UPDATE accounts SET {sets}, updated = :now WHERE recordid = :a", now=utcnow(), a=user["accountid"], **fields)
-    log(conn, user, "update-company", "account", user["accountid"], fields, ip=client_ip(request))
+    if hours is not None:
+        run(conn, "UPDATE accounts SET hours = :h WHERE recordid = :a", h=_clean_hours(hours), a=user["accountid"])
+    log(conn, user, "update-company", "account", user["accountid"],
+        {**fields, **({"hours": hours} if hours is not None else {})}, ip=client_ip(request))
     moved = any(k in fields and (fields[k] or "").lower() != (before[k] or "").lower() for k in ("state", "county", "city"))
     return {"ok": True, "evaluation": evaluate(conn, user["accountid"], userid=user["recordid"], reason="company moved") if moved else None}
 

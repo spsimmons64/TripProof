@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import { SsnInput } from './MaskedInput.jsx'
 import { FieldError, useFirstField } from './LicenseDialog.jsx'
+import { DEFAULT_FONT, SIGNATURE_FONT_PAIRS } from '../lib/signatureFonts.js'
 
 // Signing, on a public link, in the two stages it is in everywhere else in this software: prove
 // who you are, then sign. The signature on file is not shown - and cannot be used - until the date
@@ -13,11 +14,10 @@ import { FieldError, useFirstField } from './LicenseDialog.jsx'
 // one of them: `lookup` proves the pair and answers with the signature on file (or none), and
 // `onSigned` is handed what to sign with.
 
-const FONTS = [['modern', 'Modern'], ['signature', 'Inked'], ['quick', 'Quick'],
-               ['hand', 'Handwritten'], ['cursive', 'Cursive'], ['fine', 'Fine'], ['bold', 'Bold']]
+const FONTS = SIGNATURE_FONT_PAIRS
 
 export default function PublicSignDialog({ title = 'Sign Document', lookup, onSigned, onClose }) {
-  const [v, setV] = useState({ dob: '', ssn: '', typedname: '', fontkey: 'modern' })
+  const [v, setV] = useState({ dob: '', ssn: '', typedname: '', fontkey: DEFAULT_FONT })
   const [bad, setBad] = useState({})
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)

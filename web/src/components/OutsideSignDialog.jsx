@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { FieldError } from './LicenseDialog.jsx'
+import { DEFAULT_FONT, SIGNATURE_FONT_PAIRS } from '../lib/signatureFonts.js'
 
 // Signing by somebody outside this company - a previous employer answering a safety performance
 // inquiry, an examiner certifying a road test.
@@ -12,13 +13,12 @@ import { FieldError } from './LicenseDialog.jsx'
 //
 // One component, so this cannot be rebuilt slightly differently on the next page that needs it.
 
-const FONTS = [['modern', 'Modern'], ['signature', 'Inked'], ['quick', 'Quick'],
-               ['hand', 'Handwritten'], ['cursive', 'Cursive'], ['fine', 'Fine'], ['bold', 'Bold']]
+const FONTS = SIGNATURE_FONT_PAIRS
 
 export default function OutsideSignDialog({ title = 'Sign', certification, name,
                                             onSigned, onClose }) {
   const [typedname, setTypedname] = useState(name || '')
-  const [fontkey, setFontkey] = useState('modern')
+  const [fontkey, setFontkey] = useState(DEFAULT_FONT)
   const [bad, setBad] = useState(null)
 
   const sign = (e) => {

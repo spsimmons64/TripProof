@@ -74,7 +74,7 @@ export default function AssignDialog({ leg, onCancel, onClose, onDone }) {
         <button type="button" className="primary" disabled={busy || !driverid}
           onClick={save}>{busy ? <Loader2 size={15} className="spin" /> : 'Assign'}</button>
       </>}>
-      {!data ? <Loading error={error} /> : (
+      {!data ? <Loading error={error} box /> : (
         <div className="stack">
           {err && <div className="notice bad">{err}</div>}
           {!data.released && (

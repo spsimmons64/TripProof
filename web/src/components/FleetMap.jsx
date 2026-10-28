@@ -60,7 +60,7 @@ function stamp(value) {
   return Date.parse(`${String(value || '').replace(' ', 'T')}Z`)
 }
 
-const RASTER = {
+export const RASTER = {
   version: 8,
   sources: {
     osm: {

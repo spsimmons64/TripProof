@@ -48,7 +48,7 @@ export default function BackgroundChecks() {
     frame.style.cssText = 'position:static;inset:auto;width:100%;height:100%;border:0;display:block;'
   }, [hosting])
 
-  if (!data) return <Loading error={error} />
+  if (!data) return <Loading error={error} page />
 
   // Their widget drops a `position: fixed; inset: 0` iframe over the whole page and takes no
   // sizing options. The iframe is in OUR document, though, so once it exists it can be lifted

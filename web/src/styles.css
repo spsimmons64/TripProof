@@ -1030,6 +1030,28 @@ button.whoami:hover { background: rgb(255 255 255 / 10%); color: inherit; }
 .font-modern { font-family: 'TP Modern', cursive; }
 .font-fine { font-family: 'TP Fine', cursive; }
 .font-bold { font-family: 'TP Bold', cursive; }
+/* The signature faces offered now (web/src/lib/signatureFonts.js); the seven above stay for the
+   signatures already made in them. */
+@font-face { font-family: 'TP Alex Brush'; src: url('/fonts/alex-brush.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Birthstone'; src: url('/fonts/birthstone.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Dancing Script'; src: url('/fonts/dancing-script.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Ephesis'; src: url('/fonts/ephesis.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Great Vibes'; src: url('/fonts/great-vibes.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Kalam'; src: url('/fonts/kalam.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Marck Script'; src: url('/fonts/marck-script.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Monte Carlo'; src: url('/fonts/monte-carlo.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Satisfy'; src: url('/fonts/satisfy.woff2') format('woff2'); font-display: swap; }
+@font-face { font-family: 'TP Whisper'; src: url('/fonts/whisper.woff2') format('woff2'); font-display: swap; }
+.font-alexbrush { font-family: 'TP Alex Brush', cursive; }
+.font-birthstone { font-family: 'TP Birthstone', cursive; }
+.font-dancing { font-family: 'TP Dancing Script', cursive; }
+.font-ephesis { font-family: 'TP Ephesis', cursive; }
+.font-greatvibes { font-family: 'TP Great Vibes', cursive; }
+.font-kalam { font-family: 'TP Kalam', cursive; }
+.font-marck { font-family: 'TP Marck Script', cursive; }
+.font-montecarlo { font-family: 'TP Monte Carlo', cursive; }
+.font-satisfy { font-family: 'TP Satisfy', cursive; }
+.font-whisper { font-family: 'TP Whisper', cursive; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .doctext h2 { font-size: 15px; margin: 0 0 12px; }
@@ -3519,3 +3541,230 @@ button.big { padding: 11px 20px; font-size: 15px; }
 /* What a driver's qualification file is still waiting on, under its row. */
 .filemissing { margin: 4px 0 0; padding-left: 20px; font-size: 13px; font-weight: 500;
                color: var(--bad); }
+
+/* The Shifts board: one column per driver, the day running down in quarter hours, scrolling
+   sideways when there are more drivers than fit. The time gutter stays put while the columns move,
+   and the driver's name stays at the top while the day scrolls. */
+.shiftboard { padding: 0; overflow: hidden; flex: 1; min-height: 0; display: flex; }
+.shiftscroll { display: flex; overflow: auto; flex: 1; min-height: 0; align-items: flex-start; }
+.shiftgutter { flex: none; width: 76px; position: sticky; left: 0; z-index: 3; background: var(--surface);
+               border-right: 1px solid var(--border); }
+.shiftgutter .shifthead { position: sticky; top: 0; z-index: 4; }
+.shiftslot { height: 28px; box-sizing: border-box; padding: 6px 8px 0; font-size: 11.5px;
+             color: var(--teal-900); border-top: 1px solid var(--border); }
+/* Columns share out the width - a day with four drivers fills the board rather than leaving a gap -
+   and never shrink below 280px, past which the board scrolls sideways instead. */
+.shiftcol { flex: 1 0 280px; min-width: 280px; border-right: 1px solid var(--border); background: var(--surface); }
+.shiftcol:last-child { border-right: 0; }
+.shifthead { position: sticky; top: 0; z-index: 2; height: 62px; box-sizing: border-box; padding: 9px 12px;
+             background: var(--teal-50); border-bottom: 1px solid var(--border); display: flex;
+             flex-direction: column; justify-content: center; gap: 2px; font-size: 12px; }
+.shiftcol .shifthead { position: sticky; }
+.shifthead b { font-size: 13px; color: var(--teal-950); }
+.shifthead span { color: var(--text-2); }
+/* A driver with no vehicle that day: said in red, on the column itself. */
+.shifthead.unassigned { background: var(--bad-bg); }
+.shifthead.unassigned b, .shifthead.unassigned span { color: var(--bad); }
+.shiftbody { position: relative; }
+.shiftline { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
+.shiftblock { position: absolute; left: 6px; right: 6px; border: 0; border-radius: 6px; padding: 6px 8px; gap: 6px;
+              background: #a8e4fb; color: var(--teal-950); font-size: 12px; font-weight: 600;
+              text-align: left; align-items: flex-start; justify-content: flex-start; cursor: pointer; }
+.shiftblock:hover { background: #93dbf7; }
+.shiftleg { position: absolute; left: 18px; right: 12px; z-index: 1; overflow: hidden; border-radius: 6px;
+            padding: 4px 8px; background: var(--surface); border: 1px solid #7cc8e6; font-size: 11.5px;
+            line-height: 1.3; box-shadow: 0 1px 2px rgb(15 58 67 / 12%); }
+.shiftleg.closed { opacity: .55; }
+.shiftdiffers { color: var(--warn); font-weight: 600; }
+.shiftpick td, .shiftproposal td { vertical-align: middle; }
+/* The proposal is read, not clicked: ordinary text, wrapped, with a refusal in red. */
+.shiftproposal td { color: var(--text); white-space: normal; height: auto; padding-top: 8px; padding-bottom: 8px; }
+.shiftproposal td.st-expired { color: var(--bad); }
+.residencetable.shiftproposal th, .residencetable.shiftproposal td { text-align: left; }
+.shiftproposal th:nth-child(3), .shiftproposal td:nth-child(3) { white-space: nowrap; width: 170px; }
+.shiftproposal td:last-child { width: 46%; }
+.shiftpick input[type="time"] { width: 130px; }
+
+/* A whole page waiting on its data: the shield, a vehicle lapping it, the tick drawn again and again. */
+.pageloading { display: grid; place-items: center; min-height: calc(100vh - var(--topbar-h) - 120px); }
+.loader { width: 160px; height: 160px; overflow: visible; }
+.loader .ring { fill: none; stroke: var(--teal-100); stroke-width: 4; }
+.loader .orbit { fill: none; stroke: var(--orange); stroke-width: 5; stroke-linecap: round; stroke-dasharray: 52 225;
+                 transform-origin: 48px 48px; animation: loaderlap 1.4s linear infinite; }
+.loader .shield { fill: var(--teal-900); transform-origin: 48px 48px; animation: loaderbeat 1.4s ease-in-out infinite; }
+.loader .tick { fill: none; stroke: #fff; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round;
+                stroke-dasharray: 30; stroke-dashoffset: 30; animation: loadertick 1.4s ease-in-out infinite; }
+@keyframes loaderlap { to { transform: rotate(360deg); } }
+@keyframes loaderbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes loadertick { 0%, 15% { stroke-dashoffset: 30; } 50%, 80% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -30; } }
+@media (prefers-reduced-motion: reduce) {
+  .loader .orbit, .loader .shield { animation-duration: 4s; }
+  .loader .tick { animation: none; stroke-dashoffset: 0; }
+}
+
+/* Dispatch: the unassigned trips on the left, the drivers' day on the right; each scrolls alone. */
+.dispatchday { flex: 1; min-height: 0; display: flex; gap: 16px; }
+.dispatchqueue { display: flex; flex-direction: column; min-height: 0; margin: 0; }
+.dispatchqueue > .panelbody { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column;
+                              gap: 10px; padding: 10px; background: var(--surface); }
+.dispatchqueue .gridcarditem { flex: none; cursor: grab; }
+.dispatchqueue .gridcarditem[draggable="false"] { cursor: default; }
+.dispatchqueue .legfoot .rowacts { flex-wrap: nowrap; gap: 6px; }
+.dispatchqueue .legfoot .linkbtn { white-space: nowrap; padding: 5px 8px; font-size: 12.5px; }
+.dispatchqueue .legfoot .linkbtn svg { flex: none; }
+.dispatchqueue .legfoot .rowacts > * { flex: 1 1 auto; justify-content: center; }
+/* Only drivers on shift have a column here, each headed by a name and a vehicle: narrower
+   columns fit, so more of the fleet is seen at once. */
+.dispatchboard .shiftcol { flex-basis: 210px; min-width: 210px; }
+/* The waiting list is read down quickly: tighter cards, the buttons on one line. */
+.dispatchqueue .legbody { gap: 5px; padding: 9px 12px; }
+.dispatchqueue .leghead { margin: -9px -12px 0; padding: 7px 12px; }
+.dispatchqueue .legwhen b { font-size: 15px; }
+.dispatchqueue .legfoot { padding: 7px 12px; }
+.dispatchboard { flex: 1; min-width: 0; margin: 0; }
+.dispatchboard .gridempty { flex: 1; display: flex; align-items: center; justify-content: center; }
+.shiftcol.droptarget { background: var(--teal-50); }
+.shiftcol.droptarget .shiftband { background: #cfe9f1; }
+/* The shift is the ground the trips stand on: a pale band, its vehicle named at the top. */
+.shiftband { position: absolute; left: 6px; right: 6px; border-radius: 6px; padding: 5px 8px; box-sizing: border-box;
+             background: #e3f4fb; color: var(--teal-800); font-size: 11.5px; font-weight: 700; pointer-events: none; }
+button.shiftleg { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 1px;
+                  text-align: left; color: var(--text); cursor: pointer; font-weight: 400; min-height: 0; }
+button.shiftleg:hover { border-color: var(--teal-900); }
+.shiftleg .legstate { font-size: 11px; font-weight: 700; color: var(--text-2); }
+.shiftleg.rowbad { background: var(--bad-bg); border-color: var(--bad); }
+.shiftleg.rowbad, .shiftleg.rowbad * { color: var(--bad); }
+.shiftleg.rowwarn { background: #fdf6dc; border-color: #d9a400; }
+.shiftleg.rowwarn, .shiftleg.rowwarn * { color: #a16207; }
+.shiftleg.rowmoving { background: #e8effd; border-color: #1d4ed8; }
+.shiftleg.rowmoving, .shiftleg.rowmoving * { color: #1d4ed8; }
+.shiftleg.rowgood { background: #e4f3ea; border-color: var(--green); }
+.shiftleg.rowgood, .shiftleg.rowgood * { color: var(--green); }
+/* The lists on the left: the unassigned trips, and the will-calls under them. */
+.dispatchside { flex: 0 0 360px; width: 360px; min-width: 0; }
+/* An accordion: each list's head is a button, and the open list takes the height between them. */
+.qualcard > button.accordhead { display: flex; align-items: center; justify-content: space-between; width: 100%;
+                                border: 0; border-bottom: 2px solid var(--teal-100); border-radius: 0; flex: none;
+                                text-align: left; cursor: pointer; color: var(--teal-900); }
+.qualcard > button.accordhead:hover { background: var(--teal-100); }
+.qualcard > button.accordhead + button.accordhead, .qualcard > .panelfoot + button.accordhead,
+.qualcard > .panelbody + button.accordhead { border-top: 1px solid var(--border); }
+.qualcard > button.accordhead:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+.qualcard > button.accordhead:last-child { border-radius: 0 0 var(--radius) var(--radius); border-bottom: 0; }
+.accordhead svg { transition: transform .15s; flex: none; }
+.accordhead.on svg { transform: rotate(180deg); }
+/* A panel's own actions, along its foot - the same band a dialog's footer is. */
+/* White, so it never reads as one more head: in an accordion the next list's head is right under
+   it. Rounded only when it is the last thing in the card. */
+.qualcard > .panelfoot { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px;
+                         justify-content: flex-end; background: var(--surface); border-radius: 0; flex: none; }
+.qualcard > .panelfoot:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+.filterrow > .pushright { margin-left: auto; }
+
+/* The day's boards use the whole window, and their title, day and actions share one row. */
+main > .fill.wide { max-width: none; }
+.pagehead.daypagehead { align-items: center; justify-content: flex-start; margin-bottom: 14px; }
+.daypagehead h1 { margin: 0 6px 0 0; }
+.daypagehead > .pushright { margin-left: auto; }
+/* White list, tinted cards: each trip stands out from the panel it sits in. The time band a shade
+   deeper so it still reads as a band; a state colour, where there is one, still wins. */
+.dispatchqueue .gridcarditem { background: var(--teal-50); border-color: var(--teal-100); }
+.dispatchqueue .leghead { background: var(--teal-100); }
+/* A will-call, waiting on the passenger's call: a soft orange of its own, never one of the
+   trip-state colours (blue there means under way). */
+.dispatchqueue .gridcarditem.willcallcard { background: #fff6ea; border-color: #f3d3a6; }
+.dispatchqueue .gridcarditem.willcallcard .legfoot { border-top-color: #f3d3a6; }
+
+/* A list to choose from with the way to add to it beside it: the select takes the room, the
+   button keeps its own width. */
+.pickadd { display: flex; gap: 8px; align-items: stretch; }
+.pickadd select, .pickadd .searchselect { flex: 1; min-width: 0; }
+.pickadd button { flex: none; white-space: nowrap; width: 160px; justify-content: center; }
+/* A select that can be typed into: it looks like the others until it is opened. */
+.searchselect { position: relative; display: flex; text-indent: 0; }
+.searchselect input { flex: 1; width: 100%; padding-right: 30px; cursor: text; font-weight: 400; }
+.searchselect input::placeholder { color: var(--text); text-transform: none; }
+.searchselectarrow { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--text); pointer-events: none; }
+.searchselectlist { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px 0;
+                    list-style: none; max-height: 260px; overflow-y: auto; background: var(--surface);
+                    border: 1px solid var(--teal-300); border-radius: 8px; box-shadow: 0 8px 24px rgb(15 58 67 / 18%); }
+.searchselectlist li { padding: 7px 12px; font-size: 13px; color: var(--text); cursor: pointer; }
+.searchselectlist li.at { background: var(--teal-50); }
+.searchselectlist li.on { font-weight: 700; }
+.searchselectlist li.none { color: var(--text-3); cursor: default; }
+/* What the route came to, said once under the addresses it was worked out from. */
+.routeline { font-size: 12.5px; color: var(--text-2); margin-top: -4px; }
+/* The price for a payer's trip, one line under the form. */
+.billedline { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.billedline b { color: var(--teal-900); }
+/* Dispatch's day: the names in a row of their own, the height of the list heads beside it, and
+   the scrolling below them only. The head keeps the same gutter the body's scrollbar takes, so
+   the columns line up. */
+.dispatchboard { flex-direction: column; }
+.dispatchboard .calhead { display: flex; flex: none; overflow: hidden; scrollbar-gutter: stable;
+                          background: var(--teal-50); border-bottom: 2px solid var(--teal-100); }
+.dispatchboard .calhead .shifthead { position: static; height: 53px; border-bottom: 0; display: flex;
+                                     flex-direction: column; justify-content: center; }
+.dispatchboard .calhead .shiftgutter { position: static; }
+.dispatchboard .calbody { scrollbar-gutter: stable; }
+
+/* Dispatch's day, in colour. The names on the dark band every grid in the app is headed with; each
+   driver's own hue on the dot by their name and down their day; the hours ruled harder than the
+   quarters; and, on today, an orange line where the day has got to. */
+.dispatchboard .calhead { background: var(--teal-900); border-bottom: 3px solid var(--orange); }
+.dispatchboard .calhead .shifthead { background: transparent; border-right: 1px solid rgb(255 255 255 / 12%); }
+.dispatchboard .calhead .shiftcol, .dispatchboard .calhead .shiftgutter { background: transparent; border-right: 0; }
+.dispatchboard .calhead .shifthead b { color: #fff; display: flex; align-items: center; gap: 8px; letter-spacing: .02em; }
+.dispatchboard .calhead .shifthead.unassigned { background: var(--bad); }
+.dispatchboard .calhead .shifthead.unassigned b, .dispatchboard .calhead .shifthead.unassigned span { color: #fff; }
+.huedot { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px rgb(255 255 255 / 85%); }
+.dispatchboard .shiftband { background: var(--huebg, #e3f4fb); border-left: 4px solid var(--hue, var(--teal-800));
+                            color: var(--hue, var(--teal-800)); border-radius: 4px 6px 6px 4px; }
+.dispatchboard .shiftcol.droptarget .shiftband { box-shadow: inset 0 0 0 2px var(--hue, var(--teal-800)); }
+.dispatchboard .shiftline { border-top-color: #f1ede9; }
+.dispatchboard .shiftline.hour { border-top-color: #d9d2cb; }
+.dispatchboard .shiftslot { border-top-color: #f1ede9; color: var(--text-3); font-size: 11px; }
+.dispatchboard .shiftslot.hour { border-top-color: #d9d2cb; color: var(--teal-950); font-weight: 700; font-size: 11.5px; }
+.dispatchboard .shiftgutter { background: var(--teal-50); }
+.nowline { position: absolute; left: 0; right: 0; z-index: 2; border-top: 2px solid var(--orange); pointer-events: none; }
+.nowline::before { content: ''; position: absolute; left: -5px; top: -6px; width: 10px; height: 10px; border-radius: 50%;
+                   background: var(--orange); }
+.dispatchboard .shiftleg { box-shadow: 0 2px 6px rgb(15 58 67 / 18%); }
+/* Time on the board outside the company's hours - there only because some work falls in it. */
+.offhours { position: absolute; left: 0; right: 0; pointer-events: none;
+            background: repeating-linear-gradient(135deg, #f3f0ec 0 6px, #ebe6e0 6px 12px); }
+/* Hours of operation: the day named, its two times, and whether it is closed. */
+.hourstable th:nth-child(2), .hourstable td:nth-child(2),
+.hourstable th:nth-child(3), .hourstable td:nth-child(3) { width: 170px; }
+.hourstable th:nth-child(4), .hourstable td:nth-child(4) { width: 90px; text-align: center; }
+.hourstable td input[type="time"] { width: 150px; }
+/* The loader inside a dialog: centred in the room the content will take, a little smaller. */
+.pageloading.inbox { min-height: 360px; }
+.pageloading.inbox .loader { width: 110px; height: 110px; }
+/* A leg's route on the trip page. */
+.legroute { margin: 4px 0 14px; }
+.legroutemap { height: 320px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+.legroutekey { display: flex; gap: 18px; align-items: center; font-size: 12px; color: var(--text-2); margin-top: 6px; }
+.legroutekey span { display: inline-flex; align-items: center; gap: 6px; }
+.legroutekey .keypin { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.legroutekey .keypick { background: #1d7a4c; }
+.legroutekey .keydrop { background: #b42318; }
+.legroutekey .keyline { width: 22px; height: 4px; border-radius: 2px; background: #1c6979; display: inline-block; flex: none; }
+.shiftleg .legtimes { font-size: 11px; font-weight: 600; opacity: .9; }
+/* Now, on today's board: an orange arrow on the time column pointing into the day. */
+.dispatchboard .calbody .shiftgutter { position: sticky; }
+.dispatchboard .calbody .shiftgutter > .nowarrow { position: absolute; right: -1px; width: 0; height: 0; margin-top: -8px; z-index: 5;
+             border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 12px solid var(--orange);
+             filter: drop-shadow(0 1px 1px rgb(0 0 0 / 25%)); pointer-events: auto; }
+/* A trip on the calendar: who, where it stands, and when - one fact a line. */
+.shiftleg .leghead2 { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
+.shiftleg .legwho2 { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.shiftleg .legpill { flex: none; font-size: 12px; font-weight: 700; }
+.shiftleg .legspan { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.shiftleg .legtimes { font-size: 11px; font-weight: 600; opacity: .85; white-space: nowrap; }
+.shiftleg .legline { display: block; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                     font-size: 12px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+.shiftleg .legfoot2 { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+/* An empty dashboard grid keeps the height of its five rows, the same as a full one beside it -
+   the bare grid's rule lets the message shrink to its text otherwise. */
+.gridcard.isbare.dashgrid .gridempty { flex: 0 0 220px; height: 220px; }

@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from sqlalchemy.engine import Connection
 
 from app import documents, signatures, storage
+from app.signatures import SIGNATURE_FONTS
 from app.db import row, rows
 
 # A file bigger than this is named but not carried, so one enormous upload cannot make the page
@@ -246,9 +247,7 @@ def _embedded(blob: bytes, mime: str, alt: str) -> str:
 
 
 # The hand a signature is drawn in, as a file the server can draw with.
-SIGNATURE_FACES = {"modern": "ms-madi.ttf", "signature": "meddon.ttf", "quick": "kristi.ttf",
-                   "hand": "zeyada.ttf", "cursive": "cedarville-cursive.ttf",
-                   "fine": "herr-von-muellerhoff.ttf", "bold": "style-script.ttf"}
+SIGNATURE_FACES = SIGNATURE_FONTS      # one map: app/signatures.py
 SIGNATURE_INK = (15, 58, 67)
 SIGNATURE_PX = 132          # drawn large and shown small, so it stays sharp in print
 
@@ -664,10 +663,8 @@ def to_pdf(view: dict, fonts: str = "") -> bytes:
 def signature_css() -> str:
     """The signing faces, carried into the PDF as data so WeasyPrint needs nothing from the web."""
     out = []
-    for key, file in (("modern", "ms-madi"), ("signature", "meddon"), ("quick", "kristi"),
-                      ("hand", "zeyada"), ("cursive", "cedarville-cursive"),
-                      ("fine", "herr-von-muellerhoff"), ("bold", "style-script")):
-        path = Path(__file__).resolve().parent / "legal" / "forms" / f"{file}.ttf"
+    for key, file in SIGNATURE_FONTS.items():
+        path = Path(__file__).resolve().parent / "legal" / "forms" / file
         if not path.exists():
             continue
         data = base64.b64encode(path.read_bytes()).decode()

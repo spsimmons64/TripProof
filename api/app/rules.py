@@ -429,6 +429,13 @@ def _asked_code(rule: dict) -> str:
     for to get one. They differ in exactly the places that have caused trouble: a license is asked
     for as DRIVER_LICENSE and read from `driverlicenses`, and the questionnaire is asked for by its
     own code and read from an answer on the application."""
+    # Undecided until the driver answers a question: asked as that question, not as the document
+    # the rule would want once it reaches them.
+    open_ = rule.get("unanswered") or []
+    if "driver.licenseaction" in open_:
+        return "LICENSE_ACTION_QUESTION"
+    if any(f in open_ for f in ("driver.priorviolation", "driver.priorrtdcomplete")):
+        return "PREEMP_DA_QUESTIONNAIRE"
     kind, _, which = (rule.get("evidencesource") or "").partition(":")
     if kind == "licensecopy":
         return "DRIVER_LICENSE"
@@ -2506,8 +2513,13 @@ def contract_rules(conn: Connection, accountid: str) -> list[dict]:
 def _fold_alternates(out: list[dict]) -> list[dict]:
     """A rule the company has said is answered by another requirement's evidence joins that
     requirement's row, as one more source behind it. With the condition false, it stands alone."""
+    # Only into a row that reaches the driver. Folded into one that does not - securement training,
+    # for a driver in a sedan - the row took that requirement's name while the only rule behind it
+    # was the other one, and a driver short of passenger assistance training read as short of
+    # wheelchair securement training.
     owner = {i["evidencesource"]: i.get("qualificationcode") for i in out
-             if i.get("evidencesource") and i.get("qualificationcode") and not i.get("foldinto")}
+             if i.get("evidencesource") and i.get("qualificationcode") and not i.get("foldinto")
+             and i.get("applies") is not False}
     for i in out:
         target = owner.get(i.get("foldinto"))
         if target:

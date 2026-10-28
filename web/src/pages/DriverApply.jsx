@@ -8,6 +8,7 @@ import { EmailInput, PhoneInput, SsnInput, UpperArea, UpperInput, ZipInput } fro
 import LicenseDialog, { FieldError, StateSelect, useFirstField } from '../components/LicenseDialog.jsx'
 import PublicShell from '../components/PublicShell.jsx'
 import { properName } from '../lib/names.js'
+import { DEFAULT_FONT, SIGNATURE_FONTS } from '../lib/signatureFonts.js'
 
 // The online driver application. No login: the applicant proves who they are with date of birth
 // and SSN, and a token from that check carries the session. Eight steps - two that collect answers
@@ -136,15 +137,7 @@ const acknowledgement = (doctype, name, company) => (POLICY_ACK[doctype]
 // The hands a driver can sign in. All eight are self-hosted (SIL Open Font License): a page that
 // handles Social Security numbers makes no third-party requests, and the CSP stays closed.
 // The default is the first in the list; the rest are there for a driver who wants a different hand.
-const FONTS = [
-  { key: 'modern', label: 'Modern' },
-  { key: 'signature', label: 'Inked' },
-  { key: 'quick', label: 'Quick' },
-  { key: 'hand', label: 'Handwritten' },
-  { key: 'cursive', label: 'Cursive' },
-  { key: 'fine', label: 'Fine' },
-  { key: 'bold', label: 'Bold' },
-]
+const FONTS = SIGNATURE_FONTS
 
 export default function DriverApply() {
   const { accountnumber } = useParams()
@@ -1121,7 +1114,7 @@ function ApplicationSignature({ call, state, refresh, error, doctype = 'APPLICAT
 function SignDialog({ call, refresh, onClose, signature, name, doctypes, onSigned, title = 'Sign Application' }) {
   // Two stages: prove who you are, then sign. The signature on file is not shown - and cannot be
   // used - until the date of birth and SSN have been checked against this driver by the server.
-  const [v, setV] = useState({ dob: '', ssn: '', typedname: name || '', fontkey: 'modern' })
+  const [v, setV] = useState({ dob: '', ssn: '', typedname: name || '', fontkey: DEFAULT_FONT })
   const [bad, setBad] = useState({})
   const box = useFirstField()
   const [err, setErr] = useState(null)

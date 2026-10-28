@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     #                         restriction and therefore must never reach a browser.
     # Absent, geocoding falls back to the browser key and then to OpenStreetMap.
     maptiler_server_key: str = ""
+    # Where routes are worked out (app/routing.py): an OSRM server. Empty means the public one.
+    osrm_url: str = ""
     # Certn, the screening vendor before them. Kept so orders placed through Certn can still be
     # read and still land; nothing new is ordered there.
     certn_api_key: str = ""

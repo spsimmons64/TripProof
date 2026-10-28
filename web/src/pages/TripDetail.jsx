@@ -4,8 +4,9 @@ import IssueDialog, { ProblemBanner } from '../components/IssueDialog.jsx'
 import OutDialog from '../components/OutDialog.jsx'
 import AssignDialog from '../components/AssignDialog.jsx'
 import EditTrip from '../components/EditTrip.jsx'
-import { Link, useParams } from 'react-router-dom'
-import { AlertTriangle, Eye, FileText, PauseCircle, Pencil } from 'lucide-react'
+import LegRoute from '../components/LegRoute.jsx'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { AlertTriangle, ChevronLeft, FileText, PauseCircle, Pencil } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { date, datetime, money, through, tzDateTime } from '../lib/format.js'
 import { Badge, Loading, useLoad } from '../components/ui.jsx'
@@ -110,18 +111,22 @@ function WhatHappened({ leg, issues, changes, words }) {
 export default function TripDetail() {
   const { id } = useParams()
   const [trip, error, reload] = useLoad(() => api.get(`/trips/${id}`), [id])
-  const [phi, setPhi] = useState(null)
+  // Each leg as it was driven, for its map.
+  const [routes] = useLoad(() => api.get(`/trips/${id}/routes`), [id])
+  const navigate = useNavigate()
+  // Back to wherever this was opened from: Dispatch opens it from a trip's dialog, and Back puts
+  // that dialog up again on the same day.
+  const came = useLocation().state?.back
+  const back = () => (came ? navigate('/dispatch', { state: { open: came.legid, day: came.day } }) : navigate(-1))
   const [issue, setIssue] = useState(null)
   const [out, setOut] = useState(false)
   const [assigning, setAssigning] = useState(null)
   const legOf = (i) => (trip.legs || []).find((l) => l.recordid === i.legid)
   const [viewing, setViewing] = useState(null)      // the credential whose file is being read
   const [editing, setEditing] = useState(false)
-  if (!trip) return <Loading error={error} />
+  if (!trip) return <Loading error={error} page />
   const atRisk = trip.checks.some((c) => c.outcome !== 'pass')
 
-  // Member identity is fetched only on request, and the server logs each reveal.
-  const reveal = async () => setPhi(await api.get(`/trips/${id}/phi`))
   // An OPEN problem is not history, so it does not belong in the timeline below - that table is
   // a record and nothing in it is computed from now. It belongs at the top, where somebody who
   // opened this trip because they were told there was a problem can act on it.
@@ -138,9 +143,9 @@ export default function TripDetail() {
           <div className="muted">{date(trip.tripdate)} · {trip.brokername || 'Unknown broker'} · {trip.servicelevel || 'level not given'} · {money(trip.billedamount)} · {trip.billingstatus}</div>
         </div>
         <div className="row">
+          <button type="button" className="back" onClick={back}><ChevronLeft size={14} /> Back</button>
           {trip.billingstatus === 'unbilled' && atRisk && <button onClick={() => setBilling('held')}><PauseCircle size={14} /> Hold from billing</button>}
           {trip.billingstatus === 'held' && <button onClick={() => setBilling('unbilled')}>Release hold</button>}
-          {!phi && <button onClick={reveal}><Eye size={14} /> Show member details</button>}
           {!trip.edit?.locked && (
             <button type="button" onClick={() => setEditing(true)}><Pencil size={14} /> Edit Trip</button>
           )}
@@ -174,17 +179,8 @@ export default function TripDetail() {
           onDone={() => { setAssigning(null); reload() }} />
       )}
 
-      {phi && (
-        <div className="card">
-          <h3>Member</h3>
-          <div>{phi.member.membername || '-'} · ID {phi.member.memberid || '-'} {phi.member.memberdob ? `· DOB ${phi.member.memberdob}` : ''}</div>
-          <div className="small muted">This view was recorded in the access log.</div>
-        </div>
-      )}
-
       {trip.legs.map((leg) => {
         const checks = trip.checks.filter((c) => c.legid === leg.recordid)
-        const lp = phi?.legs?.[leg.recordid]
         return (
           <div className="card" key={leg.recordid}>
             <h2>Leg {leg.legnumber} · pickup {datetime(leg.pickupat)}</h2>
@@ -193,7 +189,7 @@ export default function TripDetail() {
               <span>· Vehicle: {leg.vehicleid ? <Link to={`/vehicles/${leg.vehicleid}`}>{leg.unit || 'vehicle'}{leg.modelyear ? ` (${leg.modelyear})` : ''}</Link> : (leg.vehicleexternal || 'none')}</span>
               <span>· Signature {leg.signature ? 'yes' : 'no'} · GPS {leg.gps ? 'yes' : 'no'}</span>
             </div>
-            {lp && <div className="small muted" style={{ marginBottom: 12 }}>From {lp.pickupaddress || '-'} to {lp.dropoffaddress || '-'}</div>}
+            {routes?.legs?.[leg.recordid] && <LegRoute route={routes.legs[leg.recordid]} style={routes.style} />}
             <WhatHappened leg={leg} issues={trip.issues.filter((i) => i.legid === leg.recordid)}
               changes={(trip.changes || []).filter((c) => c.legid === leg.recordid
                 || (!c.legid && leg.legnumber === trip.legs[0].legnumber))}

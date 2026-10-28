@@ -5,6 +5,7 @@ import { SsnInput } from '../components/MaskedInput.jsx'
 import { FieldError, useFirstField } from '../components/LicenseDialog.jsx'
 import PublicShell from '../components/PublicShell.jsx'
 import SignHere from '../components/SignHere.jsx'
+import { DEFAULT_FONT, SIGNATURE_FONTS } from '../lib/signatureFonts.js'
 
 // One document, signed by one driver, from a link.
 //
@@ -12,15 +13,7 @@ import SignHere from '../components/SignHere.jsx'
 // of the driver's is shown until they have proved who they are with the same date of birth and
 // Social Security number the application asks for, and nothing is signed until they say so.
 
-const FONTS = [
-  { key: 'modern', label: 'Modern' },
-  { key: 'signature', label: 'Inked' },
-  { key: 'quick', label: 'Quick' },
-  { key: 'hand', label: 'Handwritten' },
-  { key: 'cursive', label: 'Cursive' },
-  { key: 'fine', label: 'Fine' },
-  { key: 'bold', label: 'Bold' },
-]
+const FONTS = SIGNATURE_FONTS
 
 const call = async (path, body) => {
   const res = await fetch(`/api/sign${path}`, {
@@ -169,7 +162,7 @@ export default function SignDocument() {
   const [asked, setAsked] = useState(null)      // what the link is for
   const [doc, setDoc] = useState(null)          // the text, once they have proved who they are
   const [done, setDone] = useState(null)
-  const [v, setV] = useState({ dob: '', ssn: '', typedname: '', fontkey: 'modern' })
+  const [v, setV] = useState({ dob: '', ssn: '', typedname: '', fontkey: DEFAULT_FONT })
   // What a government form asks for that we do not already hold - the W-4's filing status and
   // address. Kept apart from the identity fields because these go ON the form.
   const [answers, setAnswers] = useState({})
@@ -216,7 +209,7 @@ export default function SignDocument() {
       // A form the driver fills in arrives with its rows already named, so the seven days are
       // the seven days the statement is about rather than whichever ones they remember.
       setDays(r.days || [])
-      setV((s) => ({ ...s, typedname: r.signature?.typedname || '', fontkey: r.signature?.fontkey || 'modern' }))
+      setV((s) => ({ ...s, typedname: r.signature?.typedname || '', fontkey: r.signature?.fontkey || DEFAULT_FONT }))
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
 

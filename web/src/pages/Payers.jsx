@@ -37,7 +37,7 @@ export default function Payers() {
   const [editing, setEditing] = useState(null)
   const g = useGridParams({ defaultSort: 'name', defaultDir: 'asc' })
 
-  if (!data) return <div className="card"><Loading error={error} /></div>
+  if (!data) return <Loading error={error} page />
   // Each payer, and whether any of its state lines is in force.
   const linesof = (x) => data.lines.filter((l) => (x.privatepay ? !l.payerid : l.payerid === x.recordid))
   const all = [PRIVATE, ...data.payers].map((x) => {

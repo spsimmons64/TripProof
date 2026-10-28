@@ -146,6 +146,14 @@ function Reading({ title, tally, blocking }) {
 // pre-hire progress at the top of the dashboard gives its place to what they have driven, and
 // every other panel below it stays exactly as it was - the chasing, the reviewing and the dates
 // going out of date do not stop at hire, they are the job.
+// Where a trip stands, in the house state colours - its own column, as every state is.
+const TRIPSTATE = {
+  completed: ['Completed', 'st-active'], inprogress: ['In Progress', 'st-ordered'],
+  scheduled: ['Scheduled', 'st-inactive'], cancelled: ['Canceled', 'st-expired'],
+  noshow: ['No-Show', 'st-expired'], aborted: ['Not Done', 'st-expired'],
+  disputed: ['Disputed', 'st-ordered'],
+}
+
 function TripHistory({ id }) {
   const [data, error] = useLoad(() => api.get(`/drivers/${id}/trips`), [id])
   const [page, setPage] = useState(1)
@@ -161,15 +169,17 @@ function TripHistory({ id }) {
           : !trips.length ? <div className="hireempty">No trips yet</div> : (
             <table className="residencetable recordtable">
               <thead><tr><th>Date</th><th>Trip</th><th>Vehicle</th><th>Service</th>
-                <th>Legs</th></tr></thead>
+                <th>Legs</th><th>Status</th></tr></thead>
               <tbody>
                 {shown.map((t) => (
                   <tr key={t.recordid}>
                     <td>{date(t.tripdate)}</td>
                     <td>{t.externalid || '-'}</td>
                     <td>{t.vehicles || <span className="muted">Not recorded</span>}</td>
-                    <td>{t.servicelevel || '-'}</td>
+                    <td>{t.service || '-'}</td>
                     <td>{t.legs}</td>
+                    <td className={(TRIPSTATE[t.state] || TRIPSTATE.scheduled)[1]}>
+                      {(TRIPSTATE[t.state] || TRIPSTATE.scheduled)[0]}</td>
                   </tr>
                 ))}
               </tbody>

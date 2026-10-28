@@ -132,7 +132,8 @@ def _busy(conn: Connection, accountid: str, when: datetime, minutes: int,
 
 def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: int,
                 pickup: tuple[float, float] | None = None,
-                exceptleg: str | None = None) -> list[dict]:
+                exceptleg: str | None = None, only: set[str] | None = None,
+                vehicle_of: dict[str, str] | None = None, timed: bool = True) -> list[dict]:
     """Every driver, ranked for this job, each saying why.
 
     Order: the ones who can go, nearest first; then the ones who could but should not; then
@@ -140,9 +141,12 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
     question the dispatcher will ask, and the answer has to be on the screen.
     """
     today = when.date() if isinstance(when, datetime) else date.today()
-    committed = _busy(conn, accountid, when, minutes, exceptleg)
+    # `timed` False: a will-call with no time yet. Nobody can be busy at no time, and whether they
+    # are on at that hour is unanswerable - so neither is asked. (Asked as of now, it refused a
+    # driver for the trip's own outbound leg.)
+    committed = _busy(conn, accountid, when, minutes, exceptleg) if timed else {}
     seen = _last_seen(conn, accountid)
-    roster = working(conn, accountid, when)
+    roster = working(conn, accountid, when) if timed else {}
     out = []
     for d in rows(conn, """
         SELECT recordid, TRIM(CONCAT(COALESCE(firstname, ''), ' ', COALESCE(lastname, ''))) AS name,
@@ -150,6 +154,10 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
         FROM drivers WHERE accountid = :a AND deleted IS NULL
         ORDER BY lastname, firstname
     """, a=accountid):
+        # `only`: the drivers being weighed (the one an assignment names, the ones on shift), so
+        # nobody else is put through the engine for nothing.
+        if only is not None and d["recordid"] not in only:
+            continue
         why, blocks, drafts = [], [], []
 
         # May they drive at all? The compliance engine owns this question; dispatch does not
@@ -157,7 +165,9 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
         if d["status"] != "hired":
             blocks.append(f"Not hired - {d['status']}")
         else:
-            f = factset.assemble(conn, accountid, d["recordid"])["facts"]
+            # In the vehicle they would take, where that is known: a commercial vehicle is what
+            # makes a commercial driver, and a sedan does not need the licence a bus does.
+            f = factset.assemble(conn, accountid, d["recordid"], (vehicle_of or {}).get(d["recordid"]))["facts"]
             # Only what stops them on EVERY trip. A program's own hard stop - a Georgia Medicaid
             # driving record - says nothing about a private pay run; the trip check reads those
             # against the trip's own program.
@@ -176,7 +186,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
 
         if d["recordid"] in committed:
             blocks.append(f"On trip {committed[d['recordid']]} at that time")
-        elif not blocks:
+        elif not blocks and timed:
             why.append("Free at that time")
 
         # Hours are a warning, not a bar: 14-90.006 is the company's to manage, and a
@@ -282,7 +292,7 @@ def _last_seen(conn: Connection, accountid: str) -> dict[str, dict]:
 
 def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: int,
                  exceptleg: str | None = None,
-                 service: str = "ambulatory", seats: int = 1) -> list[dict]:
+                 service: str = "ambulatory", seats: int = 1, timed: bool = True) -> list[dict]:
     """Every vehicle, ranked for this job, each saying why.
 
     The compliance engine owns whether a van may go out, exactly as it owns whether a driver may
@@ -293,7 +303,7 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
     """
     today = when.date() if isinstance(when, datetime) else date.today()
     needs = SERVICE.get(service, SERVICE["ambulatory"])
-    committed = _busy(conn, accountid, when, minutes, exceptleg)
+    committed = _busy(conn, accountid, when, minutes, exceptleg) if timed else {}
     out = []
     for v in rows(conn, """
         SELECT recordid, externalid, make, model, modelyear, seats, lift
@@ -325,7 +335,7 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
             why.append(f"Seats {v['seats']}")
         if v["recordid"] in committed:
             blocks.append(f"On trip {committed[v['recordid']]} at that time")
-        elif not blocks:
+        elif not blocks and timed:
             why.append("Free at that time")
         out.append({
             "vehicleid": v["recordid"],
@@ -384,7 +394,8 @@ def zone(conn: Connection, accountid: str) -> str:
             or {}).get("timezone") or "America/New_York"
 
 
-def for_leg(conn: Connection, accountid: str, legid: str) -> dict:
+def for_leg(conn: Connection, accountid: str, legid: str, only: set[str] | None = None,
+            vehicle_of: dict[str, str] | None = None) -> dict:
     leg = row(conn, """
         SELECT l.recordid AS legid, l.tripid, l.driverid, l.vehicleid, l.pickupat, l.dropoffat,
                l.pickuplat, l.pickuplng, l.signature, l.gps, l.servicelevel AS legservice,
@@ -406,11 +417,13 @@ def for_leg(conn: Connection, accountid: str, legid: str) -> dict:
               if leg["pickuplat"] is not None and leg["pickuplng"] is not None else None)
 
     drivers = drivers_for(conn, accountid, when=when, minutes=minutes, pickup=pickup,
-                          exceptleg=legid)
+                          exceptleg=legid, only=only, vehicle_of=vehicle_of,
+                          timed=leg["pickupat"] is not None)
     vehicles = vehicles_for(conn, accountid, when=when, minutes=minutes, service=service,
-                            seats=1, exceptleg=legid)
+                            seats=1, exceptleg=legid, timed=leg["pickupat"] is not None)
 
-    _judge(conn, accountid, drivers, vehicles, leg=leg, when=when, service=service)
+    _judge(conn, accountid, drivers, vehicles, leg=leg, when=when, service=service,
+           vehicle_of=vehicle_of)
 
     return {
         "leg": {k: leg[k] for k in ("legid", "tripid", "externalid", "passenger", "pickupat",
@@ -422,7 +435,8 @@ def for_leg(conn: Connection, accountid: str, legid: str) -> dict:
 
 
 def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list[dict], *,
-           leg: dict, when: datetime, service: str) -> None:
+           leg: dict, when: datetime, service: str,
+           vehicle_of: dict[str, str] | None = None) -> None:
     """Put every candidate to the trip check an assignment goes through, and add what it fails.
 
     `leg` is a leg on file (it has a legid) or one being booked. A failure is a block, not a
@@ -445,7 +459,8 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
         return [b for b in found if b["code"] not in c.get("said", [])]
 
     def driver_check(candidate: dict) -> tuple[list[str], list[str], list[str]]:
-        said = tripcheck.check(conn, accountid, candidate["driverid"], None, legid=legid,
+        said = tripcheck.check(conn, accountid, candidate["driverid"],
+                               (vehicle_of or {}).get(candidate["driverid"]), legid=legid,
                                proposed=None if legid else leg, at=when, record=False)
         # The vehicle's own problems are the vehicle's, shown against it rather than every driver;
         # and whether they are hired is already said by the candidate list itself.

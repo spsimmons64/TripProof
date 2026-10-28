@@ -41,7 +41,7 @@ export default function Qualifications() {
   const [adding, setAdding] = useState(false)
   const [retiring, setRetiring] = useState(null)
 
-  if (!data) return <div className="card"><Loading error={error} /></div>
+  if (!data) return <Loading error={error} page />
 
   const save = async (code, applyto) => {
     setBusy(code); setErr(null)

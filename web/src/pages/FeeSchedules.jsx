@@ -124,7 +124,7 @@ export default function FeeSchedules() {
     })
   }
 
-  if (!data) return <div className="card"><Loading error={error} /></div>
+  if (!data) return <Loading error={error} page />
   const held = data.schedules || []
 
   const shown = sorted(held, g.sort, g.dir)

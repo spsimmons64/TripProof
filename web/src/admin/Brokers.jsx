@@ -5,6 +5,8 @@ import { count } from '../lib/format.js'
 import { Badge, useLoad } from '../components/ui.jsx'
 import DataGrid from '../components/DataGrid.jsx'
 import { Modal, clean, useCanEdit, useForm } from './common.jsx'
+import { PhoneInput } from '../components/MaskedInput.jsx'
+import { formatPhone } from '../lib/masks.js'
 
 const COLUMNS = [
   { id: 'name', label: 'Broker' },
@@ -32,7 +34,7 @@ export default function Brokers() {
           <><span className="cellname">{b.name}</span><span className="rowemail plandesc">{b.code}</span></>,
           data.categories[b.category] || b.category,
           [b.city, b.state].filter(Boolean).join(', '),
-          b.phone || '',
+          b.phone ? formatPhone(b.phone) : '',
           count(b.trips),
           <Badge state={b.active ? 'active' : 'disabled'} />,
         ]} />
@@ -90,7 +92,7 @@ function PayerDialog({ payer, categories, editable, onClose, onSaved }) {
             <label className="field span-3">City<input value={f.values.city} onChange={f.set('city')} /></label>
             <label className="field span-1">State<input value={f.values.state} maxLength={2} onChange={f.set('state')} /></label>
             <label className="field span-2">ZIP<input value={f.values.zip} onChange={f.set('zip')} /></label>
-            <label className="field span-2">Phone<input value={f.values.phone} onChange={f.set('phone')} /></label>
+            <label className="field span-2">Phone<PhoneInput value={f.values.phone} onChange={f.set('phone')} /></label>
             <label className="field span-2">Fax<input value={f.values.fax} onChange={f.set('fax')} /></label>
             <label className="field span-6">Contact Email<input value={f.values.contactemail} onChange={f.set('contactemail')} /></label>
             <label className="field span-6">Notes<textarea value={f.values.notes} onChange={f.set('notes')} rows={3} /></label>

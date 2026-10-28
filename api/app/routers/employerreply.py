@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app import applicationview as view
-from app import employers, events, sphiview
+from app import employers, events, signatures, sphiview
 from app.db import get_conn, row, run, saved, utcnow
 from app.security import client_ip
 
@@ -197,7 +197,7 @@ def answer_it(token: str, body: Reply, request: Request, conn: Connection = Depe
     """, now=utcnow(), who=who[:120], title=title, co=company,
         ph=(body.phone or None), em=(body.email or None),
         sig=(body.signature.strip().upper()[:160]),
-        font=(body.fontkey if body.fontkey in view.SIGNATURE_FACES else "modern"),
+        font=(body.fontkey if body.fontkey in signatures.FONTS else signatures.FONTS[0]),
         ip=client_ip(request),
         worked=1 if body.employmentverified == "yes" else 0,
         ver=body.employmentverified, pos=((body.position or "").strip().upper() or None),

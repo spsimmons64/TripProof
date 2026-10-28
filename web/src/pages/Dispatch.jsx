@@ -1,48 +1,38 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, ChevronLeft, ChevronRight, LayoutGrid, List, Loader2, MapPin, Plus, Search, UserPlus, UserX } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { AlertTriangle, CalendarRange, ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus, Sparkles, UserPlus } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { date, time, tzDateTime } from '../lib/format.js'
 import { Loading, useLoad } from '../components/ui.jsx'
 import { Modal } from '../admin/common.jsx'
-import DataGrid, { useGridParams } from '../components/DataGrid.jsx'
 import BookTrip from '../components/BookTrip.jsx'
 import IssueDialog, { ProblemBanner } from '../components/IssueDialog.jsx'
 import OutDialog from '../components/OutDialog.jsx'
 import AssignDialog from '../components/AssignDialog.jsx'
 import EditTrip from '../components/EditTrip.jsx'
 
-// The day's work, one row per LEG rather than per trip. A reservation out to a clinic and back is
-// two pieces of work, often for two drivers, and a board that lists it once cannot say that the
-// return is uncovered - which is the single thing a dispatcher is looking for.
+// The day's work, laid out the way the day is read. On the left, every leg nobody is on yet; on
+// the right, one column per driver on shift, the day running down the side in quarter hours, with
+// the trips each one has where they fall. A leg is put on a driver by dragging it to their column
+// - in the vehicle their shift gives them, through the same gate as the Assign dialog - or the
+// whole list at once by Auto Assign. Once it has a driver it moves over to the calendar.
+//
+// A leg, not a trip, because a leg is what a driver is given: out to a clinic and back is two
+// pieces of work, often for two drivers.
 
-// The incoming board is the same rows with the one thing that matters added: taking the work on,
-// or handing it back.
-// The row says who, what and where it stands; the line under it says where from and where to.
-// An address does not belong in a column - cut to fit one it loses the end of the street name,
-// which is the part a dispatcher is reading it for.
-// Every row ends in the things that can be done to it, as buttons with their names on. Nothing
-// on this board is done by clicking a name or a status and hoping: a dispatcher should never have
-// to guess that "Missed" opens anything.
-const COLUMNS = [
-  { id: 'tripdate', label: 'Date', width: 105 },
-  { id: 'pickupat', label: 'Time', width: 90 },
-  { id: 'passenger', label: 'Passenger', width: 170 },
-  { id: 'servicelevel', label: 'Service', width: 110 },
-  { id: 'drivername', label: 'Driver', width: 175 },
-  { id: 'vehiclename', label: 'Vehicle', width: 110 },
-  { id: 'executionstate', label: 'Status', width: 150 },
-  { id: 'act', label: 'Actions', width: 365, sortable: false, className: 'actions' },
-]
-
-const FILTERS = [['', 'All'], ['attention', 'Needs Attention'], ['needsdriver', 'Needs A Driver'],
-                 ['incoming', 'Incoming'], ['assigned', 'Assigned'], ['willcall', 'Will-Call'],
-                 ['returning', 'Returned To Broker']]
-
-// Why a trip is not going to happen. The server holds the list; this is only how it is offered.
-const CANCELLED = 'cancelled'
-
-
+const SLOT = 28                      // pixels per quarter hour, as on the Shifts page
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const shift = (day, n) => { const [y, m, d] = day.split('-').map(Number); return ymd(new Date(y, m - 1, d + n)) }
+const minutes = (hhmm) => { const [h, m] = String(hhmm).slice(0, 5).split(':').map(Number); return h * 60 + m }
+const clock = (mins) => {
+  const m = ((mins % 1440) + 1440) % 1440
+  const h = Math.floor(m / 60)
+  return `${h % 12 || 12}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
+}
+// Under way: set off, at the pickup, or with the passenger aboard.
+const moving = (l) => ['enroute', 'arrived', 'onboard'].includes(l.executionstate) && !l.outcomestate
+const at = (iso) => { const d = new Date(iso); return d.getHours() * 60 + d.getMinutes() }
+const ends = (s) => { const a = minutes(s.startsat); const b = minutes(s.endsat); return b > a ? b : b + 1440 }
 
 // The database's word for where a leg has got to, in the words an office uses out loud.
 const SAID = {
@@ -52,51 +42,36 @@ const SAID = {
 const OUTCOME = { cancelled: 'Canceled', noshow: 'No-show', aborted: 'Aborted', disputed: 'Disputed' }
 
 // A missed pickup is a question, not an answer. "Missed" means only that the hour went by and
-// nobody pressed anything - the driver may have been there and forgotten the app, the passenger
-// may not have come out, or the trip may simply never have been driven. Those three are paid
-// differently, so the board asks rather than guesses.
+// nobody pressed anything, so the board asks rather than guesses.
 const WHATNOW = { missed: 'Missed', late: 'Running late' }
-// On Needs Attention for a reason the row would not otherwise show: nobody on a pickup that is
-// under two hours away, or a driver taken off and nobody put back.
 const ATTENTION = { nodriver: 'No Driver', reassign: 'Needs Reassigning' }
 
-// The same problems the driver's app offers, in the width a column has. The sentence belongs in
-// the dialog, where there is room to read it.
+// The same problems the driver's app offers, in a word. The sentence belongs in the dialog.
 const SHORT = {
   noshow: 'No-show', refused: 'Ride refused', address: 'Bad address', vehicle: 'Vehicle problem',
   medical: 'Medical', traffic: 'Held up', equipment: 'Equipment', other: 'A problem',
 }
 
-// The list needs about 1,500px of window to show every column and its buttons. Narrower than that -
-// a laptop - the board is shown as cards, which fit any width, rather than as a list with its
-// actions cut off the right-hand edge.
-const NARROW = '(max-width: 1499px)'
-function useNarrow() {
-  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
-  useEffect(() => {
-    const m = window.matchMedia(NARROW)
-    const on = () => setNarrow(m.matches)
-    m.addEventListener('change', on)
-    return () => m.removeEventListener('change', on)
-  }, [])
-  return narrow
-}
-
-// A day as the date field holds it, and the day either side of it.
-const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const shift = (day, n) => { const [y, m, d] = day.split('-').map(Number); return ymd(new Date(y, m - 1, d + n)) }
+// Missed red, late or needing attention the warning colour, under way blue, finished green - the
+// same colours the list used, so they are seen from across the room.
+const tone = (l) => (l.unseen ? (l.executionstate === 'onboard' ? 'rowbad' : 'rowwarn')
+  : l.outcomestate === 'disputed' ? 'rowwarn'
+  : l.outcomestate || (l.issueid && l.executionstate !== 'completed') ? null
+  : l.late === 'missed' ? 'rowbad' : l.late || l.attention ? 'rowwarn'
+  : l.executionstate === 'completed' ? 'rowgood'
+  : ['enroute', 'arrived', 'onboard'].includes(l.executionstate) ? 'rowmoving' : null)
 
 export default function Dispatch() {
-  const g = useGridParams({ filters: ['state', 'day'], defaultSort: 'pickupat', defaultDir: 'asc' })
-  const state = g.filters.state === undefined ? 'needsdriver' : g.filters.state
-  // The board is a day's work, and the day is today unless somebody steps to another. Needs
-  // Attention is the exception: what is wrong is wrong whichever day it belongs to, and its count
-  // is of every day - so it ignores the date rather than hiding yesterday's missed pickup.
-  const day = g.filters.day || ymd(new Date())
-  const dated = state !== 'attention'
-  const base = g.query.split('&').filter((p) => !p.startsWith('day=')).join('&')
-  const query = `${base.includes('state=') ? base : `${base}&state=${state}`}${dated ? `&day=${day}` : ''}`
-  const [data, error, reload] = useLoad(() => api.get(`/dispatch/board?${query}`), [query])
+  // Coming back from a trip's page: the day it was on, with its dialog open again.
+  const returned = useLocation().state
+  const [day, setDay] = useState(() => returned?.day || ymd(new Date()))
+  const [data, error, reload] = useLoad(async () => {
+    const [board, roster] = await Promise.all([
+      api.get(`/dispatch/board?day=${day}&state=all&pagesize=200&sort=pickupat&dir=asc`),
+      api.get(`/shifts?day=${day}`),
+    ])
+    return { ...board, roster }
+  }, [day])
   const [assigning, setAssigning] = useState(null)
   const [returning, setReturning] = useState(null)
   const [cancelling, setCancelling] = useState(null)
@@ -106,21 +81,17 @@ export default function Dispatch() {
   const [booking, setBooking] = useState(false)
   const [editing, setEditing] = useState(null)
   const [called, setCalled] = useState(null)       // the will-call leg whose passenger has rung
+  const [looking, setLooking] = useState(returned?.open || null)     // the leg opened from the calendar
+  const [planning, setPlanning] = useState(false)
+  const [pane, setPane] = useState('unassigned')   // which list on the left is open
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
-  // List or cards: how this dispatcher likes to read the board, kept in their own browser.
-  const [chosen, setView] = useState(() => { try { return localStorage.getItem('dispatchview') || 'list' } catch { return 'list' } })
-  const narrow = useNarrow()
-  const view = narrow ? 'cards' : chosen
-  const pickView = (v) => { setView(v); try { localStorage.setItem('dispatchview', v) } catch { /* private window */ } }
+  const navigate = useNavigate()
 
   const act = async (fn) => {
     setBusy(true); setErr(null)
     try { await fn(); reload() } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
-  const navigate = useNavigate()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (data) g.fitPage(data.total) }, [data])
   // Read again on its own, so a driver setting off, arriving or finishing shows up without anybody
   // pressing anything - and at once when the tab is looked at again after being in the background.
   useEffect(() => {
@@ -129,32 +100,98 @@ export default function Dispatch() {
     document.addEventListener('visibilitychange', back)
     return () => { clearInterval(again); document.removeEventListener('visibilitychange', back) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query])
+  }, [day])
 
-  // What can be done to one leg, most pressing first. A problem the driver reported, then a
-  // pickup that went by, then whether it has a driver; the work offered by a broker is taken on
-  // or handed back before anything else can happen to it. A finished leg only has its trip.
-  // Where the leg stands, in a word. The same word on a row and on a card.
-  const status = (l) => (l.issueid
+  // Dropped on a driver: that driver, in their shift's vehicle. A pairing that needs somebody's
+  // say-so opens the Assign dialog, where the reason is given; a refusal is said with its reason.
+  const place = (legid, driverid) => {
+    const leg = data.items.find((l) => l.legid === legid)
+    if (!leg || leg.driverid === driverid) return
+    act(async () => {
+      try { await api.post('/dispatch/place', { legid, driverid }) }
+      catch (e) {
+        if (e.status === 400 || e.status === 403) { setAssigning(leg); return }
+        throw e
+      }
+    })
+  }
+
+  // A finished trip says so, whatever was reported on the way; the report itself stays on the
+  // problem banner until it is dealt with.
+  const status = (l) => (l.issueid && l.executionstate !== 'completed'
     ? <span className="st-expired">{SHORT[l.issuekind] || 'A problem'}</span>
     : l.outcomestate
     ? <span className="st-expired">{OUTCOME[l.outcomestate] || l.outcomestate}</span>
     : l.late
       ? <span className={l.late === 'missed' ? 'st-expired' : 'st-ordered'}>{WHATNOW[l.late]}</span>
       : l.attention ? ATTENTION[l.attention]
+      : l.brokerstate === 'offered' ? 'Offered'
+      : l.brokerstate === 'returnpending' ? 'Returning To Broker'
+      : !l.pickupat && l.executionstate === 'scheduled' ? 'Waiting For Call'
       : SAID[l.executionstate] || l.executionstate)
 
-  // One leg as a card: when and who at the top, where from and to, what is on it, what went
-  // wrong, and the buttons along the foot - the same facts and the same actions as its row.
-  const legCard = (l) => (
-    <>
+  // What can be done to one leg, most pressing first - the same buttons wherever the leg is shown.
+  const actions = (l, then = () => {}) => {
+    const go = (fn) => (e) => { e.stopPropagation(); then(); fn() }
+    const open = !l.outcomestate && l.executionstate !== 'completed'
+    return (
+      <span className="rowacts">
+        {l.brokerstate === 'offered' ? <>
+          <button type="button" className="linkbtn edit" disabled={busy}
+            onClick={go(() => act(() => api.post(`/trips/${l.tripid}/accept`, {})))}>Accept</button>
+          <button type="button" className="linkbtn" disabled={busy}
+            onClick={go(() => setReturning(l))}>Return</button>
+        </> : l.issueid ? (
+          <button type="button" className="linkbtn"
+            onClick={go(() => setIssue((data.problems || []).find((pr) => pr.recordid === l.issueid)))}>
+            <AlertTriangle size={13} /> Deal With Problem
+          </button>
+        ) : l.outcomestate === 'disputed' ? (
+          <button type="button" className="linkbtn" onClick={go(() => setClosing(l))}>Settle Dispute</button>
+        ) : open && !l.pickupat ? (
+          // Not scheduled until the passenger calls: the call gives it a time, and then a driver.
+          <button type="button" className="linkbtn" onClick={go(() => setCalled(l))}>Passenger Called</button>
+        ) : open && (l.late === 'missed' || (l.late && l.driverid)) ? (
+          <button type="button" className="linkbtn" onClick={go(() => setClosing(l))}>What Happened</button>
+        ) : open ? (
+          <button type="button" className="linkbtn edit" onClick={go(() => setAssigning(l))}>
+            {l.driverid ? 'Change Driver' : <><UserPlus size={13} /> Assign Driver</>}
+          </button>
+        ) : null}
+        {!l.cancelled && !l.outcomestate && l.executionstate !== 'completed' && l.pickupat
+          && !['returnpending', 'returned'].includes(l.brokerstate)
+          && !['billed', 'paid'].includes(l.billingstatus) && (
+          <button type="button" className="linkbtn edit" onClick={go(() => setEditing(l.tripid))}>Edit Trip</button>
+        )}
+        {/* Back on the trip page comes here again, to this day and this trip's dialog. */}
+        <button type="button" className="linkbtn edit"
+          onClick={go(() => navigate(`/trips/${l.tripid}`, { state: { back: { day, legid: l.legid } } }))}>View Trip</button>
+      </span>
+    )
+  }
+
+  const open = (l) => !l.outcomestate && !l.cancelled && l.executionstate !== 'completed'
+    && l.brokerstate !== 'returned'
+  // Waiting for a driver: a pickup time, nobody on it, and still to be done.
+  const waiting = (data?.items || []).filter((l) => l.pickupat && !l.driverid && open(l))
+  // Will-calls: not scheduled until the passenger calls, so listed on their own, with only that
+  // call to record. Once it is recorded the leg has a time and joins the unassigned trips.
+  const willcalls = (data?.items || []).filter((l) => !l.pickupat && open(l))
+
+  // One leg as a card in the lists on the left, dragged from there onto a driver.
+  const queueCard = (l) => (
+    <div key={l.legid} className={['gridcarditem', tone(l), !l.pickupat && 'willcallcard'].filter(Boolean).join(' ')}
+      draggable={Boolean(l.pickupat) && l.brokerstate !== 'offered'}
+      onDragStart={(e) => { e.dataTransfer.setData('text/leg', l.legid); e.dataTransfer.effectAllowed = 'move' }}>
       <div className="legbody">
-        <div className="leghead">
-          <span className="legwhen">
-            {l.pickupat ? <><b>{time(l.pickupat)}</b> {date(l.pickupat)}</> : <b>Will-call</b>}
-          </span>
-          <span className="legstatus">{status(l)}</span>
-        </div>
+        {/* A will-call is in the will-call list already, waiting on its call: a band saying so
+            again says nothing. */}
+        {l.pickupat && (
+          <div className="leghead">
+            <span className="legwhen"><b>{time(l.pickupat)}</b></span>
+            <span className="legstatus">{status(l)}</span>
+          </div>
+        )}
         <div className="legwho">
           <b>{l.passenger}</b>
           <span>{(data.services || {})[l.servicelevel] || l.servicelevel}</span>
@@ -163,133 +200,40 @@ export default function Dispatch() {
           <span><b>FROM:</b> {l.pickupplace}</span>
           <span><b>TO:</b> {l.dropoffplace}</span>
         </span>
-        <div className="legcrew">
-          <span><b>DRIVER:</b> {l.drivername || '-'}</span>
-          <span><b>VEHICLE:</b> {l.vehiclename || '-'}</span>
-        </div>
-        {l.detail && <div className="legnote">{l.detail}</div>}
+        {!l.pickupat && l.lastcall && (
+          <div className="legnote"><b>LAST CALL {tzDateTime(l.lastcallon)}:</b> {l.lastcall.replace(/^PASSENGER CALLED - /, '')}</div>
+        )}
       </div>
       <div className="legfoot">{actions(l)}</div>
-    </>
+    </div>
   )
 
-  const actions = (l) => {
-    const stop = (fn) => (e) => { e.stopPropagation(); fn() }
-    const open = !l.outcomestate && l.executionstate !== 'completed'
-    return (
-      <span className="rowacts">
-        {l.brokerstate === 'offered' ? <>
-          <button type="button" className="linkbtn edit" disabled={busy}
-            onClick={stop(() => act(() => api.post(`/trips/${l.tripid}/accept`, {})))}>Accept</button>
-          <button type="button" className="linkbtn" disabled={busy}
-            onClick={stop(() => setReturning(l))}>Return</button>
-        </> : l.issueid ? (
-          <button type="button" className="linkbtn"
-            onClick={stop(() => setIssue((data.problems || []).find((pr) => pr.recordid === l.issueid)))}>
-            <AlertTriangle size={13} /> Deal With Problem
-          </button>
-        ) : l.outcomestate === 'disputed' ? (
-          // Disputed is an open question, not an ending: it stays here until somebody settles it.
-          <button type="button" className="linkbtn" onClick={stop(() => setClosing(l))}>
-            Settle Dispute
-          </button>
-        ) : open && !l.pickupat ? <>
-          {/* A will-call waits for the passenger to ring. That call is what this button records,
-              and it is what turns the leg into an ordinary one with a time on the board. */}
-          <button type="button" className="linkbtn" onClick={stop(() => setCalled(l))}>
-            Passenger Called
-          </button>
-          <button type="button" className="linkbtn edit" onClick={stop(() => setAssigning(l))}>
-            {l.driverid ? 'Change Driver' : <><UserPlus size={13} /> Assign Driver</>}
-          </button>
-        </> : open && (l.late === 'missed' || (l.late && l.driverid)) ? (
-          <button type="button" className="linkbtn" onClick={stop(() => setClosing(l))}>
-            What Happened
-          </button>
-        ) : open ? (
-          <button type="button" className="linkbtn edit" onClick={stop(() => setAssigning(l))}>
-            {l.driverid ? 'Change Driver' : <><UserPlus size={13} /> Assign Driver</>}
-          </button>
-        ) : null}
-        {/* Offered wherever the trip can still be put right; what may change at its stage is
-            the dialog's to say. Billed, cancelled or handed back, there is nothing to offer. */}
-        {!l.cancelled && !l.outcomestate && l.executionstate !== 'completed' && l.pickupat
-          && !['returnpending', 'returned'].includes(l.brokerstate)
-          && !['billed', 'paid'].includes(l.billingstatus) && (
-          <button type="button" className="linkbtn edit" onClick={stop(() => setEditing(l.tripid))}>
-            Edit Trip
-          </button>
-        )}
-        <button type="button" className="linkbtn edit"
-          onClick={stop(() => navigate(`/trips/${l.tripid}`))}>View Trip</button>
-      </span>
-    )
-  }
-
   return (
-    <div className="fill">
-      <div className="pagehead">
-        <div><h1>Dispatch</h1></div>
-        <div className="row">
-          <div className="searchbox"><Search size={14} /><input placeholder="Search Trips"
-            value={g.search} onChange={(e) => g.setSearch(e.target.value)} /></div>
-          {/* The screen that dispatches work is the screen that takes it in. A dispatcher
-              answering the telephone should not have to go to another page to write it down. */}
+    <div className="fill wide">
+      {/* One row for the title, the day and every action, so the day itself gets the height. */}
+      <div className="pagehead daypagehead">
+        <h1>Dispatch</h1>
+        <div className="segs daypick">
+          <button type="button" className="chip" title="The day before" aria-label="The day before"
+            onClick={() => setDay(shift(day, -1))}><ChevronLeft size={16} /></button>
+          <input type="date" value={day} onChange={(e) => e.target.value && setDay(e.target.value)} />
+          <button type="button" className="chip" title="The day after" aria-label="The day after"
+            onClick={() => setDay(shift(day, 1))}><ChevronRight size={16} /></button>
+        </div>
+        <div className="row pushright">
+          <button type="button" onClick={() => navigate('/vehicle-assignments')}>
+            <CalendarRange size={14} /> Vehicle Assignments
+          </button>
+          {/* The screen that dispatches work is the screen that takes it in. */}
           <button type="button" className="primary" onClick={() => setBooking(true)}>
             <Plus size={14} /> Book A Trip
           </button>
         </div>
       </div>
 
-      <div className="filterrow threeway">
-        {/* A board with no day on it is a board of everything, which is right the first time it is
-            opened and wrong every time afterwards. */}
-        <div className="filterday">
-          <div className={`segs daypick${dated ? '' : ' off'}`}>
-            <button type="button" className="chip" disabled={!dated} title="The day before"
-              aria-label="The day before" onClick={() => g.setFilter('day', shift(day, -1))}>
-              <ChevronLeft size={16} />
-            </button>
-            <input type="date" value={day} disabled={!dated}
-              onChange={(e) => e.target.value && g.setFilter('day', e.target.value)} />
-            <button type="button" className="chip" disabled={!dated} title="The day after"
-              aria-label="The day after" onClick={() => g.setFilter('day', shift(day, 1))}>
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="segs">
-          {FILTERS.map(([v, l]) => (
-            <button key={v || 'all'} type="button"
-              className={`chip${state === v ? ' on' : ''}${v === 'attention' && data?.attention ? ' shouting' : ''}`}
-              onClick={() => g.setFilter('state', v)}>
-              {l}{v === 'attention' && data?.attention ? <span className="segcount">{data.attention}</span> : null}
-            </button>
-          ))}
-        </div>
-        <div className="filterout">
-          <div className="segs viewpick">
-            {[['list', 'List', List], ['cards', 'Cards', LayoutGrid]].map(([v, l, Icon]) => (
-              <button key={v} type="button" className={`chip${view === v ? ' on' : ''}`}
-                disabled={narrow && v === 'list'}
-                title={l} aria-label={l} onClick={() => pickView(v)}><Icon size={16} /></button>
-            ))}
-          </div>
-          {/* The contingency, reached from the board - that is where somebody is standing
-              when the telephone rings at six in the morning. */}
-          <button type="button" onClick={() => setOut(true)}>
-            <UserX size={14} /> Someone Is Out
-          </button>
-        </div>
-      </div>
-
       {err && <div className="notice bad">{err}</div>}
 
-      {/* A number in a chip does not tell anybody that a driver is standing on a hard shoulder,
-          so it is said out loud, on every board, for as long as nobody has dealt with it.
-          What changes between boards is the BUTTON: somewhere the row cannot be seen it has to
-          offer a way to it, and on a board already showing the row it would only be pointing at
-          something the dispatcher is looking at - so the strip goes quiet and stays thin. */}
+      {/* A problem a driver reported is said out loud, on every day, until somebody deals with it. */}
       {(data?.problems || []).map((pr) => (
         <ProblemBanner key={pr.recordid} issue={pr} kinds={data.issuekinds}>
           <button type="button" className="pushright" onClick={() => setIssue(pr)}>
@@ -298,44 +242,61 @@ export default function Dispatch() {
         </ProblemBanner>
       ))}
 
-      <DataGrid columns={COLUMNS} className="dispatchgrid"
-        card={view === 'cards' ? legCard : undefined} rows={data?.items} rowKey={(l) => l.legid} error={error}
-        sort={g.sort} dir={g.dir} onSort={g.onSort}
-        // A missed pickup is the whole row in red, a late one or one needing attention the warning
-        // colour, one under way blue and a finished one green, so it is seen from across the room.
-        rowClass={(l) => (l.unseen ? (l.executionstate === 'onboard' ? 'rowbad' : 'rowwarn')
-          : l.outcomestate === 'disputed' ? 'rowwarn' : l.outcomestate || l.issueid ? null
-          : l.late === 'missed' ? 'rowbad' : l.late || l.attention ? 'rowwarn'
-          : l.executionstate === 'completed' ? 'rowgood'
-          : ['enroute', 'arrived', 'onboard'].includes(l.executionstate) ? 'rowmoving' : null)}
-        pager={data && g.pager(data.total, 'leg')}
-        empty={!data?.anywork ? 'No trips booked yet. Book A Trip starts one.'
-          : state === 'needsdriver' ? 'Every leg has a driver.'
-            : state === 'incoming' ? 'No trips are waiting to be accepted.'
-              : 'Nothing to dispatch.'}
-        subrow={(l) => (
-          <span className="legunder">
-            <span className="route">
-              <span><b>FROM:</b> {l.pickupplace}</span>
-              <span><b>TO:</b> {l.dropoffplace}</span>
-            </span>
-            {/* What went wrong, said in full, under the Status that names it in a word. */}
-            {l.detail && <span className="legdetail">{l.detail}</span>}
-          </span>
-        )}
-        cells={(l) => [
-          l.pickupat ? date(l.pickupat) : <span className="muted">-</span>,
-          l.pickupat ? <b>{time(l.pickupat)}</b> : <span className="st-ordered">Will-call</span>,
-          l.passenger,
-          (data.services || {})[l.servicelevel] || l.servicelevel,
-          l.drivername || <span className="muted">-</span>,
-          l.vehiclename || <span className="muted">-</span>,
-          // Cancelled beats everything; then how late it is, because a pickup time that has
-          // gone by is the thing a dispatcher has to act on before anything else on the row.
-          status(l),
-          actions(l),
-        ]} />
+      {!data ? <Loading error={error} page /> : (
+        <div className="dispatchday">
+          {/* The two lists the day is assigned from, one open at a time so it has the height. */}
+          <div className="card qualcard dispatchqueue dispatchside">
+            {[['unassigned', 'Unassigned Trips', waiting,
+               data.items.some((l) => l.pickupat) ? 'Every trip this day has a driver.' : 'No trips booked for this day.'],
+              ['willcall', 'Will-Call Trips', willcalls, 'No will-call trips waiting on a call.']].map(([k, title, list, none]) => (
+              <Fragment key={k}>
+                <button type="button" className={`infotabs accordhead${pane === k ? ' on' : ''}`}
+                  aria-expanded={pane === k} onClick={() => setPane(k)}>
+                  <h3>{title}{list.length > 0 && <span className="countpill">{list.length}</span>}</h3>
+                  <ChevronDown size={16} />
+                </button>
+                {pane === k && (
+                  <div className="panelbody">
+                    {!list.length ? <div className="hireempty">{none}</div> : list.map(queueCard)}
+                  </div>
+                )}
+                {pane === k && k === 'unassigned' && (
+                  <footer className="panelfoot">
+                    <button type="button" disabled={!waiting.some((l) => !['offered', 'returnpending'].includes(l.brokerstate))}
+                      onClick={() => setPlanning(true)}><Sparkles size={14} /> Auto Assign</button>
+                  </footer>
+                )}
+              </Fragment>
+            ))}
+          </div>
+          <Calendar day={day} data={data} status={status} onOpen={setLooking} onPlace={place} />
+        </div>
+      )}
 
+      {looking && (() => {
+        const l = data?.items.find((x) => x.legid === looking)
+        if (!l) return null
+        return (
+          <Modal width={680} title={`${l.externalid} - ${l.passenger}`} onClose={() => setLooking(null)}
+            footer={<>{actions(l, () => setLooking(null))}
+              <button type="button" onClick={() => setLooking(null)}>Close</button></>}>
+            <div className="kv">
+              <dt>Pickup</dt><dd>{l.pickupat ? `${date(l.pickupat)} ${time(l.pickupat)}` : 'Will-call'}</dd>
+              <dt>Status</dt><dd>{status(l)}</dd>
+              <dt>Service</dt><dd>{(data.services || {})[l.servicelevel] || l.servicelevel}</dd>
+              <dt>From</dt><dd>{l.pickupplace}</dd>
+              <dt>To</dt><dd>{l.dropoffplace}</dd>
+              <dt>Driver</dt><dd>{l.drivername || 'None'}</dd>
+              <dt>Vehicle</dt><dd>{l.vehiclename || 'None'}</dd>
+              {l.detail && <><dt>What Went Wrong</dt><dd>{l.detail}</dd></>}
+            </div>
+          </Modal>
+        )
+      })()}
+      {planning && (
+        <AutoAssignDialog day={day} onClose={() => setPlanning(false)}
+          onDone={() => { setPlanning(false); reload() }} />
+      )}
       {cancelling && (
         <CancelDialog leg={cancelling} reasons={data?.cancelreasons || {}}
           onClose={() => setCancelling(null)}
@@ -361,9 +322,10 @@ export default function Dispatch() {
           onDone={() => { setIssue(null); reload() }} />
       )}
       {out && <OutDialog start={out} onClose={() => setOut(false)}
-        onDone={() => { setOut(false); g.setFilter('state', 'attention'); reload() }} />}
+        onDone={() => { setOut(false); reload() }} />}
       {called && (
-        <PassengerCalledDialog leg={called} onClose={() => setCalled(null)}
+        <PassengerCalledDialog leg={called} reasons={data?.notneeded || {}} onClose={() => setCalled(null)}
+          onAssign={(l) => { setCalled(null); reload(); setAssigning(l) }}
           onDone={() => { setCalled(null); reload() }} />
       )}
       {editing && (
@@ -385,6 +347,195 @@ export default function Dispatch() {
           onDone={() => { setAssigning(null); reload() }} />
       )}
     </div>
+  )
+}
+
+// One column per driver on shift that day - and per driver with trips that day but no shift, so
+// work nobody planned a vehicle for is on the board rather than off it. The shift is the pale band
+// down the column; the trips sit on it. A trip is a button: it opens what can be done to it.
+// Each driver's own colour, in column order: on the dot by their name and the band of their day,
+// so a driver can be followed down the board at a glance. Never one of the trip-state colours.
+const HUES = [['#0e9fb4', '#dcf2f6'], ['#d9822b', '#fdeedd'], ['#6d4bb3', '#ece6f7'], ['#2e8b57', '#e0f2e7'],
+              ['#c2416b', '#f9e3ea'], ['#2f6fd0', '#e2ecfb'], ['#a07a0a', '#f6eed2'], ['#0e8f8f', '#d9f2f2']]
+
+function Calendar({ day, data, status, onOpen, onPlace }) {
+  const [over, setOver] = useState(null)
+  const head = useRef(null)
+  // Where the day has got to, when the day shown is today: a line across every column, moved on
+  // each minute.
+  const [nowAt, setNowAt] = useState(() => new Date())
+  useEffect(() => { const t = setInterval(() => setNowAt(new Date()), 60000); return () => clearInterval(t) }, [])
+  const today = `${nowAt.getFullYear()}-${String(nowAt.getMonth() + 1).padStart(2, '0')}-${String(nowAt.getDate()).padStart(2, '0')}` === day
+  const columns = useMemo(() => {
+    const names = new Map(data.roster.drivers.map((d) => [d.driverid, d.name]))
+    const byDriver = new Map()
+    const col = (id, name) => {
+      if (!byDriver.has(id)) byDriver.set(id, { driverid: id, name: name || names.get(id) || 'Driver', shifts: [], legs: [] })
+      return byDriver.get(id)
+    }
+    data.roster.shifts.forEach((s) => col(s.driverid, s.drivername).shifts.push(s))
+    // A will-call has no time and no place on the clock: it is in the list on the left.
+    data.items.filter((l) => l.driverid && l.pickupat).forEach((l) => col(l.driverid, l.drivername).legs.push(l))
+    byDriver.forEach((c) => c.shifts.sort((a, b) => minutes(a.startsat) - minutes(b.startsat)))
+    return [...byDriver.values()].sort((a, b) => a.name.localeCompare(b.name))
+  }, [data])
+
+  // The company's hours that day (Company page) are the day drawn; work outside them stretches it,
+  // and the stretch is shaded as out of hours. Hours not set: six to eight.
+  const open = data.roster.hours?.open ? [minutes(data.roster.hours.open), ends({ startsat: data.roster.hours.open, endsat: data.roster.hours.close })] : null
+  const [from, to] = useMemo(() => {
+    let lo = open ? open[0] : 6 * 60
+    let hi = open ? open[1] : 20 * 60
+    columns.forEach((c) => {
+      c.shifts.forEach((s) => { lo = Math.min(lo, minutes(s.startsat)); hi = Math.max(hi, ends(s)) })
+      c.legs.forEach((l) => { lo = Math.min(lo, at(l.pickupat)); hi = Math.max(hi, at(l.expectedend || l.pickupat) + 30) })
+    })
+    return [Math.floor(lo / 60) * 60, Math.ceil(hi / 60) * 60]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, data.roster.hours])
+  const slots = []
+  for (let m = from; m < to; m += 15) slots.push(m)
+  const top = (m) => ((m - from) / 15) * SLOT
+
+  if (!columns.length) {
+    return (
+      <div className="card shiftboard dispatchboard">
+        <div className="gridempty">{data.roster.hours?.closed ? 'Closed this day.' : 'No driver has a vehicle assigned this day.'}</div>
+      </div>
+    )
+  }
+  const drop = (driverid) => ({
+    onDragOver: (e) => { if (e.dataTransfer.types.includes('text/leg')) { e.preventDefault(); setOver(driverid) } },
+    onDragLeave: () => setOver((o) => (o === driverid ? null : o)),
+    onDrop: (e) => { e.preventDefault(); setOver(null); const id = e.dataTransfer.getData('text/leg'); if (id) onPlace(id, driverid) },
+  })
+  // The names are a row of their own above the scrolling day, so the scrollbar runs beside the
+  // hours only; it follows the day sideways, so each name stays over its column.
+  return (
+    <div className="card shiftboard dispatchboard">
+      <div className="calhead" ref={head}>
+        <div className="shiftgutter"><div className="shifthead" /></div>
+        {columns.map((c, n) => (
+          <div key={c.driverid} className={`shiftcol${over === c.driverid ? ' droptarget' : ''}`} {...drop(c.driverid)}>
+            <div className={`shifthead${c.shifts.length ? '' : ' unassigned'}`}>
+              <b><span className="huedot" style={{ background: HUES[n % HUES.length][0] }} />{c.name.toUpperCase()}</b>
+              {/* The vehicle is on the band down the column, not up here: a driver can change
+                  vehicles during the day, and each band names its own. */}
+              {!c.shifts.length && <span>No Vehicles Assigned To Driver For This Day</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="shiftscroll calbody" onScroll={(e) => { if (head.current) head.current.scrollLeft = e.currentTarget.scrollLeft }}>
+        <div className="shiftgutter">
+          {slots.map((m) => <div key={m} className={`shiftslot${m % 60 ? '' : ' hour'}`}>{clock(m)}</div>)}
+          {/* Where the day has got to, when the day shown is today: an arrow on the time column. */}
+          {today && nowAt.getHours() * 60 + nowAt.getMinutes() >= from && nowAt.getHours() * 60 + nowAt.getMinutes() < to && (
+            <div className="nowarrow" style={{ top: top(nowAt.getHours() * 60 + nowAt.getMinutes()) }}
+              title={`Now, ${clock(nowAt.getHours() * 60 + nowAt.getMinutes())}`} />
+          )}
+        </div>
+        {columns.map((c, n) => (
+          <div key={c.driverid} className={`shiftcol${over === c.driverid ? ' droptarget' : ''}`} {...drop(c.driverid)}
+            style={{ '--hue': HUES[n % HUES.length][0], '--huebg': HUES[n % HUES.length][1] }}>
+            <div className="shiftbody" style={{ height: slots.length * SLOT }}>
+              {open && open[0] > from && <div className="offhours" style={{ top: 0, height: top(open[0]) }} />}
+              {open && open[1] < to && <div className="offhours" style={{ top: top(open[1]), height: top(to) - top(open[1]) }} />}
+              {slots.map((m) => <div key={m} className={`shiftline${m % 60 ? '' : ' hour'}`} style={{ top: top(m) }} />)}
+              {c.shifts.map((s) => (
+                <div key={s.recordid} className="shiftband"
+                  style={{ top: top(minutes(s.startsat)), height: ((ends(s) - minutes(s.startsat)) / 15) * SLOT }}>
+                  {s.vehiclename}
+                </div>
+              ))}
+              {c.legs.map((l) => {
+                // From the moment the app said the passenger was aboard (the booked pickup until
+                // then) to the moment it said they arrived - or, under way, when they should.
+                const a = at(l.pickedupat || l.pickupat)
+                const b = l.expectedend ? Math.max(at(l.expectedend), a + 5) : a + 30
+                return (
+                  <button key={l.legid} type="button"
+                    className={['shiftleg', tone(l), l.outcomestate || l.cancelled ? 'closed' : null].filter(Boolean).join(' ')}
+                    draggable={!l.outcomestate && l.executionstate === 'scheduled'}
+                    onDragStart={(e) => e.dataTransfer.setData('text/leg', l.legid)}
+                    onClick={() => onOpen(l.legid)}
+                    // Starts at the exact moment; never drawn too short to read, whatever it took.
+                    style={{ top: top(a) + 2, height: Math.max(((b - a) / 15) * SLOT - 4, 76) }}>
+                    {/* One fact a line, none of them wrapping: who; picked up; dropped off - as the app
+                        reported them once they happened, the plan or the estimate (≈) until then;
+                        and where it stands. */}
+                    <b className="legline legwho2">{l.passenger}</b>
+                    <span className="legline">{l.pickedupat ? `Picked up ${clock(a)}` : `Pickup ${clock(a)}`}</span>
+                    <span className="legline">
+                      {l.executionstate === 'completed' && l.dropoffat ? `Dropped off ${clock(at(l.dropoffat))}`
+                        : l.eta ? `Drop-off ≈ ${clock(at(l.eta.at))}` : l.expectedend ? `Drop-off ≈ ${clock(b)}` : 'Drop-off not known'}
+                    </span>
+                    <span className="legline legfoot2">
+                      <span className="legpill">{status(l)}</span>
+                      {moving(l) && <span className="legtimes">{l.eta ? `${l.eta.minutes} min to go` : 'No GPS yet'}</span>}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Auto Assign: a driver for each of the day's unassigned trips, with why - and, for one that could
+// not be placed, what stands in the way. Nothing is saved until Save; each assignment then passes
+// the same gate as one made by hand.
+function AutoAssignDialog({ day, onClose, onDone }) {
+  const [proposal, setProposal] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const [refused, setRefused] = useState(null)
+  useEffect(() => {
+    api.post('/dispatch/autoplan', { day }).then((got) => setProposal(got.proposal)).catch((e) => setErr(e.message))
+  }, [day])
+  const save = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const got = await api.post('/dispatch/autoplan/save', {
+        items: proposal.filter((p) => p.driverid).map(({ legid, driverid, vehicleid }) => ({ legid, driverid, vehicleid })),
+      })
+      if (got.refused.length) { setRefused(got.refused); setBusy(false) } else onDone()
+    } catch (e) { setErr(e.message); setBusy(false) }
+  }
+  return (
+    <Modal title="Auto Assign Trips" onClose={refused ? onDone : onClose} width={980} tall
+      footer={refused ? <button type="button" className="primary" onClick={onDone}>Close</button> : <>
+        <button type="button" onClick={onClose}>Cancel</button>
+        <button type="button" className="primary" disabled={busy || !proposal?.some((p) => p.driverid)}
+          onClick={save}>{busy ? <Loader2 size={15} className="spin" /> : 'Save'}</button>
+      </>}>
+      <div className="stack">
+        {err && <div className="notice bad">{err}</div>}
+        {refused && <div className="notice bad">{refused.map((r) => <div key={r}>{r}</div>)}</div>}
+        {!proposal ? (!err && <Loading />) : !proposal.length ? (
+          <div className="muted">No unassigned trip with a pickup time this day.</div>
+        ) : (
+          <table className="residencetable recordtable shiftproposal">
+            <thead><tr><th>Pickup</th><th>Passenger</th><th>Driver</th><th>Why</th></tr></thead>
+            <tbody>
+              {proposal.map((p) => (
+                <tr key={p.legid}>
+                  <td>{time(p.pickupat)}</td>
+                  <td>{p.passenger}</td>
+                  <td className={p.driverid ? undefined : 'st-expired'}>
+                    {p.driverid ? `${p.drivername} · ${p.vehiclename}` : 'None'}</td>
+                  <td className={p.driverid ? undefined : 'st-expired'}>
+                    {(p.driverid ? p.reasons : p.blocked).join(' · ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -485,25 +636,47 @@ function WhatHappenedDialog({ leg, options, settling, onCancel, onClose, onDone 
   )
 }
 
-// The passenger on a will-call return has rung. The time is when they are to be collected - now,
-// unless they asked for later - and a driver already on the leg is told to go.
-function PassengerCalledDialog({ leg, onClose, onDone }) {
+// The passenger on a will-call return has rung - which is not always to be collected. What they
+// said is chosen, each with what it does: a pickup time; the call written down and the leg left
+// waiting; or the return closed as not needed, with why.
+const CALLS = {
+  ready: ['Ready To Be Picked Up', 'The return gets a pickup time and joins the unassigned trips.'],
+  notready: ['Not Ready Yet', 'The call is written down. The return goes on waiting for the next one.'],
+  notneeded: ['Return Not Needed', 'The return is closed as canceled. The rest of the trip is left as it is.'],
+}
+
+function PassengerCalledDialog({ leg, reasons, onClose, onDone, onAssign }) {
   const here = new Date()
   const pad = (n) => String(n).padStart(2, '0')
+  const [answer, setAnswer] = useState(null)
   const [at, setAt] = useState(`${here.getFullYear()}-${pad(here.getMonth() + 1)}-${pad(here.getDate())}T${pad(here.getHours())}:${pad(here.getMinutes())}`)
+  const [reason, setReason] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
-  const go = async () => {
+  const ready = answer && (answer !== 'ready' || at)
+    && (answer !== 'notneeded' || (reason && (reason !== 'other' || note.trim())))
+  // `assign`: saved, and then straight on to giving the return its driver.
+  const go = async (assign) => {
     setBusy(true); setErr(null)
-    try { await api.post(`/legs/${leg.legid}/release`, { pickupat: `${at}:00`, note }); onDone() }
-    catch (e) { setErr(e.message); setBusy(false) }
+    try {
+      await api.post(`/legs/${leg.legid}/call`, {
+        answer, note, reason: answer === 'notneeded' ? reason : null,
+        pickupat: answer === 'ready' ? `${at}:00` : null,
+      })
+      if (assign) onAssign({ ...leg, pickupat: `${at}:00` }); else onDone()
+    } catch (e) { setErr(e.message); setBusy(false) }
   }
   return (
-    <Modal width={620} title={`Passenger Called - ${leg.externalid}`} onClose={onClose}
+    <Modal width={680} title={`Passenger Called - ${leg.externalid}`} onClose={onClose}
       footer={<>
+        <div className="footactions">
+          <button type="button" disabled={busy || !ready || answer !== 'ready'} onClick={() => go(true)}>
+            <UserPlus size={13} /> Assign Driver
+          </button>
+        </div>
         <button type="button" onClick={onClose}>Cancel</button>
-        <button type="button" className="primary" disabled={busy || !at} onClick={go}>
+        <button type="button" className="primary" disabled={busy || !ready} onClick={() => go(false)}>
           {busy ? <Loader2 size={15} className="spin" /> : 'Save'}
         </button>
       </>}>
@@ -513,13 +686,35 @@ function PassengerCalledDialog({ leg, onClose, onDone }) {
           <dt>Passenger</dt><dd>{leg.passenger}</dd>
           <dt>From</dt><dd>{leg.pickupplace}</dd>
           <dt>To</dt><dd>{leg.dropoffplace}</dd>
-          <dt>Driver</dt><dd>{leg.drivername || 'None yet'}</dd>
+          {leg.lastcall && <><dt>Last Call</dt><dd>{tzDateTime(leg.lastcallon)} - {leg.lastcall}</dd></>}
+        </div>
+        <h3 className="formsection">What The Passenger Said</h3>
+        <div>
+          {Object.entries(CALLS).map(([v, [l, means]]) => (
+            <label key={v} className={`tierpick${answer === v ? ' on' : ''}`}>
+              <input type="radio" name="answer" checked={answer === v} onChange={() => setAnswer(v)} />
+              <span className="tierbody">
+                <span className="tiername">{l}</span>
+                <span className="tiercovers">{means}</span>
+              </span>
+            </label>
+          ))}
         </div>
         <div className="profileform">
-          <label className="field span-3">Pickup Time *
-            <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
-          </label>
-          <label className="field span-6">Note
+          {answer === 'ready' && (
+            <label className="field span-3">Pickup Time *
+              <input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
+            </label>
+          )}
+          {answer === 'notneeded' && (
+            <label className="field span-3">Reason *
+              <select value={reason} onChange={(e) => setReason(e.target.value)}>
+                <option value="">Choose</option>
+                {Object.entries(reasons).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="field span-6">{answer === 'notneeded' && reason === 'other' ? 'Note *' : 'Note'}
             <textarea value={note} className="upper" onChange={(e) => setNote(e.target.value.toUpperCase())} />
           </label>
         </div>

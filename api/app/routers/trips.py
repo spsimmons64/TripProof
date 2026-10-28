@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
-from app import dispatch, importer, phi, tripcheck
+from app import dayplan, dispatch, importer, phi, routing, tripcheck
 from app.routers import driverapp
 from app import rates as rateset
 from app import wheremap
@@ -156,6 +156,7 @@ def list_trips(status: str = "all", billing: str | None = None, datefrom: str | 
 
 class Leg(BaseModel):
     pickupat: datetime | None = None      # none on a will-call return: the passenger rings when ready
+    appointmentat: datetime | None = None  # when the passenger is due at the drop-off
     dropoffat: datetime | None = None
     pickupplace: str
     dropoffplace: str
@@ -245,6 +246,8 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
         ph=(body.passengerphone or "").strip()[:32] or None, pay=body.payer[:16],
         n=(body.note or "").strip()[:512] or None, by=user["recordid"], now=utcnow())
 
+    if any(leg.pickupat is None and (leg.driverid or leg.vehicleid) for leg in body.legs):
+        raise HTTPException(400, "A will-call gets its driver once the passenger calls and it has a pickup time.")
     for n, leg in enumerate(body.legs, start=1):
         # Placed once, here, so the dispatch screen can sort by distance later without
         # geocoding the same address on every page load.
@@ -253,12 +256,12 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
         legrec = newid()
         run(conn, """
             INSERT INTO triplegs (recordid, accountid, tripid, legnumber, driverid, vehicleid,
-                                  vehicleexternal, pickupat, dropoffat, pickupplace, pickuplat,
+                                  vehicleexternal, pickupat, dropoffat, appointmentat, pickupplace, pickuplat,
                                   pickuplng, dropoffplace, dropofflat, dropofflng,
                                   servicelevel, loaded, signature, gps, added)
-            VALUES (:id, :a, :t, :n, :d, :v, :vx, :pa, :da, :pp, :plat, :plng, :dp, :dlat,
+            VALUES (:id, :a, :t, :n, :d, :v, :vx, :pa, :da, :appt, :pp, :plat, :plng, :dp, :dlat,
                     :dlng, :svc, :loaded, 0, 0, :now)
-        """, id=legrec, a=acct, t=tripid, n=n, d=leg.driverid, v=leg.vehicleid,
+        """, id=legrec, a=acct, t=tripid, n=n, d=leg.driverid, v=leg.vehicleid, appt=leg.appointmentat,
             vx=(row(conn, "SELECT externalid FROM vehicles WHERE recordid = :v", v=leg.vehicleid)
                 or {}).get("externalid") if leg.vehicleid else None,
             pa=leg.pickupat, da=leg.dropoffat,
@@ -446,6 +449,40 @@ def get_trip(tripid: str, user: dict = Depends(current_user), conn: Connection =
     t["endreasons"] = END_REASONS
     t["returnreasons"] = RETURN_REASONS
     return t
+
+
+@router.get("/trips/{tripid}/routes")
+def trip_routes(tripid: str, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """Each leg as it was driven: the driver's reported positions from setting off until the trip
+    was over, and where it was to start and finish. A leg not driven yet has no positions - only
+    its two ends."""
+    acct = user["accountid"]
+    if not row(conn, "SELECT 1 AS x FROM trips WHERE recordid = :t AND accountid = :a AND deleted IS NULL",
+               t=tripid, a=acct):
+        raise HTTPException(404, "No such trip")
+    out = {}
+    for leg in rows(conn, """
+        SELECT recordid, driverid, pickuplat, pickuplng, dropofflat, dropofflng
+        FROM triplegs WHERE tripid = :t AND accountid = :a ORDER BY legnumber
+    """, t=tripid, a=acct):
+        ends = row(conn, """
+            SELECT MIN(happenedon) AS began, MAX(CASE WHEN state = 'completed' THEN happenedon END) AS done,
+                   MAX(happenedon) AS last
+            FROM tripevents WHERE legid = :l AND state IN ('enroute', 'arrived', 'onboard', 'completed')
+        """, l=leg["recordid"]) or {}
+        points = []
+        if leg["driverid"] and ends.get("began"):
+            points = [[float(p["longitude"]), float(p["latitude"])] for p in rows(conn, """
+                SELECT latitude, longitude FROM driverlocations
+                WHERE accountid = :a AND driverid = :d AND recordedon BETWEEN :f AND :u
+                ORDER BY recordedon
+            """, a=acct, d=leg["driverid"], f=ends["began"], u=ends.get("done") or utcnow())]
+        def at(lat, lng):
+            return [float(lng), float(lat)] if lat is not None and lng is not None else None
+        out[leg["recordid"]] = {"points": points, "pickup": at(leg["pickuplat"], leg["pickuplng"]),
+                                "dropoff": at(leg["dropofflat"], leg["dropofflng"]),
+                                "driven": bool(ends.get("done"))}
+    return {"style": wheremap.style_url(), "legs": out}
 
 
 @router.get("/trips/{tripid}/phi")
@@ -801,6 +838,70 @@ def passenger_called(legid: str, body: ReleaseIn, request: Request, user: dict =
         d=leg["driverid"], st=leg["executionstate"])
     log(conn, user, "trip-released", "trip", leg["tripid"],
         {"legid": legid, "pickupat": str(body.pickupat), "note": note or None}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+# Why a will-call return is not wanted after all. Chosen, so it can be counted and reported.
+NOT_NEEDED = {"otherride": "The passenger has another ride", "admitted": "The passenger was admitted",
+              "passenger": "The passenger canceled the return", "other": "Something else"}
+
+
+class CallIn(BaseModel):
+    answer: str                       # ready | notready | notneeded
+    pickupat: datetime | None = None
+    reason: str | None = None
+    note: str | None = None
+
+
+@router.post("/legs/{legid}/call")
+def will_call_answered(legid: str, body: CallIn, request: Request, user: dict = Depends(editor),
+                       conn: Connection = Depends(get_conn)):
+    """The passenger on a will-call return has rung - which is not always to be collected.
+
+    Ready: the leg gets its pickup time (passenger_called). Not ready yet: the call is written down
+    and the leg goes on waiting. Not needed: the return is closed as canceled, with why; the trip's
+    other legs are left as they are."""
+    if body.answer == "ready":
+        if not body.pickupat:
+            raise HTTPException(400, "Say when they are to be picked up")
+        return passenger_called(legid, ReleaseIn(pickupat=body.pickupat, note=body.note), request, user, conn)
+    if body.answer not in ("notready", "notneeded"):
+        raise HTTPException(400, "Say what the passenger said")
+    acct = user["accountid"]
+    leg = row(conn, """
+        SELECT l.recordid, l.tripid, l.pickupat, l.driverid, l.executionstate, l.outcomestate
+        FROM triplegs l JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
+        WHERE l.recordid = :l AND l.accountid = :a
+    """, l=legid, a=acct)
+    if not leg:
+        raise HTTPException(404, "No such leg")
+    if leg["pickupat"] is not None:
+        raise HTTPException(409, "This leg already has a pickup time.")
+    if leg["outcomestate"] or leg["executionstate"] == "completed":
+        raise HTTPException(409, "This leg is closed.")
+    note = (body.note or "").strip()
+    if body.answer == "notneeded":
+        if body.reason not in NOT_NEEDED:
+            raise HTTPException(400, "Say why the return is not needed")
+        if body.reason == "other" and not note:
+            raise HTTPException(400, "Say why the return is not needed")
+        run(conn, "UPDATE triplegs SET outcomestate = 'cancelled' WHERE recordid = :l AND accountid = :a",
+            l=legid, a=acct)
+        said = " - ".join(x for x in ("PASSENGER CALLED", "RETURN NOT NEEDED",
+                                      NOT_NEEDED[body.reason].upper(), note[:1800]) if x)
+        changes = [{"field": "Return", "old": "Will-call", "new": "Not needed"}]
+    else:
+        said = " - ".join(x for x in ("PASSENGER CALLED", "NOT READY YET", note[:1900]) if x)
+        changes = []
+    run(conn, """
+        INSERT INTO tripchanges (recordid, accountid, tripid, legid, changedon, changedby, reason,
+                                 changes, driverid, legstate)
+        VALUES (:id, :a, :t, :l, :now, :by, :r, :c, :d, :st)
+    """, id=newid(), a=acct, t=leg["tripid"], l=legid, now=utcnow(), by=user["recordid"], r=said,
+        c=json.dumps(changes), d=leg["driverid"], st=leg["executionstate"])
+    log(conn, user, f"willcall-{body.answer}", "trip", leg["tripid"],
+        {"legid": legid, "reason": body.reason, "note": note or None}, ip=client_ip(request))
     saved(conn)
     return {"ok": True}
 
@@ -1201,8 +1302,17 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     where = ["t.accountid = :a", "t.deleted IS NULL"]
     params = {"a": acct, "here": here}
     if day:
-        where.append("(l.pickupat IS NULL OR DATE(l.pickupat) = :day)")
+        # A will-call waiting for the passenger's call has no pickup time, so it is on every day's
+        # board until it is called or settled. One settled before the call - canceled - belongs to
+        # the day it was settled, in the company's own clock (the stamps are UTC).
+        where.append("""(DATE(l.pickupat) = :day
+                         OR (l.pickupat IS NULL AND l.outcomestate IS NULL)
+                         OR (l.pickupat IS NULL AND l.outcomestate IS NOT NULL
+                             AND DATE(DATE_ADD(COALESCE(t.cancelledon,
+                                                       (SELECT MAX(c.changedon) FROM tripchanges c WHERE c.legid = l.recordid),
+                                                       l.added), INTERVAL :tzoff MINUTE)) = :day))""")
         params["day"] = day
+        params["tzoff"] = round((here - utcnow()).total_seconds() / 60)
     if state == "needsdriver":
         where.append("l.driverid IS NULL AND l.executionstate = 'scheduled' AND l.outcomestate IS NULL")
     elif state == "assigned":
@@ -1244,10 +1354,17 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     total = (row(conn, f"SELECT COUNT(*) AS n FROM triplegs l JOIN trips t ON t.recordid = l.tripid "
                        f"WHERE {clause}", **params) or {}).get("n", 0)
     items = rows(conn, f"""
-        SELECT l.recordid AS legid, l.legnumber, l.pickupat, l.dropoffat, l.pickupplace,
+        SELECT l.recordid AS legid, l.legnumber, l.pickupat, l.dropoffat, l.appointmentat,
+               (SELECT MIN(e.happenedon) FROM tripevents e WHERE e.legid = l.recordid
+                AND e.state = 'onboard') AS onboardat,
+               l.pickuplat, l.pickuplng, l.dropofflat, l.dropofflng, l.pickupplace,
                l.dropoffplace, l.executionstate, l.outcomestate, l.driverid, l.vehicleid,
                t.recordid AS tripid, t.externalid, t.passenger, t.servicelevel, t.brokerstate,
                t.dispatchstate, b.code AS broker, t.billingstatus, t.cancelledon IS NOT NULL AS cancelled,
+               (SELECT c.reason FROM tripchanges c WHERE c.legid = l.recordid AND l.pickupat IS NULL
+                ORDER BY c.changedon DESC LIMIT 1) AS lastcall,
+               (SELECT MAX(c.changedon) FROM tripchanges c WHERE c.legid = l.recordid
+                AND l.pickupat IS NULL) AS lastcallon,
                TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername,
                d.phone AS driverphone,
                v.externalid AS vehiclename,
@@ -1320,7 +1437,35 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     # Whether each one is slipping, worked out here rather than in the browser: "late" depends on
     # the clock, and a page left open overnight would otherwise still be showing this morning's
     # trips as fine.
+    # The app's moments are instants (UTC); the board reads wall clock in the company's zone.
+    shift_to_local = here - utcnow()
+    seen = dispatch._last_seen(conn, acct) if any(
+        i["executionstate"] in ("enroute", "arrived", "onboard") for i in items) else {}
     for i in items:
+        a, b = i.pop("pickuplat"), i.pop("pickuplng")
+        c, d = i.pop("dropofflat"), i.pop("dropofflng")
+        pickup = (float(a), float(b)) if None not in (a, b) else None
+        dropoff = (float(c), float(d)) if None not in (c, d) else None
+        # Where it sits on the calendar, by what the driver's app said: from the moment the
+        # passenger was aboard (the booked pickup until then) to the moment they arrived.
+        onboard = i.pop("onboardat")
+        i["pickedupat"] = onboard + shift_to_local if onboard else None
+        # Under way: how long is left, from where the driver last reported, and so when it should
+        # be over - to the drop-off once aboard, by way of the pickup before.
+        i["eta"] = None
+        where = seen.get(i["driverid"]) if i["driverid"] else None
+        if (i["executionstate"] in ("enroute", "arrived", "onboard") and not i["outcomestate"]
+                and where and where["fresh"] and dropoff):
+            now_at = (where["lat"], where["lng"])
+            left = (routing.drive(now_at, dropoff)["minutes"] if i["executionstate"] == "onboard" or not pickup
+                    else routing.drive(now_at, pickup)["minutes"] + routing.drive(pickup, dropoff)["minutes"])
+            i["eta"] = {"minutes": left, "at": here + timedelta(minutes=left)}
+        # When it is expected to be over: done, when it was; under way, the estimate; else the
+        # appointment it is for; else the pickup and the drive between its two addresses.
+        i["expectedend"] = i["dropoffat"] or (i["eta"] or {}).get("at") or i["appointmentat"]
+        if not i["expectedend"] and i["pickupat"] and pickup and dropoff:
+            road = dispatch._miles(pickup, dropoff) * routing.ROAD_FACTOR
+            i["expectedend"] = i["pickupat"] + timedelta(minutes=max(15, round(road / routing.TOWN_MPH * 60)))
         i["late"] = None
         if i["executionstate"] == "scheduled" and i["pickupat"] and not i["outcomestate"]:
             over = (here - i["pickupat"]).total_seconds() / 60
@@ -1370,7 +1515,7 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
             "services": {k: v["label"] for k, v in dispatch.SERVICE.items()},
             # The words a dispatcher may use, from the one place that decides what the server
             # will accept - so a reason the screen offers is never one the server refuses.
-            "returnreasons": RETURN_REASONS, "cancelreasons": CANCEL_REASONS,
+            "returnreasons": RETURN_REASONS, "cancelreasons": CANCEL_REASONS, "notneeded": NOT_NEEDED,
             "whathappened": WHAT_HAPPENED, "issuekinds": driverapp.ISSUES,
             "whatwasdone": {**WAS_ACTUALLY_DONE, **WHAT_WAS_DONE}}
 
@@ -1470,9 +1615,15 @@ def assign_leg(legid: str, body: AssignIn, request: Request, user: dict = Depend
     left open while a licence expires, and the one thing this endpoint must never do is file an
     assignment that the engine would not have offered a moment earlier."""
     acct = user["accountid"]
-    said = dispatch.for_leg(conn, acct, legid)
+    # The driver judged in the vehicle they are being given, and only that driver.
+    said = dispatch.for_leg(conn, acct, legid, only={body.driverid} if body.driverid else None,
+                            vehicle_of={body.driverid: body.vehicleid} if body.driverid and body.vehicleid else None)
     if not said:
         raise HTTPException(404, "No such leg")
+    # A will-call is not scheduled until the passenger calls: no time, so no driver yet. Passenger
+    # Called gives it its time, and then it is assigned like any other leg.
+    if body.driverid and not said["leg"]["pickupat"]:
+        raise HTTPException(409, "A will-call gets its driver once the passenger calls and it has a pickup time.")
     chosen_driver = next((d for d in said["drivers"] if d["driverid"] == body.driverid), None)
     chosen_vehicle = next((v for v in said["vehicles"] if v["vehicleid"] == body.vehicleid), None)
     if body.driverid and not chosen_driver:
@@ -1530,6 +1681,72 @@ def assign_leg(legid: str, body: AssignIn, request: Request, user: dict = Depend
          "accepted": warnings or None}, ip=client_ip(request))
     saved(conn)
     return {"ok": True, "override": overriding}
+
+
+class PlaceIn(BaseModel):
+    legid: str
+    driverid: str
+    overridereason: str | None = None
+
+
+@router.post("/dispatch/place")
+def place_leg(body: PlaceIn, request: Request, user: dict = Depends(editor),
+              conn: Connection = Depends(get_conn)):
+    """A trip dropped on a driver's column of the day's calendar: that driver, in the vehicle they
+    are assigned that day. The assignment itself passes the same gate as any other."""
+    acct = user["accountid"]
+    leg = row(conn, """
+        SELECT l.pickupat, t.tripdate FROM triplegs l JOIN trips t ON t.recordid = l.tripid
+        WHERE l.recordid = :l AND l.accountid = :a
+    """, l=body.legid, a=acct)
+    if not leg:
+        raise HTTPException(404, "No such leg")
+    day = leg["pickupat"].date() if leg["pickupat"] else leg["tripdate"]
+    on = dayplan.day_vehicle(conn, acct, body.driverid, day, leg["pickupat"])
+    if not on:
+        who = row(conn, "SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS n FROM drivers "
+                        "WHERE recordid = :d AND accountid = :a", d=body.driverid, a=acct)
+        raise HTTPException(409, f"{(who or {}).get('n', 'This driver').title()} has no vehicle assigned "
+                                 f"on {day:%m/%d/%Y}. Vehicle Assignments gives them one.")
+    return assign_leg(body.legid, AssignIn(driverid=body.driverid, vehicleid=on["vehicleid"],
+                                           overridereason=body.overridereason), request, user, conn)
+
+
+class DayIn(BaseModel):
+    day: date
+
+
+@router.post("/dispatch/autoplan")
+def auto_plan(body: DayIn, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """A driver for each of the day's unassigned trips, with the reasons. Nothing is saved."""
+    return {"proposal": dayplan.propose(conn, user["accountid"], body.day)}
+
+
+class PlannedLeg(BaseModel):
+    legid: str
+    driverid: str
+    vehicleid: str
+
+
+class PlanSaveIn(BaseModel):
+    items: list[PlannedLeg]
+
+
+@router.post("/dispatch/autoplan/save")
+def save_auto_plan(body: PlanSaveIn, request: Request, user: dict = Depends(editor),
+                   conn: Connection = Depends(get_conn)):
+    """Each proposed assignment through the ordinary gate, one by one. One the gate now refuses -
+    something changed since the proposal - is left unassigned and said; the rest are kept."""
+    done, refused = 0, []
+    for i in body.items:
+        try:
+            assign_leg(i.legid, AssignIn(driverid=i.driverid, vehicleid=i.vehicleid), request, user, conn)
+            done += 1
+        except HTTPException as e:
+            ext = row(conn, "SELECT t.externalid FROM triplegs l JOIN trips t ON t.recordid = l.tripid "
+                            "WHERE l.recordid = :l", l=i.legid)
+            refused.append(f"{(ext or {}).get('externalid', 'A trip')}: {e.detail}")
+    return {"saved": done, "refused": refused}
 
 
 @router.delete("/legs/{legid}/assign")

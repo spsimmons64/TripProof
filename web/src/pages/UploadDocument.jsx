@@ -6,6 +6,7 @@ import { BLANK_LICENSE, FieldError, LicenseFields, licenseProblems, useFirstFiel
   from '../components/LicenseDialog.jsx'
 import PublicShell from '../components/PublicShell.jsx'
 import SignHere from '../components/SignHere.jsx'
+import { SIGNATURE_FONT_PAIRS } from '../lib/signatureFonts.js'
 
 // One document, sent by one driver, from a link.
 //
@@ -16,8 +17,7 @@ import SignHere from '../components/SignHere.jsx'
 // The page never says WHY the document is wanted. The reason is often the driver's own license
 // history, and a page opened on a phone is read by whoever is standing behind them.
 
-const FONTS = [['modern', 'Modern'], ['signature', 'Inked'], ['quick', 'Quick'],
-               ['hand', 'Handwritten'], ['cursive', 'Cursive'], ['fine', 'Fine'], ['bold', 'Bold']]
+const FONTS = SIGNATURE_FONT_PAIRS
 
 // What the server said, in words. A rejected field comes back as a list of problems rather than a
 // sentence, and answering that with "that did not work" tells somebody staring at a typo nothing

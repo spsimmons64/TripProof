@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app import applicationview as view
-from app import events, roadtest, roadtestview
+from app import events, roadtest, roadtestview, signatures
 from app.db import get_conn, row, run, saved, utcnow
 from app.security import client_ip
 
@@ -58,7 +58,7 @@ def what_is_being_asked(token: str, conn: Connection = Depends(get_conn)):
         "extras": [{"key": k, "label": l} for k, l in roadtest.EXTRAS],
         "ratings": roadtest.RATINGS, "results": roadtest.RESULTS,
         "vehicletypes": roadtest.VEHICLE_TYPES,
-        "fonts": list(view.SIGNATURE_FACES),
+        "fonts": list(signatures.FONTS),
     }
 
 
@@ -126,7 +126,7 @@ def file_the_result(token: str, body: ResultIn, request: Request,
         ratings=json.dumps(body.ratings), extras=json.dumps(body.extras),
         note=((body.comments or "").strip()[:2000] or None), result=body.result,
         sig=body.signature.strip().upper()[:160],
-        font=(body.fontkey if body.fontkey in view.SIGNATURE_FACES else "modern"),
+        font=(body.fontkey if body.fontkey in signatures.FONTS else signatures.FONTS[0]),
         now=utcnow(), ip=client_ip(request), i=held["recordid"])
     # The evaluation and, on a pass, the certificate - rendered now, from what they just signed.
     roadtestview.keep(conn, held["recordid"])

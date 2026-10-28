@@ -144,8 +144,6 @@ export function DriverInformation({ record, onSaved }) {
         {access.body}
       </div>
 
-      <Shifts record={record} />
-
       {/* What the company knows them as, and where they stand with it. Hiring and termination are
           decisions, recorded when they are taken - not fields to type into. */}
       <div className="card qualcard">
@@ -309,84 +307,6 @@ function ContractApprovals({ id, onChanged }) {
                   disabled={busy === c.recordid} onClick={() => act(c, Boolean(c.approvalid))}>
                   {c.approvalid ? 'End Approval' : 'Approve'}
                 </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      </div>
-    </div>
-  )
-}
-
-// When this driver normally works.
-//
-// A weekly pattern, which is how a small operation actually runs - Maria does Monday to Friday
-// 6 to 2. Days off and training weeks are not here: those are exceptions, recorded from the
-// dispatch board when they happen, and the two answer different questions.
-//
-// Leaving the week empty means "any hour", not "never". A driver with nothing recorded is offered
-// for any trip, exactly as before this existed.
-function Shifts({ record }) {
-  const [data, error, reload] = useLoad(
-    () => api.get(`/drivers/${record.recordid}/shifts`), [record.recordid])
-  const [week, setWeek] = useState(null)
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState(null)
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => {
-    if (!data) return
-    const by = {}
-    for (const s of data.shifts) {
-      by[s.weekday] = { startsat: String(s.startsat).slice(0, 5), endsat: String(s.endsat).slice(0, 5) }
-    }
-    setWeek(by)
-  }, [data])
-
-  if (!data || !week) return (
-    <div className="card qualcard">
-      <div className="infotabs"><h3>Working Hours (Leave Blank If Driver Is Available Anytime)</h3></div>
-      <div className="panelbody"><Loading error={error} /></div>
-    </div>
-  )
-  const set = (day, which) => (e) => {
-    setSaved(false)
-    const now = { ...(week[day] || { startsat: '', endsat: '' }), [which]: e.target.value }
-    setWeek({ ...week, [day]: now })
-  }
-  const save = async () => {
-    setBusy(true); setErr(null)
-    try {
-      const shifts = Object.entries(week)
-        .filter(([, v]) => v.startsat && v.endsat)
-        .map(([d, v]) => ({ weekday: Number(d), startsat: v.startsat, endsat: v.endsat }))
-      await api.put(`/drivers/${record.recordid}/shifts`, { shifts })
-      setSaved(true); reload()
-    } catch (e) { setErr(e.message) } finally { setBusy(false) }
-  }
-
-  return (
-    <div className="card qualcard">
-      {saved && <SavedNote onClose={() => setSaved(false)} />}
-      <div className="infotabs"><h3>Working Hours (Leave Blank If Driver Is Available Anytime)</h3>
-        <button type="button" className="primary" disabled={busy} onClick={save}>
-          {busy ? <Loader2 size={15} className="spin" /> : 'Save'}
-        </button>
-      </div>
-      <div className="panelbody">
-      {err && <div className="notice bad">{err}</div>}
-      <table className="residencetable recordtable shifttable">
-        <thead><tr><th>Day</th><th>From</th><th>Until</th><th /></tr></thead>
-        <tbody>
-          {data.days.map((label, day) => (
-            <tr key={label}>
-              <td>{label}</td>
-              <td><input type="time" value={week[day]?.startsat || ''} onChange={set(day, 'startsat')} /></td>
-              <td><input type="time" value={week[day]?.endsat || ''} onChange={set(day, 'endsat')} /></td>
-              <td className="small muted">
-                {week[day]?.startsat && week[day]?.endsat && week[day].endsat <= week[day].startsat
-                  ? 'Overnight' : week[day]?.startsat || week[day]?.endsat ? '' : 'Not working'}
               </td>
             </tr>
           ))}

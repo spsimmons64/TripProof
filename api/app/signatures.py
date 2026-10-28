@@ -26,7 +26,17 @@ SIGNATURE_FONTS = {"signature": "meddon.ttf",
                    "cursive": "cedarville-cursive.ttf",
                    "modern": "ms-madi.ttf",
                    "fine": "herr-von-muellerhoff.ttf",
-                   "bold": "style-script.ttf"}
+                   "bold": "style-script.ttf",
+                   "alexbrush": "alex-brush.ttf",
+                   "birthstone": "birthstone.ttf",
+                   "dancing": "dancing-script.ttf",
+                   "ephesis": "ephesis.ttf",
+                   "greatvibes": "great-vibes.ttf",
+                   "kalam": "kalam.ttf",
+                   "marck": "marck-script.ttf",
+                   "montecarlo": "monte-carlo.ttf",
+                   "satisfy": "satisfy.ttf",
+                   "whisper": "whisper.ttf"}
 
 
 from sqlalchemy.engine import Connection
@@ -36,8 +46,10 @@ from app.db import newid, row, rows, run
 
 # The hands a signature can be drawn in, the default first. The key is what gets stored, so a
 # rendered signature looks the same everywhere it is shown: the stylesheet knows these as .font-*
-# (web/src/styles.css) and the PDF writer as SIGNATURE_FONTS (app/i9.py).
-FONTS = ("modern", "signature", "quick", "hand", "cursive", "fine", "bold")
+# (web/src/styles.css, web/src/lib/signatureFonts.js) and the PDF writer as SIGNATURE_FONTS.
+# Offered (and accepted) for a new signature; the earlier seven in SIGNATURE_FONTS stay only so the
+# signatures already made in them are drawn as they were signed.
+FONTS = ("alexbrush", "birthstone", "dancing", "ephesis", "greatvibes", "kalam", "marck", "montecarlo", "satisfy", "whisper")
 
 DOC_TYPES = {
     "I9": "Form I-9, Employment Eligibility Verification",
