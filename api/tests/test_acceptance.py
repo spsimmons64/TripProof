@@ -1373,3 +1373,26 @@ def test_5t_saved_passengers_and_places_are_searched_changed_and_removed(make):
                  json={"name": "PAT", "address": "3 OAK ST", **where}).status_code == 400
     assert c.put(f"/api/passengers/{p['recordid']}", headers=h,
                  json={"name": "PAT SMITH", "address": "3 OAK ST", **where, "dob": "1950-01-02"}).status_code == 200
+
+
+def test_5u_a_driver_problem_alerts_until_somebody_has_seen_it(make):
+    """A problem a driver reports comes up as an alert on every page until the office presses Seen
+    (or Deal With It); it stays open on Dispatch until it is resolved."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=1)
+    trip = c.post("/api/trips", headers=h, json={"passenger": "ALERT TEST", "tripdate": str(on), "legs": [
+        {"pickupat": f"{on}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+         "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]}).json()
+    with co["db"].begin() as conn:
+        legid = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": trip["recordid"]}).scalar()
+        conn.execute(text("""INSERT INTO tripissues (recordid, accountid, tripid, legid, driverid, kind, note, raisedon)
+                             VALUES (UUID(), :a, :t, :l, :d, 'traffic', 'STUCK ON I-95', UTC_TIMESTAMP())"""),
+                     {"a": co["acct"], "t": trip["recordid"], "l": legid, "d": co["driver"]})
+    got = c.get("/api/issues/unseen", headers=h).json()
+    mine = [i for i in got["items"] if i["legid"] == legid]
+    assert len(mine) == 1 and mine[0]["note"] == "STUCK ON I-95" and got["kinds"]["traffic"]
+    assert c.post(f"/api/issues/{mine[0]['recordid']}/seen", headers=h).status_code == 200
+    assert not [i for i in c.get("/api/issues/unseen", headers=h).json()["items"] if i["legid"] == legid]
+    board = c.get("/api/dispatch/board?state=attention&pagesize=200", headers=h).json()
+    assert any(i["legid"] == legid and i["issueid"] for i in board["items"])      # still open on Dispatch

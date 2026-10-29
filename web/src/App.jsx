@@ -22,6 +22,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import Trips from './pages/Trips.jsx'
 import Dispatch from './pages/Dispatch.jsx'
 import Shifts from './pages/Shifts.jsx'
+import ProblemAlert from './components/ProblemAlert.jsx'
 import SavedList from './pages/SavedList.jsx'
 import DriverApp from './driver/DriverApp.jsx'
 import TripDetail from './pages/TripDetail.jsx'
@@ -86,6 +87,7 @@ function Shell({ user, children }) {
   return (
     <div className="app">
       <TopBar user={user} />
+      <ProblemAlert />
       {user.launched && <StaffBanner user={user} />}
       {owes && <SupervisorBanner onOpen={() => setSigning(true)} />}
       {signing && (

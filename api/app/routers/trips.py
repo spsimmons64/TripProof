@@ -1233,6 +1233,24 @@ def what_changed(issueid: str, user: dict = Depends(current_user),
             "offer": {**{k: WAS_ACTUALLY_DONE[k] for k in changed}, **WHAT_WAS_DONE}}
 
 
+@router.get("/issues/unseen")
+def unseen_problems(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """Problems a driver has reported that nobody in the office has seen yet - what the alert that
+    pops up on every page shows, until somebody presses Seen or Deal With It."""
+    found = rows(conn, """
+        SELECT i.recordid, i.kind, i.note, i.raisedon, i.legid, i.tripid, l.pickupat,
+               t.externalid, t.passenger,
+               TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername
+        FROM tripissues i
+        JOIN trips t ON t.recordid = i.tripid AND t.deleted IS NULL
+        LEFT JOIN triplegs l ON l.recordid = i.legid
+        LEFT JOIN drivers d ON d.recordid = i.driverid
+        WHERE i.accountid = :a AND i.resolvedon IS NULL AND i.acknowledgedon IS NULL
+        ORDER BY i.raisedon
+    """, a=user["accountid"])
+    return {"items": found, "kinds": driverapp.ISSUES}
+
+
 @router.post("/issues/{issueid}/seen")
 def seen_it(issueid: str, request: Request, user: dict = Depends(editor),
             conn: Connection = Depends(get_conn)):
@@ -1410,7 +1428,7 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     # says somebody is in trouble; only the record says who, what, and how long they have waited.
     problems = rows(conn, """
         SELECT i.recordid, i.kind, i.note, i.raisedon, i.acknowledgedon, i.latitude, i.longitude,
-               i.legid, i.tripid, t.externalid, t.passenger,
+               i.legid, i.tripid, i.driverid, l.pickupat, t.externalid, t.passenger,
                TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername,
                -- The van that was on the leg WHEN the fault was reported. Taking a vehicle off
                -- the road clears it from its legs, so reading the leg afterwards says there was

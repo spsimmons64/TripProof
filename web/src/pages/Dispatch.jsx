@@ -6,7 +6,7 @@ import { date, time, tzDateTime } from '../lib/format.js'
 import { Loading, useLoad } from '../components/ui.jsx'
 import { Modal } from '../admin/common.jsx'
 import BookTrip from '../components/BookTrip.jsx'
-import IssueDialog, { ProblemBanner } from '../components/IssueDialog.jsx'
+import IssueDialog from '../components/IssueDialog.jsx'
 import OutDialog from '../components/OutDialog.jsx'
 import AssignDialog from '../components/AssignDialog.jsx'
 import EditTrip from '../components/EditTrip.jsx'
@@ -56,7 +56,8 @@ const SHORT = {
 // same colours the list used, so they are seen from across the room.
 const tone = (l) => (l.unseen ? (l.executionstate === 'onboard' ? 'rowbad' : 'rowwarn')
   : l.outcomestate === 'disputed' ? 'rowwarn'
-  : l.outcomestate || (l.issueid && l.executionstate !== 'completed') ? null
+  : l.issueid && l.executionstate !== 'completed' ? 'rowbad'
+  : l.outcomestate ? null
   : l.late === 'missed' ? 'rowbad' : l.late || l.attention ? 'rowwarn'
   : l.executionstate === 'completed' ? 'rowgood'
   : ['enroute', 'arrived', 'onboard'].includes(l.executionstate) ? 'rowmoving' : null)
@@ -84,11 +85,20 @@ export default function Dispatch() {
   const [editing, setEditing] = useState(null)
   const [called, setCalled] = useState(null)       // the will-call leg whose passenger has rung
   const [looking, setLooking] = useState(returned?.open || null)     // the leg opened from the calendar
+  const [wantIssue, setWantIssue] = useState(returned?.issue || null) // from the alert: open it once loaded
   const [planning, setPlanning] = useState(false)
-  const [pane, setPane] = useState('unassigned')   // which list on the left is open
+  const [pane, setPane] = useState(returned?.issue ? 'attention' : 'unassigned')   // which list on the left is open
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const navigate = useNavigate()
+
+  // Deal With It on the alert: the problem opens here as soon as the board has it.
+  useEffect(() => {
+    if (!wantIssue || !data) return
+    const found = (data.problems || []).find((pr) => pr.recordid === wantIssue)
+    if (found) setIssue(found)
+    setWantIssue(null)
+  }, [data, wantIssue])
 
   const act = async (fn) => {
     setBusy(true); setErr(null)
@@ -146,7 +156,7 @@ export default function Dispatch() {
         </> : l.issueid ? (
           <button type="button" className="linkbtn"
             onClick={go(() => setIssue((data.problems || []).find((pr) => pr.recordid === l.issueid)))}>
-            <AlertTriangle size={13} /> Deal With Problem
+            <AlertTriangle size={13} /> Deal With It
           </button>
         ) : l.outcomestate === 'disputed' ? (
           <button type="button" className="linkbtn" onClick={go(() => setClosing(l))}>Settle Dispute</button>
@@ -183,8 +193,10 @@ export default function Dispatch() {
   // closed - and any dispute not settled, whatever its day. Today's late trips are on the calendar
   // already, in their colours, so they are not repeated here.
   const today = ymd(new Date())
-  const attention = (data?.attention || []).filter((l) => (l.pickupat && l.pickupat.slice(0, 10) < today)
-    || l.outcomestate === 'disputed')
+  // A problem a driver reported comes first, whatever its day: somebody is waiting on an answer.
+  const attention = (data?.attention || []).filter((l) => l.issueid || (l.pickupat && l.pickupat.slice(0, 10) < today)
+    || l.outcomestate === 'disputed').sort((a, b) => Boolean(b.issueid) - Boolean(a.issueid))
+  const problemOpen = attention.some((l) => l.issueid)
 
   // One leg as a card in the lists on the left, dragged from there onto a driver.
   const queueCard = (l) => (
@@ -242,15 +254,6 @@ export default function Dispatch() {
 
       {err && <div className="notice bad">{err}</div>}
 
-      {/* A problem a driver reported is said out loud, on every day, until somebody deals with it. */}
-      {(data?.problems || []).map((pr) => (
-        <ProblemBanner key={pr.recordid} issue={pr} kinds={data.issuekinds}>
-          <button type="button" className="pushright" onClick={() => setIssue(pr)}>
-            <AlertTriangle size={14} /> Deal With It
-          </button>
-        </ProblemBanner>
-      ))}
-
       {!data ? <Loading error={error} page /> : (
         <div className="dispatchday">
           {/* The two lists the day is assigned from, one open at a time so it has the height. */}
@@ -262,7 +265,7 @@ export default function Dispatch() {
               <Fragment key={k}>
                 <button type="button" className={`infotabs accordhead${pane === k ? ' on' : ''}`}
                   aria-expanded={pane === k} onClick={() => setPane(k)}>
-                  <h3>{title}{list.length > 0 && <span className={`countpill${k === 'attention' ? ' hot' : ''}`}>{list.length}</span>}</h3>
+                  <h3>{title}{list.length > 0 && <span className={`countpill${k === 'attention' ? (problemOpen ? ' bad' : ' hot') : ''}`}>{list.length}</span>}</h3>
                   <ChevronDown size={16} />
                 </button>
                 {pane === k && (
@@ -439,7 +442,11 @@ function Calendar({ day, data, status, onOpen, onPlace }) {
         {columns.map((c, n) => (
           <div key={c.driverid} className={`shiftcol${over === c.driverid ? ' droptarget' : ''}`} {...drop(c.driverid)}>
             <div className={`shifthead${c.shifts.length ? '' : ' unassigned'}`}>
-              <b><span className="huedot" style={{ background: HUES[n % HUES.length][0] }} />{c.name.toUpperCase()}</b>
+              <b><span className="huedot" style={{ background: HUES[n % HUES.length][0] }} />{c.name.toUpperCase()}
+                {/* A problem this driver reported that is not resolved yet. */}
+                {(data.problems || []).some((pr) => pr.driverid === c.driverid) && (
+                  <AlertTriangle size={15} className="drvproblem" aria-label="Problem reported" />
+                )}</b>
               <GpsLine at={data.roster.gps?.[c.driverid]} now={nowAt} />
               {/* The vehicle is on the band down the column, not up here: a driver can change
                   vehicles during the day, and each band names its own. */}

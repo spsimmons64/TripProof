@@ -17,7 +17,7 @@ const LEVEL_ICON = { bad: XCircle, warn: AlertTriangle, info: Info }
 //
 // Browsers refuse to make a sound until the person has interacted with the page, so a failure
 // here is normal and silent: the bell still rings and the count still changes.
-function alarm() {
+export function alarm() {
   try {
     const Ctx = window.AudioContext || window.webkitAudioContext
     if (!Ctx) return

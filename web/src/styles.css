@@ -3783,3 +3783,10 @@ main > .fill.wide, main > .stack.wide { max-width: none; }   /* the day's boards
 .gps-none i { background: #f87171; }
 /* A count that wants dealing with, without the alarm of red: Needs Attention on Dispatch. */
 .countpill.hot { background: var(--orange); color: var(--orange-ink); }
+/* A driver problem: the alert that comes up over any page, and the mark beside the driver's name. */
+.problemalert { display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px; border-radius: 10px;
+                background: var(--bad-bg); color: var(--bad); }
+.problemalert svg { flex: none; margin-top: 2px; }
+.problemalert b { font-size: 17px; }
+.problemalert p { margin: 4px 0 0; color: var(--text); }
+.drvproblem { color: #ffb4a8; flex: none; }
