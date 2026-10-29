@@ -899,6 +899,11 @@ def test_5p_a_trip_goes_to_a_driver_on_shift_in_the_shifts_vehicle(make):
             return conn.execute(text("SELECT driverid, vehicleid FROM triplegs WHERE recordid = :l"),
                                 {"l": legid}).mappings().one()
 
+    # The Assign dialog asks again once a vehicle is chosen: the drivers judged in that vehicle,
+    # and no vehicle list - it has been chosen.
+    invan = c.get(f"/api/legs/{legid}/candidates?vehicleid={co['vehicle']}", headers=h)
+    assert invan.status_code == 200 and invan.json()["vehicles"] == [], invan.text
+    assert co["driver"] in {d["driverid"] for d in invan.json()["drivers"]}
     offshift = c.post("/api/dispatch/place", headers=h, json={"legid": legid, "driverid": bea})
     assert offshift.status_code == 409 and "has no vehicle assigned on" in offshift.text, offshift.text
     assert leg()["driverid"] is None
@@ -1310,6 +1315,8 @@ def test_5r_hours_of_operation_set_the_dispatch_day(make):
     assert c.get(f"/api/shifts?day={monday}", headers=h).json()["hours"] == {"open": "07:30", "close": "18:00"}
     assert c.get(f"/api/shifts?day={monday + timedelta(days=6)}", headers=h).json()["hours"] == {"closed": True}
     assert c.get(f"/api/shifts?day={monday + timedelta(days=2)}", headers=h).json()["hours"] is None
+    # And when each driver's phone last reported, for the GPS line under their name on Dispatch.
+    assert isinstance(c.get(f"/api/shifts?day={monday}", headers=h).json()["gps"], dict)
     # A vehicle assignment falls within those hours, and none is made on a day the company is closed.
     base = {"driverid": co["driver"], "vehicleid": co["vehicle"]}
     early = c.post("/api/shifts", headers=h, json={**base, "day": str(monday), "startsat": "06:00", "endsat": "12:00"})
@@ -1319,3 +1326,50 @@ def test_5r_hours_of_operation_set_the_dispatch_day(make):
     assert shut.status_code == 409 and "closed on Sundays" in shut.text, shut.text
     inside = c.post("/api/shifts", headers=h, json={**base, "day": str(monday), "startsat": "07:30", "endsat": "18:00"})
     assert inside.status_code == 200, inside.text
+
+
+def test_5s_an_edit_can_set_a_legs_appointment_time(make):
+    """Edit Trip carries the appointment time Book A Trip does, and the change is written down."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=3)
+    trip = c.post("/api/trips", headers=h, json={"passenger": "APPT EDIT", "tripdate": str(on), "legs": [
+        {"pickupat": f"{on}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+         "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]}).json()
+    held = c.get(f"/api/trips/{trip['recordid']}", headers=h).json()
+    leg = held["legs"][0]
+    assert leg["appointmentat"] is None
+    got = c.put(f"/api/trips/{trip['recordid']}", headers=h, json={
+        "passenger": "APPT EDIT", "servicelevel": held["servicelevel"], "legs": [
+            {"legid": leg["recordid"], "pickupat": f"{on}T09:15:00", "appointmentat": f"{on}T10:00:00"}]})
+    assert got.status_code == 200, got.text
+    after = c.get(f"/api/trips/{trip['recordid']}", headers=h).json()
+    assert after["legs"][0]["appointmentat"].startswith(f"{on}T10:00")
+    assert any(ch["field"] == "Appointment time" for x in after["changes"] for ch in x["changes"]), after["changes"]
+
+
+def test_5t_saved_passengers_and_places_are_searched_changed_and_removed(make):
+    """The Passengers and Locations screens: a page of the list, searched; an entry put right; an
+    entry taken off the list - and gone from what Book A Trip chooses from."""
+    co = make()
+    c, h = co["client"], co["h"]
+    where = {"city": "Tampa", "state": "FL", "zip": "33606"}
+    for name in ("ALPHA CLINIC", "BETA HOSPITAL", "GAMMA LAB"):
+        assert c.post("/api/places", headers=h, json={"name": name, "address": "1 MAIN ST", **where}).status_code == 200
+    page = c.get("/api/places?page=1&pagesize=2&sort=name&dir=desc", headers=h).json()
+    assert page["total"] == 3 and [i["name"] for i in page["items"]] == ["GAMMA LAB", "BETA HOSPITAL"]
+    found = c.get("/api/places?page=1&q=beta", headers=h).json()
+    assert found["total"] == 1
+    beta = found["items"][0]["recordid"]
+    changed = c.put(f"/api/places/{beta}", headers=h, json={"name": "Beta Hospital East", "address": "2 Main St",
+                                                            **where, "phone": "813-555-0100"})
+    assert changed.status_code == 200 and changed.json()["full"] == "2 MAIN ST, TAMPA, FL 33606", changed.text
+    assert c.delete(f"/api/places/{beta}", headers=h).status_code == 200
+    assert "BETA HOSPITAL EAST" not in {i["name"] for i in c.get("/api/places", headers=h).json()["items"]}
+    assert c.delete(f"/api/places/{beta}", headers=h).status_code == 404
+    # A passenger keeps needing a date of birth when put right.
+    p = c.post("/api/passengers", headers=h, json={"name": "PAT", "address": "3 OAK ST", **where, "dob": "1950-01-02"}).json()
+    assert c.put(f"/api/passengers/{p['recordid']}", headers=h,
+                 json={"name": "PAT", "address": "3 OAK ST", **where}).status_code == 400
+    assert c.put(f"/api/passengers/{p['recordid']}", headers=h,
+                 json={"name": "PAT SMITH", "address": "3 OAK ST", **where, "dob": "1950-01-02"}).status_code == 200

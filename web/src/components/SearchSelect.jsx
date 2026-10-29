@@ -8,7 +8,8 @@ import { ChevronDown } from 'lucide-react'
 // puts the cursor there.
 //
 // `items` are records with a `recordid`; `label(item)` is how each reads in the list and in the field.
-export default function SearchSelect({ items, value, onChange, label, placeholder = 'Choose' }) {
+// `placeholder` is what shows with nothing chosen - on an edit, what the record says now.
+export default function SearchSelect({ items, value, onChange, label, placeholder = 'Choose', disabled = false }) {
   const [open, setOpen] = useState(false)
   const [focused, setFocused] = useState(false)
   const [typed, setTyped] = useState('')
@@ -39,7 +40,7 @@ export default function SearchSelect({ items, value, onChange, label, placeholde
     <div className="searchselect" ref={box}>
       <input value={open || focused ? typed : chosen ? label(chosen) : ''}
         placeholder={chosen ? label(chosen) : placeholder}
-        className="upper" role="combobox" aria-expanded={open} aria-autocomplete="list"
+        className="upper" role="combobox" aria-expanded={open} aria-autocomplete="list" disabled={disabled}
         onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); if (!open) setTyped('') }}
         onChange={(e) => { const t = e.target.value.toUpperCase(); setTyped(t); setOpen(Boolean(t)); setAt(0) }}
         onKeyDown={key} />

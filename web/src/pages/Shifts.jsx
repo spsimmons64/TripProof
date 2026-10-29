@@ -25,8 +25,8 @@ const clock = (mins) => {
   return `${h % 12 || 12}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
 }
 // A shift whose end is at or before its start runs past midnight.
-// A new assignment runs over the company's hours that day (Company page, Hours Of Operation) unless
-// the driver has hours of their own; eight to five where none are set.
+// A new assignment runs over the company's hours that day (Company page, Hours Of Operation);
+// eight to five where none are set.
 const opens = (data) => data.hours?.open || '08:00'
 const closes = (data) => data.hours?.close || '17:00'
 const ends = (s) => { const a = minutes(s.startsat); const b = minutes(s.endsat); return b > a ? b : b + 1440 }
@@ -168,7 +168,6 @@ function Board({ data, onEdit }) {
 // this driver may take it - the same list the dispatch board shows for a trip.
 function ShiftDialog({ day, data, start, onRemove, onClose, onDone }) {
   const known = Boolean(start.recordid)
-  const usual = (id) => data.drivers.find((d) => d.driverid === id)?.usual
   const [f, setF] = useState({
     driverid: start.driverid || '', vehicleid: start.vehicleid || null,
     startsat: start.startsat || opens(data), endsat: start.endsat || closes(data),
@@ -186,8 +185,7 @@ function ShiftDialog({ day, data, start, onRemove, onClose, onDone }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (start.driverid) lookup(start.driverid, start.startsat) }, [])
   const pickDriver = (driverid) => {
-    const u = usual(driverid)
-    const next = { ...f, driverid, vehicleid: null, ...(u && !known ? u : {}) }
+    const next = { ...f, driverid, vehicleid: null }
     setF(next)
     lookup(driverid, next.startsat)
   }
@@ -251,7 +249,7 @@ function ShiftDialog({ day, data, start, onRemove, onClose, onDone }) {
   )
 }
 
-// Auto generation: which drivers are working - ticked from their usual weekly hours - and their
+// Auto generation: which drivers are working - ticked where they already have a vehicle that day - and their
 // hours; then the proposal, with why each vehicle was chosen. Nothing is saved until Save.
 function GenerateDialog({ day, data, onClose, onDone }) {
   // A driver who switches vehicles has several shifts that day: their day runs from the first start
@@ -272,9 +270,9 @@ function GenerateDialog({ day, data, onClose, onDone }) {
       const ok = new Set(got.drivers)
       setWho(data.drivers.filter((d) => ok.has(d.driverid)).map((d) => {
         const s = planned.get(d.driverid)
-        return { driverid: d.driverid, name: d.name, on: Boolean(d.usual || s),
-                 startsat: s?.startsat || d.usual?.startsat || opens(data),
-                 endsat: s?.endsat || d.usual?.endsat || closes(data) }
+        return { driverid: d.driverid, name: d.name, on: Boolean(s),
+                 startsat: s?.startsat || opens(data),
+                 endsat: s?.endsat || closes(data) }
       }))
     }).catch((e) => setErr(e.message))
   }, [day])

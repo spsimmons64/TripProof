@@ -219,65 +219,6 @@ def invite_account_user(userid: str, request: Request, tasks: BackgroundTasks,
     return {**invited, "purpose": purpose}
 
 
-class ShiftIn(BaseModel):
-    weekday: int
-    startsat: str
-    endsat: str
-
-
-class ShiftsIn(BaseModel):
-    shifts: list[ShiftIn] = []
-
-
-@router.get("/drivers/{driverid}/shifts")
-def driver_shifts(driverid: str, user: dict = Depends(current_user),
-                  conn: Connection = Depends(get_conn)):
-    """When this driver normally works."""
-    acct = user["accountid"]
-    if not row(conn, "SELECT 1 AS x FROM drivers WHERE recordid = :d AND accountid = :a "
-                     "AND deleted IS NULL", d=driverid, a=acct):
-        raise HTTPException(404, "No such driver")
-    return {
-        "days": dispatch.WEEKDAYS,
-        "shifts": rows(conn, """
-            SELECT recordid, weekday, startsat, endsat FROM drivershifts
-            WHERE accountid = :a AND driverid = :d ORDER BY weekday, startsat
-        """, a=acct, d=driverid),
-    }
-
-
-@router.put("/drivers/{driverid}/shifts")
-def set_driver_shifts(driverid: str, body: ShiftsIn, request: Request,
-                      user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
-    """Replace the week.
-
-    Written whole rather than row by row: a working week is one thing a person decides, and
-    patching days one at a time leaves a half-saved week if the second request never arrives."""
-    acct = user["accountid"]
-    if not row(conn, "SELECT 1 AS x FROM drivers WHERE recordid = :d AND accountid = :a "
-                     "AND deleted IS NULL", d=driverid, a=acct):
-        raise HTTPException(404, "No such driver")
-    for s in body.shifts:
-        if not 0 <= s.weekday <= 6:
-            raise HTTPException(400, "That is not a day of the week")
-        if not s.startsat or not s.endsat:
-            raise HTTPException(400, "A shift needs a start and an end")
-        if s.startsat == s.endsat:
-            raise HTTPException(400, "A shift that starts and ends at the same moment is not one")
-    run(conn, "DELETE FROM drivershifts WHERE accountid = :a AND driverid = :d", a=acct, d=driverid)
-    for s in body.shifts:
-        run(conn, """
-            INSERT INTO drivershifts (recordid, accountid, driverid, weekday, startsat, endsat,
-                                      added, addedby)
-            VALUES (:id, :a, :d, :w, :s, :e, :now, :by)
-        """, id=newid(), a=acct, d=driverid, w=s.weekday, s=s.startsat, e=s.endsat,
-            now=utcnow(), by=user["recordid"])
-    log(conn, user, "driver-shifts", "driver", driverid, {"days": len(body.shifts)},
-        ip=client_ip(request))
-    saved(conn)
-    return {"ok": True}
-
-
 @router.post("/drivers/{driverid}/appaccess")
 def invite_driver_to_the_app(driverid: str, request: Request, tasks: BackgroundTasks,
                              user: dict = Depends(editor), conn: Connection = Depends(get_conn)):

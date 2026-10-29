@@ -105,20 +105,6 @@ def clash(conn: Connection, accountid: str, day: date, driverid: str, vehicleid:
     return None
 
 
-def roster(conn: Connection, accountid: str, day: date) -> dict[str, tuple[time, time]]:
-    """Who usually works this weekday, and their usual hours - the weekly hours on their record."""
-    out = {}
-    for s in rows(conn, """
-        SELECT driverid, startsat, endsat FROM drivershifts
-        WHERE accountid = :a AND weekday = :wd
-          AND (effectivefrom IS NULL OR effectivefrom <= :on)
-          AND (effectiveto IS NULL OR effectiveto >= :on)
-        ORDER BY startsat
-    """, a=accountid, wd=day.weekday(), on=day):
-        out.setdefault(s["driverid"], (as_time(s["startsat"]), as_time(s["endsat"])))
-    return out
-
-
 def _usual(conn: Connection, accountid: str) -> dict[str, str]:
     """The vehicle each driver drove most recently - on a shift, or on a trip."""
     out = {}

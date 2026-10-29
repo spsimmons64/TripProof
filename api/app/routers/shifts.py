@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
+from app import dispatch
 from app import shifts as plan
 from app import tripcheck
 from app.activity import log
@@ -27,7 +28,7 @@ def _clock(t) -> str:
 
 @router.get("/shifts")
 def the_day(day: date, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
-    """One day: its shifts, every trip leg each driver already has, who usually works this weekday,
+    """One day: its shifts, every trip leg each driver already has, the company's hours that day,
     and the drivers and vehicles that could be put on a shift."""
     acct = user["accountid"]
     held = rows(conn, """
@@ -50,22 +51,19 @@ def the_day(day: date, user: dict = Depends(current_user), conn: Connection = De
         WHERE l.accountid = :a AND l.driverid IS NOT NULL AND DATE(l.pickupat) = :w
         ORDER BY l.pickupat
     """, a=acct, w=day)
-    usual = plan.roster(conn, acct, day)
     drivers = rows(conn, """
         SELECT recordid AS driverid, TRIM(CONCAT(firstname, ' ', lastname)) AS name
         FROM drivers WHERE accountid = :a AND deleted IS NULL AND stub = 0 AND status = 'hired'
         ORDER BY lastname, firstname
     """, a=acct)
-    for d in drivers:
-        hours = usual.get(d["driverid"])
-        d["usual"] = ({"startsat": hours[0].strftime("%H:%M"), "endsat": hours[1].strftime("%H:%M")}
-                      if hours else None)
     vehicles = rows(conn, """
         SELECT recordid AS vehicleid, externalid AS name FROM vehicles
         WHERE accountid = :a AND deleted IS NULL AND stub = 0 ORDER BY externalid
     """, a=acct)
+    # When each driver's phone last said where they were (UTC), for the GPS line under their name.
+    gps = {d: str(w["when"]) for d, w in dispatch._last_seen(conn, acct).items()}
     return {"day": day, "shifts": held, "legs": legs, "drivers": drivers, "vehicles": vehicles,
-            "hours": company_hours(conn, acct, day)}
+            "hours": company_hours(conn, acct, day), "gps": gps}
 
 
 def company_hours(conn: Connection, acct: str, day: date) -> dict | None:
@@ -89,7 +87,8 @@ def eligible(body: DayIn, user: dict = Depends(current_user), conn: Connection =
     auto generation offers. Asked for when it opens, not with the day: every driver against every
     vehicle is the slow part."""
     acct = user["accountid"]
-    usual = plan.roster(conn, acct, body.day)
+    hours = company_hours(conn, acct, body.day)
+    opens = plan.as_time(hours["open"]) if hours and hours.get("open") else plan.DEFAULT_START
     noon = datetime.combine(body.day, plan.DEFAULT_START)
     # What stops a vehicle stops it for everybody, so each vehicle is judged once on its own, and
     # the drivers only against the vehicles left.
@@ -102,7 +101,7 @@ def eligible(body: DayIn, user: dict = Depends(current_user), conn: Connection =
     """, a=acct)]
 
     def cleared(driverid: str) -> bool:
-        at = datetime.combine(body.day, usual[driverid][0] if driverid in usual else plan.DEFAULT_START)
+        at = datetime.combine(body.day, opens)
         with engine.connect() as own:   # one connection per worker
             return any(plan.fit(own, acct, driverid, v, at, vehicle=False)["ok"] for v in usable)
 

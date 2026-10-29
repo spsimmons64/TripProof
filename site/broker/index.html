@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TripProof Online - Proof of Service for NEMT Brokers</title>
+<meta name="description" content="TripProof checks every NEMT driver and vehicle against the rules in force before a trip is assigned, and records what happened on the road, so brokers get proof of service with every trip.">
+<link rel="icon" href="/favicon.png">
+<style>html{color-scheme:light dark}body{margin:0}img{max-width:100%}[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one strong left-aligned column of argument, with a sample trip record as the evidence beside it; the sections follow a trip from before to after. */
+:root {
+  --ink: #0f3a43;          /* TripProof deep teal - headings, rules */
+  --teal: #1c6979;         /* brand teal - links, marks */
+  --orange: #f29a1f;       /* brand orange - the one accent */
+  --ground: #f6f2ee;       /* warm sand page */
+  --panel: #ffffff;
+  --line: #e2dbd4;
+  --text: #1d2c30;
+  --muted: #5a6b6f;
+  --pass: #1d7a4c;
+  --tint: #e6f2f4;
+  --display: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e6f1f3; --teal: #6cc3d3; --orange: #ffb24a; --ground: #0e1f23; --panel: #142a2f;
+    --line: #26414a; --text: #dbe6e8; --muted: #93a8ad; --pass: #5fd09a; --tint: #173840; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #e6f1f3; --teal: #6cc3d3; --orange: #ffb24a; --ground: #0e1f23; --panel: #142a2f;
+  --line: #26414a; --text: #dbe6e8; --muted: #93a8ad; --pass: #5fd09a; --tint: #173840; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--text); font: 16px/1.6 var(--body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; color: var(--ink); text-wrap: balance; margin: 0; }
+p { margin: 0; }
+a { color: var(--teal); }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; border-radius: 6px; }
+.eyebrow { font: 600 12px/1 var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--teal); }
+
+/* Top bar */
+.top { padding-block: 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font: 700 21px/1 var(--display); color: var(--ink); text-decoration: none; }
+.brand svg { flex: none; }
+.nav { display: flex; gap: 22px; flex-wrap: wrap; font-size: 14px; font-weight: 500; }
+.nav a { color: var(--muted); text-decoration: none; }
+.nav a:hover { color: var(--ink); }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 48px; align-items: center; padding-block: 40px 72px; }
+.hero h1 { font-size: clamp(29px, 4.4vw, 52px); line-height: 1.1; font-weight: 600; letter-spacing: -.01em; margin-top: 14px; }
+.hero h1 em { white-space: nowrap; font-style: italic; color: var(--teal); box-shadow: inset 0 -.12em 0 color-mix(in srgb, var(--orange) 40%, transparent); }
+.subhead { font: 600 clamp(20px, 2.2vw, 24px)/1.3 var(--display); color: var(--ink); margin-top: 20px; text-wrap: balance; }
+.lede { font-size: 18.5px; color: var(--muted); max-width: 34em; margin-top: 12px; }
+.ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 999px; font: 600 15px/1 var(--body); text-decoration: none; }
+.btn.primary { background: var(--ink); color: var(--ground); }
+.btn.ghost { border: 1.5px solid var(--line); color: var(--ink); }
+
+/* The sample trip record */
+.record { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 60px -30px rgb(15 58 67 / 45%); overflow: hidden; min-width: 0; }
+.rec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.rec-id { font: 500 14px/1 var(--mono); color: var(--ink); }
+.rec-tag { font: 600 11px/1 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.rec-body { padding: 18px 20px; display: grid; gap: 16px; }
+.rec-sec { font: 600 11px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.checks li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 13.5px; }
+.checks .ok { color: var(--pass); font-weight: 700; }
+.checks .cite { font: 400 11.5px/1.3 var(--mono); color: var(--muted); white-space: nowrap; }
+.map { border-radius: 10px; background: var(--tint); overflow: hidden; }
+.map svg { display: block; width: 100%; height: auto; }
+.times { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.times li { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; }
+.times b { font: 500 13px/1.5 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.rec-note { font-size: 12px; color: var(--muted); padding: 0 20px 16px; }
+
+/* Sections */
+section { padding-block: 64px; border-top: 1px solid var(--line); }
+.sec-head { display: grid; gap: 12px; max-width: 46em; margin-bottom: 36px; }
+.sec-head h2 { font-size: clamp(28px, 3.5vw, 40px); line-height: 1.15; font-weight: 600; letter-spacing: -.005em; }
+.sec-head p { color: var(--muted); font-size: 17px; }
+
+.risk { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
+.risk h3 { font-size: 20px; margin-bottom: 8px; }
+.risk p { color: var(--muted); font-size: 15.5px; }
+
+/* Before / during / after - a real sequence, so it is numbered by stage */
+.stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); overflow: hidden; }
+.stage { padding: 26px 26px 28px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.stage + .stage { border-left: 1px solid var(--line); }
+.stage .when { font: 600 12px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--orange); }
+.stage h3 { font-size: 21px; line-height: 1.25; }
+.stage ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; color: var(--text); font-size: 15px; }
+.stage .rule { font: 400 12px/1.5 var(--mono); color: var(--muted); }
+
+/* Integration flow */
+.flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.node { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.node h3 { font-size: 18px; }
+.node p { font-size: 14.5px; color: var(--muted); }
+.node.you { background: var(--ink); border-color: var(--ink); }
+.node.you h3, .node.you p { color: var(--ground); }
+.arrow { align-self: center; color: var(--orange); font: 500 30px/1 var(--display); }
+.flow-note { margin-top: 18px; color: var(--muted); font-size: 15px; max-width: 52em; }
+
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; }
+.fact { padding-block: 16px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
+.fact b { color: var(--ink); font-weight: 600; }
+.fact span { color: var(--muted); font-size: 15px; }
+
+.contact { background: var(--ink); color: var(--ground); border-radius: 20px; padding: 44px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; align-items: center; }
+.contact h2 { color: var(--ground); font-size: clamp(26px, 3.2vw, 36px); font-weight: 600; }
+.contact p { color: color-mix(in srgb, var(--ground) 80%, transparent); margin-top: 12px; }
+.reach { display: grid; gap: 10px; }
+.reach .line { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--ground) 25%, transparent); border-radius: 12px; flex-wrap: wrap; }
+.reach .line span { color: color-mix(in srgb, var(--ground) 70%, transparent); font-size: 13px; }
+.reach .line b { font-weight: 600; user-select: all; }
+.reach .line a { color: var(--ground); text-decoration-color: var(--orange); text-underline-offset: 3px; }
+.reach .todo { color: var(--orange); }
+footer { padding-block: 32px 48px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+@media (max-width: 860px) {
+  .hero, .contact { grid-template-columns: minmax(0, 1fr); }
+  .risk, .facts { grid-template-columns: minmax(0, 1fr); }
+  .stages { grid-template-columns: minmax(0, 1fr); }
+  .stage + .stage { border-left: 0; border-top: 1px solid var(--line); }
+  .flow { grid-template-columns: minmax(0, 1fr); }
+  .arrow { justify-self: center; transform: rotate(90deg); }
+  .contact { padding: 28px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .route { stroke-dasharray: 600; stroke-dashoffset: 600; animation: draw 2.4s .4s ease-out forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="#top" aria-label="TripProof Online">
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--teal)"/><path d="M16 7l8 3v6c0 5.2-3.4 8.6-8 10-4.6-1.4-8-4.8-8-10v-6z" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 16.2l2.8 2.8 5.4-5.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      TripProof Online
+    </a>
+    <nav class="nav" aria-label="Page sections">
+      <a href="#how">How it works</a>
+      <a href="#integration">Integration</a>
+      <a href="#security">Security</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </header>
+
+  <div class="hero" id="top">
+    <div>
+      <span class="eyebrow">For NEMT brokers</span>
+      <h1>Every trip.<br>The right driver.<br>The right vehicle.<br><em>The proof to back it up.</em></h1>
+      <p class="subhead">A trip is only as defensible as the record behind it.</p>
+      <p class="lede">TripProof checks driver and vehicle eligibility against applicable requirements before a trip is assigned, then preserves the trip records and supporting evidence needed to demonstrate what happened.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#contact">Request a broker demo</a>
+        <a class="btn ghost" href="#how">See how a trip is proven</a>
+      </div>
+    </div>
+
+    <figure class="record" aria-label="Sample trip record" style="margin:0">
+      <div class="rec-head">
+        <span class="rec-id">TP-20261114-4C19E2 · Leg 1</span>
+        <span class="rec-tag">Sample record</span>
+      </div>
+      <div class="rec-body">
+        <div>
+          <div class="rec-sec">Checked before assignment</div>
+          <ul class="checks">
+            <li><span class="ok">✓</span><span>Valid driver's license, class and restrictions</span><span class="cite">49 CFR 391.11</span></li>
+            <li><span class="ok">✓</span><span>Not excluded from federal health programs</span><span class="cite">42 CFR 1001.1901</span></li>
+            <li><span class="ok">✓</span><span>Not removed from safety-sensitive work</span><span class="cite">49 CFR 382.501</span></li>
+            <li><span class="ok">✓</span><span>Wheelchair securement training on file</span><span class="cite">Payer contract</span></li>
+            <li><span class="ok">✓</span><span>Vehicle inspected today, no open defect</span><span class="cite">49 CFR 396.11</span></li>
+          </ul>
+        </div>
+        <div class="map" aria-hidden="true">
+          <svg viewBox="0 0 400 150">
+            <rect width="400" height="150" fill="var(--tint)"/>
+            <g stroke="var(--line)" stroke-width="6" fill="none" stroke-linecap="round">
+              <path d="M0 112 H400"/><path d="M96 0 V150"/><path d="M0 46 C120 40 220 62 400 36"/><path d="M262 0 L300 150"/>
+            </g>
+            <path class="route" d="M40 128 L96 112 L96 70 L150 64 L232 54 L268 44 L330 30" fill="none" stroke="var(--teal)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="40" cy="128" r="7" fill="var(--panel)" stroke="var(--teal)" stroke-width="3"/>
+            <circle cx="150" cy="64" r="8" fill="var(--pass)"/>
+            <circle cx="330" cy="30" r="8" fill="#c2412d"/>
+          </svg>
+        </div>
+        <div>
+          <div class="rec-sec">Reported from the driver's app, with GPS</div>
+          <ul class="times">
+            <li><b>9:31 AM</b><span>Pre-trip vehicle check filed, no defects</span></li>
+            <li><b>9:34 AM</b><span>On the way</span></li>
+            <li><b>9:48 AM</b><span>Arrived at pickup</span></li>
+            <li><b>9:53 AM</b><span>Passenger aboard</span></li>
+            <li><b>10:12 AM</b><span>Arrived at destination · 6.8 mi</span></li>
+          </ul>
+        </div>
+      </div>
+      <figcaption class="rec-note">Illustration with sample data. A real record also lists the rule version each check passed under, every assignment and change with who made it and why, and any waiting time or problem the driver reported.</figcaption>
+    </figure>
+  </div>
+</div>
+
+<section id="why">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">The exposure you carry</span>
+      <h2>When an auditor asks, the answer should already be on file.</h2>
+      <p>When an auditor asks who drove a trip, whether they were qualified that day, and whether the trip happened at all, the answer usually lives in a provider's paperwork. TripProof makes that answer part of every trip.</p>
+    </div>
+    <div class="risk">
+      <div><h3>Unqualified drivers</h3><p>An expired license, a lapsed screening or missing training is easy to miss on a spreadsheet. In TripProof it stops the assignment, with the reason stated.</p></div>
+      <div><h3>Trips you cannot verify</h3><p>Pickup and drop-off times come from the driver's phone at the moment they happen, with a GPS trace of the route, not from a form filled in at the end of the day.</p></div>
+      <div><h3>Records that change quietly</h3><p>Every assignment, edit and cancellation is kept with who made it, when, and why. History is added to, never overwritten.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">How a trip is proven</span>
+      <h2>Checked before it is assigned. Recorded while it runs. Packaged when it is done.</h2>
+    </div>
+    <div class="stages">
+      <div class="stage">
+        <span class="when">Before the trip</span>
+        <h3>Only qualified drivers and vehicles can be assigned</h3>
+        <ul>
+          <li>Licenses, driving records, exclusion screening, drug and alcohol status and training, checked against the rules in force that day.</li>
+          <li>Vehicles checked for registration, insurance, inspection and open defects, and matched to the service level.</li>
+          <li>Your contract can add requirements of its own, applied to your trips only.</li>
+          <li>A failed check refuses the assignment. It is not a warning that can be clicked past.</li>
+        </ul>
+        <span class="rule">Federal rules (FMCSA, OIG) and state NEMT programs, starting with Florida and Georgia</span>
+      </div>
+      <div class="stage">
+        <span class="when">During the trip</span>
+        <h3>The driver's app records what happens, as it happens</h3>
+        <ul>
+          <li>On the way, arrived, passenger aboard and arrived at destination, each stamped with time and position.</li>
+          <li>A pre-trip vehicle check is required before setting off where the rules call for one.</li>
+          <li>Waiting time and problems on the road are reported to the office in the moment.</li>
+          <li>Will-call returns stay unassigned until the passenger actually calls.</li>
+        </ul>
+        <span class="rule">Times are the device's own, never later than the server's clock</span>
+      </div>
+      <div class="stage">
+        <span class="when">After the trip</span>
+        <h3>One record that answers an audit</h3>
+        <ul>
+          <li>The route driven on a map, from GPS positions reported during the leg.</li>
+          <li>The full timeline: assignments, changes, events, waits and problems, each with its source.</li>
+          <li>Which requirements were checked, under which rule version, and what evidence was on file.</li>
+          <li>Audit packets can be exported for a date range or a set of trips.</li>
+        </ul>
+        <span class="rule">Trips with a failed requirement can be held from billing</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="integration">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Integration</span>
+      <h2>Built to work with your trip feed, not around it.</h2>
+      <p>TripProof is designed to take trips from a broker and send back what happened. We connect to your interface and specification rather than asking you to adopt ours.</p>
+    </div>
+    <div class="flow">
+      <div class="node you"><h3>Your platform</h3><p>Trip offers and changes for providers in your network.</p></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><h3>TripProof</h3><p>The provider accepts the trip or returns it with a reason code. Only qualified drivers can be assigned, and the driver's app records the run.</p></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="node"><h3>Back to you</h3><p>Trip status as it changes, and a proof-of-service record for each completed leg.</p></div>
+    </div>
+    <p class="flow-note">If you have an integration specification or an approved-software process for providers, we would like to see it. A sandbox account with sample providers, drivers and trips is available for your team to review.</p>
+  </div>
+</section>
+
+<section id="security">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Security and privacy</span>
+      <h2>Member information is handled as protected health information.</h2>
+    </div>
+    <div class="facts">
+      <div class="fact"><b>Encrypted at rest</b><span>Member identity, addresses from broker files and Social Security numbers are stored encrypted.</span></div>
+      <div class="fact"><b>Every read of member details is logged</b><span>Viewing protected details writes an entry to the access log, under the person who viewed them.</span></div>
+      <div class="fact"><b>An activity log that cannot be edited</b><span>The log is append-only: entries can be added, never changed or deleted.</span></div>
+      <div class="fact"><b>Each provider's data is its own</b><span>Accounts are separated, and every request is checked against the account it belongs to.</span></div>
+      <div class="fact"><b>Signatures tied to identity</b><span>Electronic signatures are adopted with date of birth and Social Security number, and one identity cannot sign as another.</span></div>
+      <div class="fact"><b>Sessions that end</b><span>Office sessions close when the browser tab closes and time out after an hour idle.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="contact" style="border-top:0">
+  <div class="wrap">
+    <div class="contact">
+      <div>
+        <h2>See a trip proven, start to finish.</h2>
+        <p>We will walk your team through a live trip in the sandbox: the checks before assignment, the driver's app on the road, and the record it leaves behind.</p>
+      </div>
+      <div class="reach">
+        <div class="line"><span>Email</span><a href="mailto:brokers@tripproofonline.com"><b>brokers@tripproofonline.com</b></a></div>
+        <div class="line"><span>Phone</span><b>(727) 207-5512</b></div>
+        <div class="line"><span>Web</span><b>https://www.tripproofonline.com</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <footer>
+    <span>TripProof Online</span>
+    <span>Trip-by-trip credential proof for NEMT</span>
+  </footer>
+</div>
+
+</body>
+</html>

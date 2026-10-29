@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TripProof Online - Coming Soon</title>
+<meta name="description" content="TripProof Online: trip-by-trip credential proof for non-emergency medical transportation. Coming soon.">
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* One screen: the mark, the name, what it is, and how to reach us - centred in a teal field. */
+:root {
+  --ink: #0f3a43; --teal: #1c6979; --orange: #f29a1f; --ground: #f6f2ee; --text: #1d2c30; --muted: #5a6b6f; --line: #e2dbd4;
+  --display: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #e6f1f3; --teal: #6cc3d3; --orange: #ffb24a; --ground: #0e1f23; --text: #dbe6e8; --muted: #93a8ad; --line: #26414a; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--ground); color: var(--text); font: 16px/1.6 var(--body);
+       display: grid; place-items: center;
+       padding: max(24px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+main { max-width: 34rem; display: grid; gap: 22px; justify-items: start; }
+.brand { display: flex; align-items: center; gap: 12px; font: 700 23px/1 var(--display); color: var(--ink); }
+h1 { margin: 0; font: 600 clamp(29px, 6vw, 54px)/1.1 var(--display); letter-spacing: -.01em; color: var(--ink); }
+h1 span { white-space: nowrap; color: var(--teal); font-style: italic; box-shadow: inset 0 -.12em 0 color-mix(in srgb, var(--orange) 40%, transparent); }
+p { margin: 0; color: var(--muted); font-size: 18px; }
+.subhead { font: 600 clamp(19px, 2.4vw, 23px)/1.3 var(--display); color: var(--ink); margin-bottom: -10px; }
+.soon { display: inline-block; font: 700 13px/1 var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--teal);
+        padding: 9px 14px; border: 1.5px solid var(--teal); border-radius: 999px; }
+.reach { display: grid; gap: 6px; padding-top: 18px; border-top: 1px solid var(--line); width: 100%; font-size: 15px; }
+.reach b { color: var(--ink); font-weight: 600; user-select: all; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <svg width="36" height="36" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--teal)"/><path d="M16 7l8 3v6c0 5.2-3.4 8.6-8 10-4.6-1.4-8-4.8-8-10v-6z" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 16.2l2.8 2.8 5.4-5.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    TripProof Online
+  </div>
+  <h1>Every trip.<br>The right driver.<br>The right vehicle.<br><span>The proof to back it up.</span></h1>
+  <p class="subhead">A trip is only as defensible as the record behind it.</p>
+  <p>TripProof checks driver and vehicle eligibility against applicable requirements before a trip is assigned, then preserves the trip records and supporting evidence needed to demonstrate what happened.</p>
+  <p class="soon">Coming soon</p>
+  <div class="reach">
+    <span>Email <b>support@tripproofonline.com</b></span>
+    <span>Phone <b>(727) 207-5512</b></span>
+  </div>
+</main>
+</body>
+</html>

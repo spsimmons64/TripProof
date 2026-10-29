@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
-import { AlertTriangle, Building2, CalendarClock, Car, CreditCard, DollarSign, FileCheck2, FileText, FlaskConical, Gauge, Handshake, ListChecks, Route as RouteIcon, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
+import { AlertTriangle, Building2, CalendarClock, Car, CreditCard, DollarSign, FileCheck2, FileText, FlaskConical, Gauge, Handshake, ListChecks, MapPin, Route as RouteIcon, User, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
 import { api, auth } from './lib/api.js'
 import { keepAlive, signOut } from './lib/session.js'
 import { Modal } from './admin/common.jsx'
@@ -22,6 +22,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import Trips from './pages/Trips.jsx'
 import Dispatch from './pages/Dispatch.jsx'
 import Shifts from './pages/Shifts.jsx'
+import SavedList from './pages/SavedList.jsx'
 import DriverApp from './driver/DriverApp.jsx'
 import TripDetail from './pages/TripDetail.jsx'
 import Import from './pages/Import.jsx'
@@ -48,8 +49,13 @@ function Shell({ user, children }) {
     [null, [
       ['/', Gauge, 'Dashboard'],
       ['/dispatch', CalendarClock, 'Dispatch'],
+    ]],
+    // Who and what the work is done with, and for: the people and things dispatch draws on.
+    ['Assets', [
       ['/drivers', Users, 'Drivers'],
       ['/vehicles', Car, 'Vehicles'],
+      ['/passengers', User, 'Passengers'],
+      ['/locations', MapPin, 'Locations'],
     ]],
     // Both directions of being checked. An external audit is somebody else asking to see the
     // file; the random testing programme is the carrier checking on itself all year against a
@@ -282,6 +288,8 @@ export default function App() {
           <Route path="/drivers" element={<Drivers />} />
           <Route path="/drivers/:id" element={<SubjectDetail kind="driver" />} />
           <Route path="/vehicles" element={<Vehicles />} />
+          <Route path="/passengers" element={<SavedList key="passengers" kind="passengers" />} />
+          <Route path="/locations" element={<SavedList key="places" kind="places" />} />
           <Route path="/vehicles/:id" element={<SubjectDetail kind="vehicle" />} />
           <Route path="/company" element={<Company />} />
           <Route path="/payers" element={<Payers />} />

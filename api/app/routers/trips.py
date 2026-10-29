@@ -353,7 +353,7 @@ def get_trip(tripid: str, user: dict = Depends(current_user), conn: Connection =
     if not t:
         raise HTTPException(404, "Trip not found")
     t["legs"] = rows(conn, """
-        SELECT l.recordid, l.legnumber, l.pickupat, l.dropoffat, l.signature, l.gps, l.driverid, l.vehicleid,
+        SELECT l.recordid, l.legnumber, l.pickupat, l.dropoffat, l.appointmentat, l.signature, l.gps, l.driverid, l.vehicleid,
                l.driverexternal, l.vehicleexternal, CONCAT(d.firstname, ' ', d.lastname) AS drivername,
                l.executionstate, l.outcomestate, l.pickupplace, l.dropoffplace, l.miles,
                v.externalid AS unit, v.modelyear
@@ -564,6 +564,7 @@ class LegEdit(BaseModel):
     legid: str
     pickupat: datetime | None = None
     dropoffat: datetime | None = None
+    appointmentat: datetime | None = None
     pickupplace: str | None = None
     dropoffplace: str | None = None
     miles: float | None = None
@@ -608,7 +609,7 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
     if not trip:
         raise HTTPException(404, "No such trip")
     legs = rows(conn, """
-        SELECT recordid, legnumber, pickupat, dropoffat, pickupplace, dropoffplace, miles,
+        SELECT recordid, legnumber, pickupat, dropoffat, appointmentat, pickupplace, dropoffplace, miles,
                driverid, vehicleid, executionstate, outcomestate
         FROM triplegs WHERE tripid = :t AND accountid = :a ORDER BY legnumber
     """, t=tripid, a=acct)
@@ -658,11 +659,12 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
             continue
         stage = rules["legs"][leg["recordid"]]
         mine, upd = [], {}
-        allowed = {"open": ("pickupat", "pickupplace", "dropoffplace"),
+        allowed = {"open": ("pickupat", "appointmentat", "pickupplace", "dropoffplace"),
                    "moving": ("dropoffplace",),
                    "done": (),
                    "closed": ()}[stage]
-        for field, label in (("pickupat", "Pickup time"), ("dropoffat", "Drop-off time"),
+        for field, label in (("pickupat", "Pickup time"), ("appointmentat", "Appointment time"),
+                             ("dropoffat", "Drop-off time"),
                              ("pickupplace", "Pickup address"), ("dropoffplace", "Drop-off address"),
                              ("miles", "Miles")):
             new = getattr(want, field)
@@ -676,7 +678,7 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
             old = leg[field]
             if field == "miles" and old is not None:
                 old = round(float(old), 1)
-            if new is None and field in ("pickupat", "dropoffat", "miles"):
+            if new is None and field in ("pickupat", "appointmentat", "dropoffat", "miles"):
                 continue
             if old == new:
                 continue
@@ -1438,7 +1440,7 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     # the clock, and a page left open overnight would otherwise still be showing this morning's
     # trips as fine.
     # The app's moments are instants (UTC); the board reads wall clock in the company's zone.
-    shift_to_local = here - utcnow()
+    shift_to_local = timedelta(minutes=round((here - utcnow()).total_seconds() / 60))
     seen = dispatch._last_seen(conn, acct) if any(
         i["executionstate"] in ("enroute", "arrived", "onboard") for i in items) else {}
     for i in items:
@@ -1593,11 +1595,12 @@ BOARD_SORTS = {
 
 
 @router.get("/legs/{legid}/candidates")
-def leg_candidates(legid: str, user: dict = Depends(current_user),
+def leg_candidates(legid: str, vehicleid: str | None = None, user: dict = Depends(current_user),
                    conn: Connection = Depends(get_conn)):
     """Who may take this leg, who may not, and why - in the words of the engine that will later be
-    asked to prove the trip was compliant."""
-    said = dispatch.for_leg(conn, user["accountid"], legid)
+    asked to prove the trip was compliant. With `vehicleid`, the drivers judged in that vehicle:
+    whether somebody needs a commercial licence depends on what they would be driving."""
+    said = dispatch.for_leg(conn, user["accountid"], legid, vehicle=vehicleid)
     if not said:
         raise HTTPException(404, "No such leg")
     said["mayoverride"] = _supervisor(conn, user)

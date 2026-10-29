@@ -133,7 +133,8 @@ def _busy(conn: Connection, accountid: str, when: datetime, minutes: int,
 def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: int,
                 pickup: tuple[float, float] | None = None,
                 exceptleg: str | None = None, only: set[str] | None = None,
-                vehicle_of: dict[str, str] | None = None, timed: bool = True) -> list[dict]:
+                vehicle_of: dict[str, str] | None = None, timed: bool = True,
+                vehicle: str | None = None) -> list[dict]:
     """Every driver, ranked for this job, each saying why.
 
     Order: the ones who can go, nearest first; then the ones who could but should not; then
@@ -146,7 +147,6 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
     # driver for the trip's own outbound leg.)
     committed = _busy(conn, accountid, when, minutes, exceptleg) if timed else {}
     seen = _last_seen(conn, accountid)
-    roster = working(conn, accountid, when) if timed else {}
     out = []
     for d in rows(conn, """
         SELECT recordid, TRIM(CONCAT(COALESCE(firstname, ''), ' ', COALESCE(lastname, ''))) AS name,
@@ -167,7 +167,8 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
         else:
             # In the vehicle they would take, where that is known: a commercial vehicle is what
             # makes a commercial driver, and a sedan does not need the licence a bus does.
-            f = factset.assemble(conn, accountid, d["recordid"], (vehicle_of or {}).get(d["recordid"]))["facts"]
+            f = factset.assemble(conn, accountid, d["recordid"],
+                                 (vehicle_of or {}).get(d["recordid"]) or vehicle)["facts"]
             # Only what stops them on EVERY trip. A program's own hard stop - a Georgia Medicaid
             # driving record - says nothing about a private pay run; the trip check reads those
             # against the trip's own program.
@@ -192,9 +193,6 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
         # Hours are a warning, not a bar: 14-90.006 is the company's to manage, and a
         # dispatcher looking at a near-limit driver may still have no alternative.
         warn = []
-        off = roster.get(d["recordid"])
-        if off:
-            warn.append(off)
         standing = hos.standing(conn, accountid, d["recordid"], today)
         if standing and standing["determination"] == "hoursexceeded":
             warn.append("Over hours in the last week")
@@ -226,42 +224,6 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
 
 # Monday first, because a working week starts on Monday everywhere this is read.
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-
-
-def working(conn: Connection, accountid: str, when: datetime) -> dict[str, str | None]:
-    """Who is rostered at this moment, and what to say about the ones who are not.
-
-    A driver with no shifts recorded at all is treated as available, and says nothing. The day
-    this table arrived every existing driver had no rows in it, and a feature that quietly makes
-    the whole roster unavailable is worse than no feature.
-
-    Being off-shift is a WARNING and never a bar. The hours are the company's own arrangement
-    with its own staff; a dispatcher covering an emergency at six on a Sunday may know perfectly
-    well that Maria will come in, and the software is not the party to that conversation.
-    """
-    weekday = when.weekday()
-    clock = when.time()
-    said: dict[str, str | None] = {}
-    rostered: set[str] = set()
-    has_any: set[str] = set()
-    for s in rows(conn, """
-        SELECT driverid, weekday, startsat, endsat FROM drivershifts
-        WHERE accountid = :a
-          AND (effectivefrom IS NULL OR effectivefrom <= :on)
-          AND (effectiveto IS NULL OR effectiveto >= :on)
-    """, a=accountid, on=when.date()):
-        has_any.add(s["driverid"])
-        start, end = _as_time(s["startsat"]), _as_time(s["endsat"])
-        overnight = end <= start
-        # A night turn belongs to the day it STARTED, so 01:00 on Tuesday is covered by Monday's
-        # 22:00-06:00 shift and not by a Tuesday one.
-        if s["weekday"] == weekday and (clock >= start if overnight else start <= clock < end):
-            rostered.add(s["driverid"])
-        if overnight and s["weekday"] == (weekday - 1) % 7 and clock < end:
-            rostered.add(s["driverid"])
-    for driverid in has_any:
-        said[driverid] = None if driverid in rostered else "Not working at that time"
-    return said
 
 
 def _as_time(v):
@@ -395,7 +357,10 @@ def zone(conn: Connection, accountid: str) -> str:
 
 
 def for_leg(conn: Connection, accountid: str, legid: str, only: set[str] | None = None,
-            vehicle_of: dict[str, str] | None = None) -> dict:
+            vehicle_of: dict[str, str] | None = None, vehicle: str | None = None) -> dict:
+    """Every driver and vehicle for this leg, judged. `vehicle_of` gives each named driver the
+    vehicle they would take; `vehicle` gives every driver the same one - and then only the drivers
+    are judged, since the vehicle has been chosen."""
     leg = row(conn, """
         SELECT l.recordid AS legid, l.tripid, l.driverid, l.vehicleid, l.pickupat, l.dropoffat,
                l.pickuplat, l.pickuplng, l.signature, l.gps, l.servicelevel AS legservice,
@@ -418,12 +383,12 @@ def for_leg(conn: Connection, accountid: str, legid: str, only: set[str] | None 
 
     drivers = drivers_for(conn, accountid, when=when, minutes=minutes, pickup=pickup,
                           exceptleg=legid, only=only, vehicle_of=vehicle_of,
-                          timed=leg["pickupat"] is not None)
-    vehicles = vehicles_for(conn, accountid, when=when, minutes=minutes, service=service,
-                            seats=1, exceptleg=legid, timed=leg["pickupat"] is not None)
+                          timed=leg["pickupat"] is not None, vehicle=vehicle)
+    vehicles = [] if vehicle else vehicles_for(conn, accountid, when=when, minutes=minutes, service=service,
+                                               seats=1, exceptleg=legid, timed=leg["pickupat"] is not None)
 
     _judge(conn, accountid, drivers, vehicles, leg=leg, when=when, service=service,
-           vehicle_of=vehicle_of)
+           vehicle_of=vehicle_of if not vehicle else {d["driverid"]: vehicle for d in drivers})
 
     return {
         "leg": {k: leg[k] for k in ("legid", "tripid", "externalid", "passenger", "pickupat",

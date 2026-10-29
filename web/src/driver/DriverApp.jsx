@@ -237,6 +237,14 @@ function useAwake(on) {
   }, [on])
 }
 
+// A pickup's time, with its date when it is not today: a trip left open from yesterday must not
+// read as one due this afternoon.
+function when(at) {
+  const d = new Date()
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return String(at).slice(0, 10) === today ? time(at) : `${date(at)} ${time(at)}`
+}
+
 export default function DriverApp() {
   const [me, setMe] = useState(null)
   const [ready, setReady] = useState(false)
@@ -578,7 +586,7 @@ function Work({ me, onOut }) {
           onClick={() => setOpen(t.legid)}>
           <span className="dvrowtext">
             <span className="dvrowtop">
-              <span className="dvtime">{t.pickupat ? time(t.pickupat) : 'Will-call'}</span>
+              <span className="dvtime">{t.pickupat ? when(t.pickupat) : 'Will-call'}</span>
               <span className="dvwho">{t.passenger}</span>
             </span>
             <span className="dvaddr">{t.pickupplace}</span>
@@ -732,7 +740,7 @@ function Trip({ me, leg, reporting, onBack, onDone, onCheck }) {
 
       <div className="dvtrip">
         <div className="dvfacts">
-          <div className="dvrow"><span>Pickup</span><b>{leg.pickupat ? time(leg.pickupat) : 'Will-call'}</b></div>
+          <div className="dvrow"><span>Pickup</span><b>{leg.pickupat ? when(leg.pickupat) : 'Will-call'}</b></div>
           {/* The unit number and what it looks like. A driver sent to 00098 with four vans in
               front of them needs both. */}
           {leg.vehiclename && (

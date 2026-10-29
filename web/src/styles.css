@@ -3662,7 +3662,7 @@ button.shiftleg:hover { border-color: var(--teal-900); }
 .filterrow > .pushright { margin-left: auto; }
 
 /* The day's boards use the whole window, and their title, day and actions share one row. */
-main > .fill.wide { max-width: none; }
+main > .fill.wide, main > .stack.wide { max-width: none; }   /* the day's boards and the dashboard use the whole window */
 .pagehead.daypagehead { align-items: center; justify-content: flex-start; margin-bottom: 14px; }
 .daypagehead h1 { margin: 0 6px 0 0; }
 .daypagehead > .pushright { margin-left: auto; }
@@ -3701,19 +3701,24 @@ main > .fill.wide { max-width: none; }
    the scrolling below them only. The head keeps the same gutter the body's scrollbar takes, so
    the columns line up. */
 .dispatchboard { flex-direction: column; }
-.dispatchboard .calhead { display: flex; flex: none; overflow: hidden; scrollbar-gutter: stable;
+.dispatchboard .calhead { display: flex; flex: none; overflow: hidden;
                           background: var(--teal-50); border-bottom: 2px solid var(--teal-100); }
 .dispatchboard .calhead .shifthead { position: static; height: 53px; border-bottom: 0; display: flex;
                                      flex-direction: column; justify-content: center; }
 .dispatchboard .calhead .shiftgutter { position: static; }
 .dispatchboard .calbody { scrollbar-gutter: stable; }
+.dispatchboard .calhead .calbar { align-self: stretch; }
 
 /* Dispatch's day, in colour. The names on the dark band every grid in the app is headed with; each
    driver's own hue on the dot by their name and down their day; the hours ruled harder than the
    quarters; and, on today, an orange line where the day has got to. */
 .dispatchboard .calhead { background: var(--teal-900); border-bottom: 3px solid var(--orange); }
-.dispatchboard .calhead .shifthead { background: transparent; border-right: 1px solid rgb(255 255 255 / 12%); }
-.dispatchboard .calhead .shiftcol, .dispatchboard .calhead .shiftgutter { background: transparent; border-right: 0; }
+/* The head's columns carry the same 1px right border as the day's below - the same width each, so
+   the two rows stay lined up however far they are scrolled. */
+.dispatchboard .calhead .shifthead { background: transparent; }
+.dispatchboard .calhead .shiftcol, .dispatchboard .calhead .shiftgutter { background: transparent;
+                                                                          border-right: 1px solid rgb(255 255 255 / 12%); }
+.dispatchboard .calhead .shiftcol:nth-last-child(2) { border-right: 0; }   /* the last before the scrollbar spacer */
 .dispatchboard .calhead .shifthead b { color: #fff; display: flex; align-items: center; gap: 8px; letter-spacing: .02em; }
 .dispatchboard .calhead .shifthead.unassigned { background: var(--bad); }
 .dispatchboard .calhead .shifthead.unassigned b, .dispatchboard .calhead .shifthead.unassigned span { color: #fff; }
@@ -3768,3 +3773,13 @@ main > .fill.wide { max-width: none; }
 /* An empty dashboard grid keeps the height of its five rows, the same as a full one beside it -
    the bare grid's rule lets the message shrink to its text otherwise. */
 .gridcard.isbare.dashgrid .gridempty { flex: 0 0 220px; height: 220px; }
+/* Under each driver's name: whether the office can see where they are. */
+.dispatchboard .calhead .shifthead { gap: 3px; }
+.gpsline { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.gpsline i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.dispatchboard .calhead .gpsline { color: rgb(255 255 255 / 85%); }
+.gps-live i { background: #4ade80; box-shadow: 0 0 0 3px rgb(74 222 128 / 25%); }
+.gps-old i { background: var(--orange); }
+.gps-none i { background: #f87171; }
+/* A count that wants dealing with, without the alarm of red: Needs Attention on Dispatch. */
+.countpill.hot { background: var(--orange); color: var(--orange-ink); }

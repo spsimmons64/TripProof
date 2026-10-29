@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, UserPlus } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { date, time } from '../lib/format.js'
@@ -31,8 +31,20 @@ export default function AssignDialog({ leg, onCancel, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
 
+  // With a vehicle chosen, the drivers are judged again in it: a sedan does not need the licence a
+  // bus does. Until that answer is back the first list stands.
+  const [inVehicle, setInVehicle] = useState(null)       // { vehicleid, drivers }
+  useEffect(() => {
+    if (!vehicleid) { setInVehicle(null); return undefined }
+    let dropped = false
+    api.get(`/legs/${leg.legid}/candidates?vehicleid=${vehicleid}`)
+      .then((got) => { if (!dropped) setInVehicle({ vehicleid, drivers: got.drivers }) })
+      .catch(() => {})
+    return () => { dropped = true }
+  }, [vehicleid, leg.legid])
+  const drivers = inVehicle?.vehicleid === vehicleid ? inVehicle.drivers : data?.drivers
   const chosen = (list, id, key) => (list || []).find((x) => x[key] === id)
-  const d = chosen(data?.drivers, driverid, 'driverid')
+  const d = chosen(drivers, driverid, 'driverid')
   const v = chosen(data?.vehicles, vehicleid, 'vehicleid')
   const warnings = [...(d?.warnings || []), ...(v?.warnings || [])]
   const needswhy = warnings.length > 0
@@ -84,7 +96,7 @@ export default function AssignDialog({ leg, onCancel, onClose, onDone }) {
             </div>
           )}
           <div className="pickpair">
-            <Candidates title="Driver" rows={data.drivers} idkey="driverid"
+            <Candidates title="Driver" rows={drivers} idkey="driverid"
               chosen={driverid} onPick={setDriver} />
             <Candidates title="Vehicle" rows={data.vehicles} idkey="vehicleid"
               chosen={vehicleid} onPick={setVehicle} />

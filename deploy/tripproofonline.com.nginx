@@ -1,0 +1,23 @@
+# tripproofonline.com - the public site: a coming-soon home page and /broker, served from disk.
+# certbot --nginx adds the TLS server block and the redirect; leave its lines in place.
+server {
+    server_name tripproofonline.com www.tripproofonline.com;
+
+    root /applications/tripproofonline.com/site;
+    index index.html;
+
+    access_log /var/log/nginx/tripproofonline.com.access.log;
+    error_log  /var/log/nginx/tripproofonline.com.error.log;
+
+    location / {
+        # /broker is the broker/ folder's page; anything unknown is the home page.
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    }
+
+    listen 80;
+    listen [::]:80;
+}

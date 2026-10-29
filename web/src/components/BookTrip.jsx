@@ -256,19 +256,48 @@ export default function BookTrip({ onClose, onBooked }) {
 }
 
 // A new passenger or place, not on the list yet: a name, an address and a telephone.
-function EntryDialog({ kind, onClose, onAdded }) {
-  const [v, setV] = useState({ name: '', address: '', city: '', state: '', zip: '', phone: '', dob: '' })
+// `entry`: one already on the list, being put right (or, with `onRemoved`, taken off it).
+export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved }) {
+  const [v, setV] = useState(() => ({ name: '', address: '', city: '', state: '', zip: '', phone: '', dob: '',
+    ...(entry ? Object.fromEntries(Object.entries(entry).map(([k, x]) => [k, x ?? ''])) : {}),
+    ...(entry?.dob ? { dob: String(entry.dob).slice(0, 10) } : {}) }))
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
+  const [asking, setAsking] = useState(false)
   const passenger = kind === 'passengers'
   const save = async () => {
     setBusy(true); setErr(null)
-    try { onAdded(await api.post(`/${kind}`, { ...v, dob: passenger ? v.dob : null })) }
+    const body = { name: v.name, address: v.address, city: v.city, state: v.state, zip: v.zip, phone: v.phone,
+                   dob: passenger ? v.dob : null }
+    try { onAdded(await (entry ? api.put(`/${kind}/${entry.recordid}`, body) : api.post(`/${kind}`, body))) }
     catch (e) { setErr(e.message); setBusy(false) }
   }
+  const noun = passenger ? 'Passenger' : 'Location'
+  if (asking) {
+    return (
+      <Modal title={`Remove ${noun}`} onClose={() => setAsking(false)} width={520}
+        footer={<>
+          <button type="button" className="primary" disabled={busy}
+            onClick={async () => { setBusy(true); await api.del(`/${kind}/${entry.recordid}`); onRemoved() }}>
+            {busy ? <Loader2 size={15} className="spin" /> : 'Yes'}
+          </button>
+          <button type="button" onClick={() => setAsking(false)}>No</button>
+        </>}>
+        <div className="stack">
+          <div className="askorder"><span className="askmark">?</span>
+            <p>Remove {entry.name} from the {passenger ? 'passengers' : 'locations'}?</p></div>
+        </div>
+      </Modal>
+    )
+  }
   return (
-    <Modal title={passenger ? 'New Passenger' : 'New Location'} onClose={onClose} width={620}
+    <Modal title={entry ? `Change ${noun}` : `New ${noun}`} onClose={onClose} width={620}
       footer={<>
+        {entry && onRemoved && (
+          <div className="footactions">
+            <button type="button" className="danger" onClick={() => setAsking(true)}>Remove {noun}</button>
+          </div>
+        )}
         <button type="button" onClick={onClose}>Cancel</button>
         <button type="button" className="primary" disabled={busy || !v.name.trim() || !v.address.trim() || !v.city.trim() || !v.state || !v.zip
                   || (passenger && !v.dob)} onClick={save}>

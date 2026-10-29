@@ -110,7 +110,7 @@ export default function Dashboard() {
   ]
 
   return (
-    <div className="stack">
+    <div className="stack wide">
       <div className="pagehead"><h1>Dashboard</h1></div>
       {err && <div className="notice bad">{err}</div>}
 

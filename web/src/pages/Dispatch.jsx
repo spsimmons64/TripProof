@@ -66,11 +66,13 @@ export default function Dispatch() {
   const returned = useLocation().state
   const [day, setDay] = useState(() => returned?.day || ymd(new Date()))
   const [data, error, reload] = useLoad(async () => {
-    const [board, roster] = await Promise.all([
+    const [board, roster, attention] = await Promise.all([
       api.get(`/dispatch/board?day=${day}&state=all&pagesize=200&sort=pickupat&dir=asc`),
       api.get(`/shifts?day=${day}`),
+      // Whatever will not settle itself, from any day - the board above is one day only.
+      api.get('/dispatch/board?state=attention&pagesize=200&sort=pickupat&dir=asc'),
     ])
-    return { ...board, roster }
+    return { ...board, roster, attention: attention.items }
   }, [day])
   const [assigning, setAssigning] = useState(null)
   const [returning, setReturning] = useState(null)
@@ -177,6 +179,12 @@ export default function Dispatch() {
   // Will-calls: not scheduled until the passenger calls, so listed on their own, with only that
   // call to record. Once it is recorded the leg has a time and joins the unassigned trips.
   const willcalls = (data?.items || []).filter((l) => !l.pickupat && open(l))
+  // Needs Attention: what is still open from an earlier day - a pickup that went by and was never
+  // closed - and any dispute not settled, whatever its day. Today's late trips are on the calendar
+  // already, in their colours, so they are not repeated here.
+  const today = ymd(new Date())
+  const attention = (data?.attention || []).filter((l) => (l.pickupat && l.pickupat.slice(0, 10) < today)
+    || l.outcomestate === 'disputed')
 
   // One leg as a card in the lists on the left, dragged from there onto a driver.
   const queueCard = (l) => (
@@ -188,7 +196,8 @@ export default function Dispatch() {
             again says nothing. */}
         {l.pickupat && (
           <div className="leghead">
-            <span className="legwhen"><b>{time(l.pickupat)}</b></span>
+            {/* The date as well when it is not the day on the board: an open trip from last week. */}
+            <span className="legwhen"><b>{l.pickupat.slice(0, 10) !== day ? `${date(l.pickupat)} ` : ''}{time(l.pickupat)}</b></span>
             <span className="legstatus">{status(l)}</span>
           </div>
         )}
@@ -248,11 +257,12 @@ export default function Dispatch() {
           <div className="card qualcard dispatchqueue dispatchside">
             {[['unassigned', 'Unassigned Trips', waiting,
                data.items.some((l) => l.pickupat) ? 'Every trip this day has a driver.' : 'No trips booked for this day.'],
-              ['willcall', 'Will-Call Trips', willcalls, 'No will-call trips waiting on a call.']].map(([k, title, list, none]) => (
+              ['willcall', 'Will-Call Trips', willcalls, 'No will-call trips waiting on a call.'],
+              ['attention', 'Needs Attention', attention, 'Nothing from earlier days needs closing.']].map(([k, title, list, none]) => (
               <Fragment key={k}>
                 <button type="button" className={`infotabs accordhead${pane === k ? ' on' : ''}`}
                   aria-expanded={pane === k} onClick={() => setPane(k)}>
-                  <h3>{title}{list.length > 0 && <span className="countpill">{list.length}</span>}</h3>
+                  <h3>{title}{list.length > 0 && <span className={`countpill${k === 'attention' ? ' hot' : ''}`}>{list.length}</span>}</h3>
                   <ChevronDown size={16} />
                 </button>
                 {pane === k && (
@@ -361,6 +371,17 @@ const HUES = [['#0e9fb4', '#dcf2f6'], ['#d9822b', '#fdeedd'], ['#6d4bb3', '#ece6
 function Calendar({ day, data, status, onOpen, onPlace }) {
   const [over, setOver] = useState(null)
   const head = useRef(null)
+  const body = useRef(null)
+  // The width of the day's own vertical scrollbar, which the names above must allow for: without
+  // it the names can scroll a scrollbar's width less than the day, and drift off their columns.
+  const [bar, setBar] = useState(0)
+  useEffect(() => {
+    const measure = () => { if (body.current) setBar(body.current.offsetWidth - body.current.clientWidth) }
+    measure()
+    const watch = new ResizeObserver(measure)
+    if (body.current) watch.observe(body.current)
+    return () => watch.disconnect()
+  })
   // Where the day has got to, when the day shown is today: a line across every column, moved on
   // each minute.
   const [nowAt, setNowAt] = useState(() => new Date())
@@ -419,14 +440,17 @@ function Calendar({ day, data, status, onOpen, onPlace }) {
           <div key={c.driverid} className={`shiftcol${over === c.driverid ? ' droptarget' : ''}`} {...drop(c.driverid)}>
             <div className={`shifthead${c.shifts.length ? '' : ' unassigned'}`}>
               <b><span className="huedot" style={{ background: HUES[n % HUES.length][0] }} />{c.name.toUpperCase()}</b>
+              <GpsLine at={data.roster.gps?.[c.driverid]} now={nowAt} />
               {/* The vehicle is on the band down the column, not up here: a driver can change
                   vehicles during the day, and each band names its own. */}
               {!c.shifts.length && <span>No Vehicles Assigned To Driver For This Day</span>}
             </div>
           </div>
         ))}
+        <div className="calbar" style={{ flex: `0 0 ${bar}px` }} />
       </div>
-      <div className="shiftscroll calbody" onScroll={(e) => { if (head.current) head.current.scrollLeft = e.currentTarget.scrollLeft }}>
+      <div className="shiftscroll calbody" ref={body}
+        onScroll={(e) => { if (head.current) head.current.scrollLeft = e.currentTarget.scrollLeft }}>
         <div className="shiftgutter">
           {slots.map((m) => <div key={m} className={`shiftslot${m % 60 ? '' : ' hour'}`}>{clock(m)}</div>)}
           {/* Where the day has got to, when the day shown is today: an arrow on the time column. */}
@@ -483,6 +507,17 @@ function Calendar({ day, data, status, onOpen, onPlace }) {
       </div>
     </div>
   )
+}
+
+// Whether the office can see where this driver is: their phone's last position, and how old it is.
+// Live within five minutes; last seen within two hours; older than that, or never, is no help.
+function GpsLine({ at, now }) {
+  if (!at) return <span className="gpsline gps-none"><i />No GPS</span>
+  const mins = Math.max(0, Math.round((now - new Date(`${at.replace(' ', 'T')}Z`)) / 60000))
+  const [kind, said] = mins <= 5 ? ['live', 'GPS live']
+    : mins < 120 ? ['old', `GPS ${mins} min ago`]
+    : ['none', mins < 2880 ? `GPS ${Math.round(mins / 60)} h ago` : `GPS ${Math.round(mins / 1440)} days ago`]
+  return <span className={`gpsline gps-${kind}`}><i />{said}</span>
 }
 
 // Auto Assign: a driver for each of the day's unassigned trips, with why - and, for one that could

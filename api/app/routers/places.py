@@ -84,9 +84,93 @@ def _add(conn: Connection, table: str, body: EntryIn, user: dict, request: Reque
     return {**out, "dob": body.dob} if person else out
 
 
+# The list pages: searched, sorted and paged on the server, the way every grid is.
+SORTS = {"name": "name", "dob": "dob", "address": "address", "phone": "phone"}
+
+
+def _page(conn: Connection, table: str, acct: str, q, sort, dir, page, pagesize) -> dict:
+    where, params = ["accountid = :a", "deleted IS NULL"], {"a": acct}
+    if q and q.strip():
+        where.append("(name LIKE :q OR address LIKE :q OR city LIKE :q OR phone LIKE :q)")
+        params["q"] = f"%{q.strip()}%"
+    clause = " AND ".join(where)
+    column = SORTS.get(sort, "name") if sort != "dob" or table == "passengers" else "name"
+    direction = "DESC" if str(dir).lower() == "desc" else "ASC"
+    pagesize = max(1, min(pagesize, 200))
+    total = row(conn, f"SELECT COUNT(*) AS n FROM {table} WHERE {clause}", **params)["n"]
+    items = rows(conn, f"""
+        SELECT recordid, name, address, city, state, zip, phone{", dob" if table == "passengers" else ""}
+        FROM {table} WHERE {clause}
+        ORDER BY {column} {direction}, name ASC, recordid ASC LIMIT :lim OFFSET :off
+    """, lim=pagesize, off=(max(1, page) - 1) * pagesize, **params)
+    for e in items:
+        e["full"] = full(e)
+    return {"items": items, "total": total, "page": page, "pagesize": pagesize}
+
+
+def _change(conn: Connection, table: str, rid: str, body: EntryIn, user: dict, request: Request) -> dict:
+    """Put an entry right. The address looked up again if it changed; trips already booked keep the
+    address they were booked with - this changes the list, not history."""
+    acct = user["accountid"]
+    held = row(conn, f"SELECT * FROM {table} WHERE recordid = :r AND accountid = :a AND deleted IS NULL",
+               r=rid, a=acct)
+    if not held:
+        raise HTTPException(404, "No such entry")
+    name, address = body.name.strip().upper(), body.address.strip().upper()
+    city, state = (body.city or "").strip().upper(), (body.state or "").strip().upper()
+    zipcode, phone = (body.zip or "").strip(), (body.phone or "").strip() or None
+    if not name or not address or not city or not state or not zipcode:
+        raise HTTPException(400, "Give the name, the street, the city, the state and the ZIP")
+    person = table == "passengers"
+    if person:
+        if not body.dob:
+            raise HTTPException(400, "Give the passenger's date of birth")
+        if body.dob >= date.today() or body.dob.year < 1900:
+            raise HTTPException(400, "That date of birth cannot be right")
+    entry = {"address": address, "city": city, "state": state, "zip": zipcode}
+    moved = full(entry) != full(held)
+    at = wheremap.place(full(entry)) if moved else None
+    run(conn, f"""
+        UPDATE {table} SET name = :n, address = :ad, city = :c, state = :s, zip = :z, phone = :p
+               {", dob = :d" if person else ""}{", lat = :lat, lng = :lng" if moved else ""}
+        WHERE recordid = :r AND accountid = :a
+    """, n=name[:160], ad=address[:255], c=city[:80], s=state[:2], z=zipcode[:10], p=phone and phone[:32],
+        d=body.dob, lat=at and at[0], lng=at and at[1], r=rid, a=acct)
+    log(conn, user, f"{KINDS[table]}-changed", KINDS[table], rid, {"name": name}, ip=client_ip(request))
+    saved(conn)
+    return {"recordid": rid, "name": name, **entry, "full": full(entry), "phone": phone,
+            **({"dob": body.dob} if person else {})}
+
+
+def _remove(conn: Connection, table: str, rid: str, user: dict, request: Request) -> dict:
+    """Off the list. Kept, marked removed: trips booked with it still say where they went."""
+    got = run(conn, f"UPDATE {table} SET deleted = :now WHERE recordid = :r AND accountid = :a AND deleted IS NULL",
+              now=utcnow(), r=rid, a=user["accountid"])
+    if not got.rowcount:
+        raise HTTPException(404, "No such entry")
+    log(conn, user, f"{KINDS[table]}-removed", KINDS[table], rid, {}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
 @router.get("/places")
-def list_places(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+def list_places(q: str | None = None, sort: str = "name", dir: str = "asc", page: int | None = None,
+                pagesize: int = 25, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """Every place, for choosing from - or, given a page, one page of them for the list screen."""
+    if page:
+        return _page(conn, "places", user["accountid"], q, sort, dir, page, pagesize)
     return {"items": _list(conn, "places", user["accountid"])}
+
+
+@router.put("/places/{rid}")
+def change_place(rid: str, body: EntryIn, request: Request, user: dict = Depends(editor),
+                 conn: Connection = Depends(get_conn)):
+    return _change(conn, "places", rid, body, user, request)
+
+
+@router.delete("/places/{rid}")
+def remove_place(rid: str, request: Request, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    return _remove(conn, "places", rid, user, request)
 
 
 @router.post("/places")
@@ -96,8 +180,23 @@ def add_place(body: EntryIn, request: Request, user: dict = Depends(editor),
 
 
 @router.get("/passengers")
-def list_passengers(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+def list_passengers(q: str | None = None, sort: str = "name", dir: str = "asc", page: int | None = None,
+                    pagesize: int = 25, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    if page:
+        return _page(conn, "passengers", user["accountid"], q, sort, dir, page, pagesize)
     return {"items": _list(conn, "passengers", user["accountid"])}
+
+
+@router.put("/passengers/{rid}")
+def change_passenger(rid: str, body: EntryIn, request: Request, user: dict = Depends(editor),
+                     conn: Connection = Depends(get_conn)):
+    return _change(conn, "passengers", rid, body, user, request)
+
+
+@router.delete("/passengers/{rid}")
+def remove_passenger(rid: str, request: Request, user: dict = Depends(editor),
+                     conn: Connection = Depends(get_conn)):
+    return _remove(conn, "passengers", rid, user, request)
 
 
 @router.post("/passengers")
