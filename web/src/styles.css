@@ -3609,7 +3609,7 @@ button.big { padding: 11px 20px; font-size: 15px; }
                               gap: 10px; padding: 10px; background: var(--surface); }
 .dispatchqueue .gridcarditem { flex: none; cursor: grab; }
 .dispatchqueue .gridcarditem[draggable="false"] { cursor: default; }
-.dispatchqueue .legfoot .rowacts { flex-wrap: nowrap; gap: 6px; }
+.dispatchqueue .legfoot .rowacts { flex-wrap: wrap; gap: 6px; }
 .dispatchqueue .legfoot .linkbtn { white-space: nowrap; padding: 5px 8px; font-size: 12.5px; }
 .dispatchqueue .legfoot .linkbtn svg { flex: none; }
 .dispatchqueue .legfoot .rowacts > * { flex: 1 1 auto; justify-content: center; }
@@ -3790,3 +3790,15 @@ main > .fill.wide, main > .stack.wide { max-width: none; }   /* the day's boards
 .problemalert b { font-size: 17px; }
 .problemalert p { margin: 4px 0 0; color: var(--text); }
 .drvproblem { color: #ffb4a8; flex: none; }
+/* A problem on a leg of the trip page: said on its leg, with the way to deal with it. */
+.legproblem { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin: 4px 0 14px;
+              border-radius: 10px; background: var(--bad-bg); color: var(--bad); }
+.legproblem svg { flex: none; }
+.legproblem > span { flex: 1; min-width: 0; }
+.legproblem .muted { color: var(--text-2); }
+.legproblem button { flex: none; }
+/* Texts to drivers on the trip page: the message takes the room. */
+.textstable td { white-space: normal; height: auto; padding-top: 8px; padding-bottom: 8px; vertical-align: top; }
+.textstable th:nth-child(1), .textstable td:nth-child(1) { width: 170px; }
+.textstable th:nth-child(2), .textstable td:nth-child(2) { width: 170px; }
+.textstable th:nth-child(4), .textstable td:nth-child(4) { width: 230px; }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import DocumentViewer from '../components/DocumentViewer.jsx'
-import IssueDialog, { ProblemBanner } from '../components/IssueDialog.jsx'
+import IssueDialog from '../components/IssueDialog.jsx'
 import OutDialog from '../components/OutDialog.jsx'
 import AssignDialog from '../components/AssignDialog.jsx'
 import EditTrip from '../components/EditTrip.jsx'
@@ -108,6 +108,10 @@ function WhatHappened({ leg, issues, changes, words }) {
   )
 }
 
+// Whether a text to a driver went, in a word or two.
+const TEXTSTATUS = { sent: 'Sent', queued: 'Sending', failed: 'Not sent', off: 'Not sent (texting not set up)',
+                     nophone: 'Not sent (no mobile number)' }
+
 export default function TripDetail() {
   const { id } = useParams()
   const [trip, error, reload] = useLoad(() => api.get(`/trips/${id}`), [id])
@@ -152,13 +156,6 @@ export default function TripDetail() {
         </div>
       </div>
 
-      {open.map((i) => (
-        <ProblemBanner key={i.recordid} issue={i} kinds={trip.issuekinds}>
-          <button type="button" className="pushright" onClick={() => setIssue(i)}>
-            <AlertTriangle size={14} /> Deal With It
-          </button>
-        </ProblemBanner>
-      ))}
 
       {/* The same moves the dispatch board offers. Sending somebody to another screen to do the
           thing this screen has just told them about is the dead end all over again. */}
@@ -189,6 +186,17 @@ export default function TripDetail() {
               <span>· Vehicle: {leg.vehicleid ? <Link to={`/vehicles/${leg.vehicleid}`}>{leg.unit || 'vehicle'}{leg.modelyear ? ` (${leg.modelyear})` : ''}</Link> : (leg.vehicleexternal || 'none')}</span>
               <span>· Signature {leg.signature ? 'yes' : 'no'} · GPS {leg.gps ? 'yes' : 'no'}</span>
             </div>
+            {/* A problem the driver reported on this leg, not yet resolved: said here, on its leg,
+                with the way to deal with it - not as a strip across the top of the page. */}
+            {open.filter((i) => i.legid === leg.recordid || (!i.legid && leg === trip.legs[0])).map((i) => (
+              <div key={i.recordid} className="legproblem">
+                <AlertTriangle size={16} />
+                <span><b>{(trip.issuekinds || {})[i.kind] || i.kind}</b>{i.note ? ` - ${i.note}` : ''}
+                  <span className="muted"> · {i.drivername}, {tzDateTime(i.raisedon)}
+                    {i.acknowledgedon ? ` · seen ${tzDateTime(i.acknowledgedon)}` : ' · not seen yet'}</span></span>
+                <button type="button" onClick={() => setIssue(i)}><AlertTriangle size={14} /> Deal With It</button>
+              </div>
+            ))}
             {routes?.legs?.[leg.recordid] && <LegRoute route={routes.legs[leg.recordid]} style={routes.style} />}
             <WhatHappened leg={leg} issues={trip.issues.filter((i) => i.legid === leg.recordid)}
               changes={(trip.changes || []).filter((c) => c.legid === leg.recordid
@@ -216,6 +224,25 @@ export default function TripDetail() {
           </div>
         )
       })}
+      {(trip.texts || []).length > 0 && (
+        <div className="card qualcard">
+          <div className="infotabs"><h3>Texts To Drivers</h3></div>
+          <div className="panelbody">
+            <table className="residencetable recordtable textstable">
+              <thead><tr><th>Sent</th><th>Driver</th><th>Message</th><th>Status</th></tr></thead>
+              <tbody>{trip.texts.map((x) => (
+                <tr key={x.recordid}>
+                  <td>{tzDateTime(x.added)}</td>
+                  <td>{x.drivername || '-'}</td>
+                  <td>{x.body}</td>
+                  <td className={x.status === 'sent' ? 'st-active' : x.status === 'queued' ? undefined : 'st-expired'}>
+                    {TEXTSTATUS[x.status] || x.status}{x.status === 'failed' && x.error ? `: ${x.error}` : ''}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
       {trip.run && <div className="small muted">Checked {tzDateTime(trip.run.finished)} by engine {trip.run.engineversion} ({trip.run.reason}). Run {trip.run.recordid}.</div>}
       {editing && (
         <EditTrip tripid={trip.recordid} onClose={() => setEditing(false)}

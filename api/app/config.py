@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     #                         restriction and therefore must never reach a browser.
     # Absent, geocoding falls back to the browser key and then to OpenStreetMap.
     maptiler_server_key: str = ""
+    # Texts to drivers (app/sms.py). No account SID: nothing is sent, and each text is kept as "off".
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from: str = ""             # the number texts come from, +1XXXXXXXXXX
     # Where routes are worked out (app/routing.py): an OSRM server. Empty means the public one.
     osrm_url: str = ""
     # Certn, the screening vendor before them. Kept so orders placed through Certn can still be

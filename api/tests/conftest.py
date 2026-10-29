@@ -30,6 +30,8 @@ os.environ["STORAGE_PATH"] = tempfile.mkdtemp(prefix="tripproof-test-")
 os.environ["STRIPE_SECRET_KEY"] = os.environ["STRIPE_PUBLISHABLE_KEY"] = ""
 # Nor send real mail: with no SMTP host, invitations come back as links (tests that need mail mock it).
 os.environ["SMTP_HOST"] = ""
+# Never text a real phone from a test run: texts are kept, as "off", and not sent.
+os.environ["TWILIO_ACCOUNT_SID"] = ""
 
 
 @pytest.fixture(scope="session")

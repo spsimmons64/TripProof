@@ -49,12 +49,22 @@ def get_conn():
     old row. Anything left uncommitted still commits on the way out, and any error still rolls the
     whole request back."""
     with engine.begin() as conn:
-        yield conn
+        # What waits on a commit belongs to this request only: a connection goes back to the pool,
+        # and a text queued by a request that then failed must not go out with the next one.
+        conn.info.pop("after_commit", None)
+        try:
+            yield conn
+        finally:
+            conn.info.pop("after_commit", None)
 
 
 def saved(conn: Connection) -> None:
-    """Commit what this request has written, before the response goes out."""
+    """Commit what this request has written, before the response goes out - then anything that was
+    waiting for it to be written (a text to a driver must not go out about a change that was then
+    rolled back)."""
     conn.commit()
+    for then in conn.info.pop("after_commit", []):
+        then()
 
 
 def rows(conn: Connection, sql: str, **params) -> list[dict]:

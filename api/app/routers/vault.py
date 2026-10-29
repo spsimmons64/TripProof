@@ -2514,6 +2514,14 @@ def application_activity(driverid: str, user: dict = Depends(current_user), conn
     if app_:
         events.append(entry(app_["startedon"], f"The application was started by {who}",
                             "driver", who))
+    # The texts this driver was sent about their trips (app/sms.py), and whether each went.
+    said_of = {"sent": "sent", "queued": "sending", "failed": "not sent - {error}",
+               "off": "not sent - texting is not set up", "nophone": "not sent - no mobile number on file"}
+    for t in rows(conn, """
+        SELECT body, status, error, added FROM drivertexts WHERE accountid = :a AND driverid = :d
+    """, a=acct, d=driverid):
+        state = said_of.get(t["status"], t["status"]).format(error=(t["error"] or "Twilio refused it").rstrip("."))
+        events.append(entry(t["added"], f'Texted {who}: "{t["body"]}" ({state})', "office", "TripProof"))
     events.sort(key=lambda e: e["at"], reverse=True)
     return {"status": (app_ or {}).get("status"), "events": events}
 

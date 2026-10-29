@@ -1396,3 +1396,68 @@ def test_5u_a_driver_problem_alerts_until_somebody_has_seen_it(make):
     assert not [i for i in c.get("/api/issues/unseen", headers=h).json()["items"] if i["legid"] == legid]
     board = c.get("/api/dispatch/board?state=attention&pagesize=200", headers=h).json()
     assert any(i["legid"] == legid and i["issueid"] for i in board["items"])      # still open on Dispatch
+
+
+def test_5v_a_driver_is_texted_when_given_a_trip_and_when_it_is_canceled(make):
+    """Assigning a trip texts the driver; canceling it texts them again. The text names the trip
+    and the time, never the passenger. In tests nothing is sent: each text is kept as "off"."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=2)
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = '(813) 555-0100' WHERE recordid = :d"), {"d": co["driver"]})
+    trip = c.post("/api/trips", headers=h, json={"passenger": "SECRET PASSENGER", "tripdate": str(on), "legs": [
+        {"pickupat": f"{on}T09:30:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+         "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]}).json()
+    with co["db"].connect() as conn:
+        legid = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": trip["recordid"]}).scalar()
+    got = c.post(f"/api/legs/{legid}/assign", headers=h, json={"driverid": co["driver"], "vehicleid": co["vehicle"],
+                                                              "overridereason": "TEST"})
+    assert got.status_code == 200, got.text
+    assert c.post(f"/api/trips/{trip['recordid']}/cancel", headers=h, json={"reason": "passenger"}).status_code == 200
+    with co["db"].connect() as conn:
+        texts = conn.execute(text("SELECT kind, tonumber, body, status FROM drivertexts WHERE tripid = :t ORDER BY added"),
+                             {"t": trip["recordid"]}).mappings().all()
+    assert sorted(t["kind"] for t in texts) == ["assigned", "canceled"], texts      # same second: any order
+    assert all(t["tonumber"] == "+18135550100" and t["status"] == "off" for t in texts), texts
+    assert all(trip["externalid"] in t["body"] and "SECRET" not in t["body"] for t in texts), texts
+    assert "9:30 AM" in next(t["body"] for t in texts if t["kind"] == "assigned")
+    # And the trip's own page lists them.
+    shown = c.get(f"/api/trips/{trip['recordid']}", headers=h).json()["texts"]
+    assert sorted(x["kind"] for x in shown) == ["assigned", "canceled"]
+
+
+def test_5w_an_accepted_broker_trip_goes_back_to_the_broker(make):
+    """A broker's trip not yet started can be returned: whoever was driving it is taken off and
+    texted, it cannot be given a driver again, it cannot be returned twice, and it is closed only
+    when the broker confirms. A trip that is not a broker's has nobody to go back to."""
+    co = make()
+    add_line(co, co["payer"], "GA")
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=3)
+    trip = c.post("/api/trips", headers=h, json={
+        "passenger": "RETURN TEST", "tripdate": str(on), "payer": "broker", "brokerid": co["payer"],
+        "legs": [{"pickupat": f"{on}T10:00:00", "pickupplace": "12 OAK ST, VALDOSTA, GA 31601",
+                  "dropoffplace": "9 ELM ST, MACON, GA 31201"}]})
+    assert trip.status_code == 200, trip.text
+    tid = trip.json()["recordid"]
+    with co["db"].begin() as conn:
+        legid = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": tid}).scalar()
+        conn.execute(text("UPDATE drivers SET phone = '8135550100' WHERE recordid = :d"), {"d": co["driver"]})
+        conn.execute(text("UPDATE triplegs SET driverid = :d, vehicleid = :v WHERE recordid = :l"),
+                     {"d": co["driver"], "v": co["vehicle"], "l": legid})
+    got = c.post(f"/api/trips/{tid}/return", headers=h, json={"reason": "drivershortage"})
+    assert got.status_code == 200 and got.json()["state"] == "returnpending", got.text
+    assert c.post(f"/api/trips/{tid}/return", headers=h, json={"reason": "other"}).status_code == 409
+    with co["db"].connect() as conn:
+        leg = conn.execute(text("SELECT driverid FROM triplegs WHERE recordid = :l"), {"l": legid}).scalar()
+        told = conn.execute(text("SELECT kind FROM drivertexts WHERE tripid = :t"), {"t": tid}).scalars().all()
+    assert leg is None and told == ["removed"]
+    again = c.post(f"/api/legs/{legid}/assign", headers=h, json={"driverid": co["driver"], "vehicleid": co["vehicle"]})
+    assert again.status_code == 409 and "sent back to the broker" in again.text
+    done = c.post(f"/api/trips/{tid}/return/acknowledged", headers=h, json={"ref": "MC-12345", "sentby": "portal"})
+    assert done.status_code == 200 and done.json()["state"] == "returned"
+    mine = c.post("/api/trips", headers=h, json={"passenger": "PRIVATE", "tripdate": str(on), "legs": [
+        {"pickupat": f"{on}T11:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+         "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]}).json()
+    assert c.post(f"/api/trips/{mine['recordid']}/return", headers=h, json={"reason": "other"}).status_code == 409

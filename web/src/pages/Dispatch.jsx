@@ -77,6 +77,7 @@ export default function Dispatch() {
   }, [day])
   const [assigning, setAssigning] = useState(null)
   const [returning, setReturning] = useState(null)
+  const [confirming, setConfirming] = useState(null)   // a returned trip the broker has confirmed
   const [cancelling, setCancelling] = useState(null)
   const [closing, setClosing] = useState(null)
   const [issue, setIssue] = useState(null)
@@ -153,7 +154,10 @@ export default function Dispatch() {
             onClick={go(() => act(() => api.post(`/trips/${l.tripid}/accept`, {})))}>Accept</button>
           <button type="button" className="linkbtn" disabled={busy}
             onClick={go(() => setReturning(l))}>Return</button>
-        </> : l.issueid ? (
+        </> : l.brokerstate === 'returnpending' ? (
+          // Sent back and waiting on the broker: nothing to do but record that they have it.
+          <button type="button" className="linkbtn edit" onClick={go(() => setConfirming(l))}>Broker Confirmed</button>
+        ) : l.issueid ? (
           <button type="button" className="linkbtn"
             onClick={go(() => setIssue((data.problems || []).find((pr) => pr.recordid === l.issueid)))}>
             <AlertTriangle size={13} /> Deal With It
@@ -174,6 +178,11 @@ export default function Dispatch() {
           && !['returnpending', 'returned'].includes(l.brokerstate)
           && !['billed', 'paid'].includes(l.billingstatus) && (
           <button type="button" className="linkbtn edit" onClick={go(() => setEditing(l.tripid))}>Edit Trip</button>
+        )}
+        {/* A broker's trip not yet started can go back to the broker it came from. */}
+        {l.broker && !['offered', 'returnpending', 'returned'].includes(l.brokerstate) && !l.cancelled
+          && !l.outcomestate && l.executionstate === 'scheduled' && (
+          <button type="button" className="linkbtn" onClick={go(() => setReturning(l))}>Return To Broker</button>
         )}
         {/* Back on the trip page comes here again, to this day and this trip's dialog. */}
         <button type="button" className="linkbtn edit"
@@ -201,7 +210,7 @@ export default function Dispatch() {
   // One leg as a card in the lists on the left, dragged from there onto a driver.
   const queueCard = (l) => (
     <div key={l.legid} className={['gridcarditem', tone(l), !l.pickupat && 'willcallcard'].filter(Boolean).join(' ')}
-      draggable={Boolean(l.pickupat) && l.brokerstate !== 'offered'}
+      draggable={Boolean(l.pickupat) && !['offered', 'returnpending', 'returned'].includes(l.brokerstate)}
       onDragStart={(e) => { e.dataTransfer.setData('text/leg', l.legid); e.dataTransfer.effectAllowed = 'move' }}>
       <div className="legbody">
         {/* A will-call is in the will-call list already, waiting on its call: a band saying so
@@ -348,6 +357,10 @@ export default function Dispatch() {
       {booking && (
         <BookTrip onClose={() => setBooking(false)}
           onBooked={() => { setBooking(false); reload() }} />
+      )}
+      {confirming && (
+        <BrokerConfirmedDialog leg={confirming} onClose={() => setConfirming(null)}
+          onDone={() => { setConfirming(null); reload() }} />
       )}
       {returning && (
         <ReturnDialog leg={returning} reasons={data?.returnreasons || {}}
@@ -827,7 +840,7 @@ function ReturnDialog({ leg, reasons, onClose, onDone }) {
       <div className="stack">
         {err && <div className="notice bad">{err}</div>}
         <div className="notice">
-          It stays on this board, counted as uncovered, until the broker confirms they have it.
+          It stays on this board, counted as uncovered, until the broker confirms they have it. A driver on it is taken off and told.
         </div>
         <div className="profileform">
           <label className="field span-6">Reason
@@ -837,6 +850,45 @@ function ReturnDialog({ leg, reasons, onClose, onDone }) {
           </label>
           <label className="field span-6">Note
             <textarea value={note} onChange={(e) => setNote(e.target.value)} /></label>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// The broker has confirmed they have a returned trip back. Only this closes it: until then it stays
+// on the board as ours. Their reference is kept, and how it went back to them.
+function BrokerConfirmedDialog({ leg, onClose, onDone }) {
+  const [ref, setRef] = useState('')
+  const [sentby, setSentby] = useState('portal')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const go = async () => {
+    setBusy(true); setErr(null)
+    try { await api.post(`/trips/${leg.tripid}/return/acknowledged`, { ref, sentby }); onDone() }
+    catch (e) { setErr(e.message); setBusy(false) }
+  }
+  return (
+    <Modal width={560} title={`Broker Confirmed - ${leg.externalid}`} onClose={onClose}
+      footer={<>
+        <button type="button" onClick={onClose}>Cancel</button>
+        <button type="button" className="primary" disabled={busy} onClick={go}>
+          {busy ? <Loader2 size={15} className="spin" /> : 'Save'}
+        </button>
+      </>}>
+      <div className="stack">
+        {err && <div className="notice bad">{err}</div>}
+        <div className="profileform">
+          <label className="field span-3">Returned By
+            <select value={sentby} onChange={(e) => setSentby(e.target.value)}>
+              <option value="portal">Broker portal</option>
+              <option value="phone">Telephone</option>
+              <option value="email">Email</option>
+            </select>
+          </label>
+          <label className="field span-3">Broker's Reference
+            <input value={ref} className="upper" onChange={(e) => setRef(e.target.value.toUpperCase())} />
+          </label>
         </div>
       </div>
     </Modal>

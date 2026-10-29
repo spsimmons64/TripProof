@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
-from app import dayplan, dispatch, importer, phi, routing, tripcheck
+from app import dayplan, dispatch, importer, phi, routing, sms, tripcheck
 from app.routers import driverapp
 from app import rates as rateset
 from app import wheremap
@@ -447,6 +447,13 @@ def get_trip(tripid: str, user: dict = Depends(current_user), conn: Connection =
     t["whatwasdone"] = {**WAS_ACTUALLY_DONE, **WHAT_WAS_DONE}
     t["waitreasons"] = driverapp.WAIT_REASONS
     t["endreasons"] = END_REASONS
+    # Every text sent to a driver about this trip, and whether it went.
+    t["texts"] = rows(conn, """
+        SELECT x.recordid, x.kind, x.body, x.status, x.error, x.added, x.tonumber,
+               TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername
+        FROM drivertexts x LEFT JOIN drivers d ON d.recordid = x.driverid
+        WHERE x.accountid = :a AND x.tripid = :t ORDER BY x.added DESC
+    """, a=acct, t=tripid)
     t["returnreasons"] = RETURN_REASONS
     return t
 
@@ -786,6 +793,11 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
             r=reason[:2000] or None, c=json.dumps(tripchanges + mine), d=tell,
             st=leg["outcomestate"] or leg["executionstate"])
         written += 1
+        if tell:
+            what = ", ".join(dict.fromkeys(c["field"].lower() for c in tripchanges + mine))
+            sms.tell(conn, acct, tell, "changed",
+                     f"Trip {trip['externalid']} changed: {what}. Open the app and tap I Have Seen This.",
+                     tripid, leg["recordid"])
     if not written:
         run(conn, """
             INSERT INTO tripchanges (recordid, accountid, tripid, legid, changedon, changedby, reason, changes)
@@ -927,7 +939,8 @@ def evaluate_all(user: dict = Depends(editor), conn: Connection = Depends(get_co
 # single free-text note loses the difference the moment anybody reports on it.
 END_REASONS = {"reassigned": "Reassigned", "driver-declined": "The driver declined it",
                "trip-cancelled": "The trip was canceled", "corrected": "Corrected a mistake",
-               "unavailable": "The driver or vehicle became unavailable"}
+               "unavailable": "The driver or vehicle became unavailable",
+               "returned": "The trip was returned to the broker"}
 
 # Why somebody or something is out. Chosen, because "off" covers a driver on holiday booked three
 # weeks ago and a driver who rang in at six this morning, and only one of those is a contingency.
@@ -1645,6 +1658,9 @@ def assign_leg(legid: str, body: AssignIn, request: Request, user: dict = Depend
     # Called gives it its time, and then it is assigned like any other leg.
     if body.driverid and not said["leg"]["pickupat"]:
         raise HTTPException(409, "A will-call gets its driver once the passenger calls and it has a pickup time.")
+    gone = row(conn, "SELECT brokerstate FROM trips WHERE recordid = :t", t=said["leg"]["tripid"]) or {}
+    if body.driverid and gone.get("brokerstate") in ("returnpending", "returned"):
+        raise HTTPException(409, "This trip has been sent back to the broker, so it cannot be given a driver.")
     chosen_driver = next((d for d in said["drivers"] if d["driverid"] == body.driverid), None)
     chosen_vehicle = next((v for v in said["vehicles"] if v["vehicleid"] == body.vehicleid), None)
     if body.driverid and not chosen_driver:
@@ -1690,6 +1706,16 @@ def assign_leg(legid: str, body: AssignIn, request: Request, user: dict = Depend
         WHERE recordid = :l AND accountid = :a
     """, d=body.driverid, v=body.vehicleid, l=legid, a=acct)
     _shadow_check(conn, acct, body.driverid, body.vehicleid, legid, user["recordid"])
+    # Told by text: the driver now on it, and the one it was taken from.
+    was, ref, at = said["leg"]["driverid"], said["leg"]["externalid"], said["leg"]["pickupat"]
+    if body.driverid and body.driverid != was:
+        sms.tell(conn, acct, body.driverid, "assigned",
+                 f"New trip {ref}, pickup {sms.when(at)}. Open the TripProof app for the details.",
+                 said["leg"]["tripid"], legid)
+    if was and was != body.driverid:
+        sms.tell(conn, acct, was, "removed",
+                 f"Trip {ref}, pickup {sms.when(at)}, is no longer yours. Open the app.",
+                 said["leg"]["tripid"], legid)
 
     tripid = said["leg"]["tripid"]
     _settle_dispatch_state(conn, acct, tripid)
@@ -1776,7 +1802,7 @@ def unassign_leg(legid: str, body: UnassignIn, request: Request, user: dict = De
     """Take the driver and vehicle off a leg, saying which of the four things happened."""
     acct = user["accountid"]
     leg = row(conn, """
-        SELECT l.recordid, l.tripid FROM triplegs l
+        SELECT l.recordid, l.tripid, l.driverid, l.pickupat, t.externalid FROM triplegs l
         JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
         WHERE l.recordid = :id AND l.accountid = :a
     """, id=legid, a=acct)
@@ -1784,6 +1810,9 @@ def unassign_leg(legid: str, body: UnassignIn, request: Request, user: dict = De
         raise HTTPException(404, "No such leg")
     if body.endreason not in END_REASONS:
         raise HTTPException(400, "Say why it is coming off this driver")
+    sms.tell(conn, acct, leg["driverid"], "removed",
+             f"Trip {leg['externalid']}, pickup {sms.when(leg['pickupat'])}, is no longer yours. Open the app.",
+             leg["tripid"], legid)
     run(conn, """
         UPDATE tripassignments SET endedon = :now, endedby = :by, endreason = :r
         WHERE accountid = :a AND legid = :l AND endedon IS NULL
@@ -1860,15 +1889,37 @@ def return_trip(tripid: str, body: ReturnIn, request: Request, user: dict = Depe
     A rejection nobody acknowledged is a trip that simply does not get driven, and the only thing
     worse than losing it is believing it was handled."""
     acct = user["accountid"]
-    held = row(conn, "SELECT recordid, brokerid, brokerstate FROM trips WHERE recordid = :t "
-                     "AND accountid = :a AND deleted IS NULL", t=tripid, a=acct)
+    held = row(conn, "SELECT recordid, externalid, brokerid, brokerstate, cancelledon FROM trips "
+                     "WHERE recordid = :t AND accountid = :a AND deleted IS NULL", t=tripid, a=acct)
     if not held:
         raise HTTPException(404, "No such trip")
     if not held["brokerid"]:
         raise HTTPException(409, "This trip did not come from a broker, so there is nobody to "
                                  "return it to. Cancel it instead.")
+    if held["cancelledon"]:
+        raise HTTPException(409, "This trip is canceled. There is nothing to return.")
+    if held["brokerstate"] in ("returnpending", "returned"):
+        raise HTTPException(409, "This trip has already been sent back to the broker.")
+    legs = rows(conn, "SELECT recordid, driverid, pickupat, executionstate, outcomestate FROM triplegs "
+                      "WHERE tripid = :t AND accountid = :a", t=tripid, a=acct)
+    if any(l["executionstate"] != "scheduled" or l["outcomestate"] for l in legs):
+        raise HTTPException(409, "This trip has already started or been closed, so it can no longer "
+                                 "be returned to the broker.")
     if body.reason not in RETURN_REASONS:
         raise HTTPException(400, "Say why it is going back")
+    # Nobody drives a trip that is going back: whoever was on it comes off, and is told.
+    for l in legs:
+        if not l["driverid"]:
+            continue
+        run(conn, """
+            UPDATE tripassignments SET endedon = :now, endedby = :by, endreason = 'returned'
+            WHERE accountid = :a AND legid = :l AND endedon IS NULL
+        """, now=utcnow(), by=user["recordid"], a=acct, l=l["recordid"])
+        run(conn, "UPDATE triplegs SET driverid = NULL, vehicleid = NULL WHERE recordid = :l AND accountid = :a",
+            l=l["recordid"], a=acct)
+        sms.tell(conn, acct, l["driverid"], "removed",
+                 f"Trip {held['externalid']}, pickup {sms.when(l['pickupat'])}, is no longer yours. Open the app.",
+                 tripid, l["recordid"])
     run(conn, """
         INSERT INTO triprejections (recordid, accountid, tripid, reason, note, requestedon,
                                     requestedby)
@@ -1960,6 +2011,15 @@ def cancel_trip(tripid: str, body: CancelIn, request: Request, user: dict = Depe
         _settle_dispute(conn, acct, d["recordid"], "cancelled",
                         " - ".join(x for x in (CANCEL_REASONS.get(body.reason), (body.note or "").strip()) if x),
                         user["recordid"], now)
+    # Each driver still on a leg that is now not going ahead is told.
+    for g in rows(conn, """
+        SELECT l.recordid, l.driverid, l.pickupat, t.externalid FROM triplegs l JOIN trips t ON t.recordid = l.tripid
+        WHERE l.tripid = :t AND l.accountid = :a AND l.driverid IS NOT NULL AND l.executionstate <> 'completed'
+          AND (l.outcomestate IS NULL OR l.outcomestate = 'disputed')
+    """, t=tripid, a=acct):
+        sms.tell(conn, acct, g["driverid"], "canceled",
+                 f"Trip {g['externalid']}, pickup {sms.when(g['pickupat'])}, has been canceled. Open the app.",
+                 tripid, g["recordid"])
     run(conn, """
         UPDATE triplegs SET outcomestate = 'cancelled'
         WHERE tripid = :t AND accountid = :a AND executionstate <> 'completed'
