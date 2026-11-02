@@ -47,13 +47,21 @@ def get_conn():
     exit code of a dependency with yield runs *after* the response has been sent, so a client that
     reads straight after a write - the application wizard does exactly that - could be served the
     old row. Anything left uncommitted still commits on the way out, and any error still rolls the
-    whole request back."""
-    with engine.begin() as conn:
+    whole request back.
+
+    Opened with connect(), not begin(): after a `saved()` the next statement starts a new
+    transaction, so one request can save more than once - Auto Assign saves each trip it places
+    through the same endpoint a single assignment uses."""
+    with engine.connect() as conn:
         # What waits on a commit belongs to this request only: a connection goes back to the pool,
         # and a text queued by a request that then failed must not go out with the next one.
         conn.info.pop("after_commit", None)
         try:
             yield conn
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
         finally:
             conn.info.pop("after_commit", None)
 

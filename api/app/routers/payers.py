@@ -178,6 +178,7 @@ def list_payers(user: dict = Depends(current_user), conn: Connection = Depends(g
             "privatepayschedule": (row(conn, """
                 SELECT scheduleid FROM accountpayers WHERE accountid = :a AND payerid = :p
             """, a=user["accountid"], p=rateset.PRIVATE) or {}).get("scheduleid"),
+            "clockstarts": CLOCK_STARTS,
             "contractservices": list(operating.SERVICES),
             "catalog": rows(conn, "SELECT code, name FROM qualificationcatalog "
                                   "WHERE subject = 'driver' AND retiredon IS NULL ORDER BY sortorder")}
@@ -209,7 +210,46 @@ def payer_schedule(payerrecordid: str, body: PayerScheduleIn, request: Request,
     except ValueError as e:
         raise HTTPException(400, str(e))
     log(conn, user, "payer-schedule", "company", acct,
-        {"payer": payerrecordid, "schedule": body.scheduleid}, ip=client_ip(request))
+        {"payer": payerrecordid, "schedule": body.scheduleid},
+        ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+# A broker's own will-call rules, as the company's agreement with it says. Never one number for
+# every broker: one manual says 45 minutes from the passenger's call, another something else.
+CLOCK_STARTS = {"passenger": "The passenger's call to the broker", "broker": "The broker's notice to us"}
+
+
+class WillCallRulesIn(BaseModel):
+    pickuplimit: int | None = None          # minutes the broker allows from the clock starting to pickup
+    clockstarts: str | None = None          # CLOCK_STARTS
+    afterhourscontact: str | None = None
+
+
+@router.put("/company/payers/{payerrecordid}/willcall-rules")
+def payer_willcall_rules(payerrecordid: str, body: WillCallRulesIn, request: Request,
+                         user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
+    """This company's will-call terms with a broker: how long it has to collect a will-call, from
+    when, and who to ring after hours."""
+    acct = user["accountid"]
+    if not row(conn, "SELECT 1 AS x FROM payers WHERE recordid = :i AND (accountid IS NULL OR accountid = :a)",
+               i=payerrecordid, a=acct):
+        raise HTTPException(404, "No such payer")
+    if body.pickuplimit is not None and not 5 <= body.pickuplimit <= 600:
+        raise HTTPException(400, "The pickup limit is in minutes, between 5 and 600")
+    if body.clockstarts and body.clockstarts not in CLOCK_STARTS:
+        raise HTTPException(400, "Say when the broker's clock starts")
+    clean = {"pl": body.pickuplimit, "cs": body.clockstarts or None,
+             "ah": (body.afterhourscontact or "").strip().upper()[:160] or None}
+    run(conn, """
+        INSERT INTO accountpayers (accountid, payerid, pickuplimit, clockstarts, afterhourscontact,
+                                   updated, updatedby)
+        VALUES (:a, :p, :pl, :cs, :ah, :now, :u)
+        ON DUPLICATE KEY UPDATE pickuplimit = :pl, clockstarts = :cs, afterhourscontact = :ah,
+               updated = :now, updatedby = :u
+    """, a=acct, p=payerrecordid, now=utcnow(), u=user["recordid"], **clean)
+    log(conn, user, "payer-willcall-rules", "company", acct, {"payer": payerrecordid, **clean}, ip=client_ip(request))
     saved(conn)
     return {"ok": True}
 

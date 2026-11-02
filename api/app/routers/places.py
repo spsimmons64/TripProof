@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app import routing, wheremap
+from app import shifts as plan
 from app.activity import log
 from app.db import get_conn, newid, row, rows, run, saved, utcnow
 from app.security import client_ip, current_user, editor
@@ -26,6 +27,8 @@ class EntryIn(BaseModel):
     zip: str | None = None
     phone: str | None = None
     dob: date | None = None          # passengers only: to be sure who is calling
+    critical: bool = False           # places only: every trip there is one that cannot be missed
+    closesat: str | None = None      # places only: when it locks up ("17:00")
 
 
 def full(e: dict) -> str:
@@ -34,13 +37,34 @@ def full(e: dict) -> str:
     return ", ".join(x for x in (e.get("address"), e.get("city"), tail) if x)
 
 
+def _clock(v) -> str | None:
+    """A TIME column, or what was typed, as "17:00"; nothing if there is none."""
+    return f"{plan.as_time(v):%H:%M}" if v not in (None, "") else None
+
+
+def _closing(body: EntryIn) -> str | None:
+    try:
+        return _clock(body.closesat)
+    except (ValueError, IndexError):
+        raise HTTPException(400, "Give the closing time as hours and minutes") from None
+
+
+def facility_closes(conn: Connection, acct: str, address: str) -> dict | None:
+    """The place on the list at this address that says when it closes."""
+    return next((p for p in rows(conn, "SELECT name, address, city, state, zip, closesat FROM places "
+                                       "WHERE accountid = :a AND deleted IS NULL AND closesat IS NOT NULL", a=acct)
+                 if full(p).upper() == " ".join(address.split()).upper()), None)
+
+
 def _list(conn: Connection, table: str, acct: str) -> list[dict]:
     out = rows(conn, f"""
-        SELECT recordid, name, address, city, state, zip, phone{", dob" if table == "passengers" else ""}
+        SELECT recordid, name, address, city, state, zip, phone{", dob" if table == "passengers" else ", critical, closesat"}
         FROM {table} WHERE accountid = :a AND deleted IS NULL ORDER BY name, address
     """, a=acct)
     for e in out:
         e["full"] = full(e)
+        if "closesat" in e:
+            e["closesat"] = _clock(e["closesat"])
     return out
 
 
@@ -67,21 +91,22 @@ def _add(conn: Connection, table: str, body: EntryIn, user: dict, request: Reque
     elif row(conn, "SELECT 1 AS x FROM places WHERE accountid = :a AND deleted IS NULL "
                    "AND name = :n AND address = :ad", a=acct, n=name, ad=address):
         raise HTTPException(409, f"{name} at {address} is already on the list.")
+    closes = None if person else _closing(body)
     rid = newid()
     entry = {"address": address, "city": city, "state": state, "zip": zipcode}
     # Where it is, looked up once now: every route to or from it starts here.
     at = wheremap.place(full(entry))
     run(conn, f"""
         INSERT INTO {table} (recordid, accountid, name, address, city, state, zip, lat, lng, phone,
-                             added, addedby{", dob" if person else ""})
-        VALUES (:id, :a, :n, :ad, :c, :s, :z, :lat, :lng, :p, :now, :by{", :d" if person else ""})
+                             added, addedby{", dob" if person else ", critical, closesat"})
+        VALUES (:id, :a, :n, :ad, :c, :s, :z, :lat, :lng, :p, :now, :by{", :d" if person else ", :crit, :cl"})
     """, id=rid, a=acct, n=name[:160], ad=address[:255], c=city[:80], s=state[:2], z=zipcode[:10],
         lat=at and at[0], lng=at and at[1], p=phone and phone[:32], now=utcnow(),
-        by=user["recordid"], d=body.dob)
+        by=user["recordid"], d=body.dob, crit=int(body.critical), cl=closes)
     log(conn, user, f"{KINDS[table]}-added", KINDS[table], rid, {"name": name}, ip=client_ip(request))
     saved(conn)
     out = {"recordid": rid, "name": name, **entry, "full": full(entry), "phone": phone}
-    return {**out, "dob": body.dob} if person else out
+    return {**out, "dob": body.dob} if person else {**out, "critical": int(body.critical), "closesat": closes}
 
 
 # The list pages: searched, sorted and paged on the server, the way every grid is.
@@ -99,12 +124,14 @@ def _page(conn: Connection, table: str, acct: str, q, sort, dir, page, pagesize)
     pagesize = max(1, min(pagesize, 200))
     total = row(conn, f"SELECT COUNT(*) AS n FROM {table} WHERE {clause}", **params)["n"]
     items = rows(conn, f"""
-        SELECT recordid, name, address, city, state, zip, phone{", dob" if table == "passengers" else ""}
+        SELECT recordid, name, address, city, state, zip, phone{", dob" if table == "passengers" else ", critical, closesat"}
         FROM {table} WHERE {clause}
         ORDER BY {column} {direction}, name ASC, recordid ASC LIMIT :lim OFFSET :off
     """, lim=pagesize, off=(max(1, page) - 1) * pagesize, **params)
     for e in items:
         e["full"] = full(e)
+        if "closesat" in e:
+            e["closesat"] = _clock(e["closesat"])
     return {"items": items, "total": total, "page": page, "pagesize": pagesize}
 
 
@@ -127,19 +154,20 @@ def _change(conn: Connection, table: str, rid: str, body: EntryIn, user: dict, r
             raise HTTPException(400, "Give the passenger's date of birth")
         if body.dob >= date.today() or body.dob.year < 1900:
             raise HTTPException(400, "That date of birth cannot be right")
+    closes = None if person else _closing(body)
     entry = {"address": address, "city": city, "state": state, "zip": zipcode}
     moved = full(entry) != full(held)
     at = wheremap.place(full(entry)) if moved else None
     run(conn, f"""
         UPDATE {table} SET name = :n, address = :ad, city = :c, state = :s, zip = :z, phone = :p
-               {", dob = :d" if person else ""}{", lat = :lat, lng = :lng" if moved else ""}
+               {", dob = :d" if person else ", critical = :crit, closesat = :cl"}{", lat = :lat, lng = :lng" if moved else ""}
         WHERE recordid = :r AND accountid = :a
     """, n=name[:160], ad=address[:255], c=city[:80], s=state[:2], z=zipcode[:10], p=phone and phone[:32],
-        d=body.dob, lat=at and at[0], lng=at and at[1], r=rid, a=acct)
+        d=body.dob, crit=int(body.critical), cl=closes, lat=at and at[0], lng=at and at[1], r=rid, a=acct)
     log(conn, user, f"{KINDS[table]}-changed", KINDS[table], rid, {"name": name}, ip=client_ip(request))
     saved(conn)
     return {"recordid": rid, "name": name, **entry, "full": full(entry), "phone": phone,
-            **({"dob": body.dob} if person else {})}
+            **({"dob": body.dob} if person else {"critical": int(body.critical), "closesat": closes})}
 
 
 def _remove(conn: Connection, table: str, rid: str, user: dict, request: Request) -> dict:
@@ -227,6 +255,30 @@ def _where(conn: Connection, acct: str, address: str) -> tuple[float, float] | N
 # On top of the drive itself: getting the passenger out and in, and arriving rather than just
 # making it.
 SPARE = timedelta(minutes=10)
+
+
+# Further from the company than this, an address has most likely been found in the wrong town.
+FAR = 60
+
+
+def misplaced(conn: Connection, acct: str, address: str) -> str | None:
+    """Why this address is in doubt - not found on the map, or found far from the company - or None.
+    A trip is timed from where its addresses are, so one placed in the wrong town makes a short trip
+    look hours long, and a booking refused for it would be refused for nothing."""
+    at = _where(conn, acct, " ".join(address.split()).upper())
+    if not at:
+        return "could not be found on the map"
+    base = wheremap.base_of(conn, acct)
+    if not base:
+        return None
+    miles = wheremap._miles((base["lat"], base["lng"]), at)
+    return f"mapped {miles:.0f} miles from your office" if miles > FAR else None
+
+
+@router.get("/address-check")
+def address_check(address: str, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """Whether an address being booked is where it ought to be."""
+    return {"problem": misplaced(conn, user["accountid"], address) if address.strip() else None}
 
 
 @router.get("/route-estimate")

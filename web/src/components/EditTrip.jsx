@@ -6,6 +6,7 @@ import { Modal } from '../admin/common.jsx'
 import { Loading, useLoad } from './ui.jsx'
 import { PhoneInput } from './MaskedInput.jsx'
 import SearchSelect from './SearchSelect.jsx'
+import AddressCheck from './AddressCheck.jsx'
 import { EntryDialog } from './BookTrip.jsx'
 
 // Putting right a booked trip, within what its stage allows.
@@ -31,21 +32,30 @@ export default function EditTrip({ tripid, onClose, onDone }) {
   const [places, , reloadPlaces] = useLoad(() => api.get('/places'), [])
   const [adding, setAdding] = useState(null)       // { kind, leg? }
   const [f, setF] = useState(null)
+  const [opened, setOpened] = useState(null)   // the form as it opened, to tell what has been changed
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
 
   if (trip && !f) {
-    setF({
+    const start = {
       passenger: trip.passenger || '', passengerphone: trip.passengerphone || '',
       servicelevel: trip.servicelevel || 'ambulatory', brokerid: trip.brokerid || '',
-      payer: trip.payer || 'private', note: trip.note || '', reason: '',
+      payer: trip.payer || 'private', note: trip.note || '', reason: '', critical: Boolean(trip.critical),
       legs: trip.legs.map((l) => ({
         legid: l.recordid, legnumber: l.legnumber, pickupat: clock(l.pickupat),
         dropoffat: clock(l.dropoffat), appointmentat: clock(l.appointmentat), route: null,
         byhand: false, placeid: '', pickupplace: l.pickupplace || '',
         dropoffplace: l.dropoffplace || '', miles: l.miles ?? '',
+        // A will-call still waiting for its call: when they should be ready, and the plan home.
+        willcall: !l.pickupat, readyabout: clock(l.readyabout), returnplan: l.returnplan || '',
+        handedback: Boolean(l.brokerstate),
+        // A return: who brings them home. Asking the broker shows as such once it is asked.
+        responsibility: l.brokerstate ? 'broker' : (l.responsibility || (l.legnumber > 1 ? 'provider' : '')),
+        responsibilitynote: l.responsibilitynote || '',
       })),
-    })
+    }
+    setF(start)
+    setOpened(start)
   }
   if (!trip || !f) {
     return <Modal title="Edit Trip" onClose={onClose}><Loading error={error} /></Modal>
@@ -63,7 +73,10 @@ export default function EditTrip({ tripid, onClose, onDone }) {
     done: [],
     closed: [],
   }[rules.legs[leg.legid]] || []).includes(field)
-  const ready = f.passenger.trim() && (!rules.reasonrequired || f.reason.trim())
+  // The Critical tick is the office's own ordering: changed on its own, nobody is asked why.
+  const bare = (x) => JSON.stringify({ ...x, critical: false, reason: '' })
+  const onlyCritical = bare(f) === bare(opened) && f.critical !== opened.critical
+  const ready = f.passenger.trim() && (!rules.reasonrequired || f.reason.trim() || onlyCritical)
   const putLeg = (n, patch) => setF((was) => ({ ...was, legs: was.legs.map((l, i) => (i === n ? { ...l, ...patch } : l)) }))
   const pickRider = (id, list = riders?.items) => {
     const r = (list || []).find((x) => x.recordid === id)
@@ -90,7 +103,7 @@ export default function EditTrip({ tripid, onClose, onDone }) {
       await api.put(`/trips/${tripid}`, {
         passenger: f.passenger, passengerphone: f.passengerphone.trim() || null,
         servicelevel: f.servicelevel, brokerid: f.brokerid || null, payer: f.payer,
-        note: f.note.trim() || null, reason: f.reason.trim() || null,
+        note: f.note.trim() || null, reason: f.reason.trim() || null, critical: f.critical,
         legs: f.legs.map((l) => ({
           legid: l.legid,
           pickupat: l.pickupat ? `${l.pickupat}:00` : null,
@@ -98,6 +111,9 @@ export default function EditTrip({ tripid, onClose, onDone }) {
           appointmentat: l.appointmentat ? `${l.appointmentat}:00` : null,
           pickupplace: l.pickupplace, dropoffplace: l.dropoffplace,
           miles: l.miles === '' ? null : Number(l.miles),
+          ...(l.willcall ? { readyabout: l.readyabout ? `${l.readyabout}:00` : null } : {}),
+          ...(l.legnumber > 1 && !l.handedback ? { responsibility: l.responsibility || null,
+                                                   responsibilitynote: l.responsibility === 'other' ? l.responsibilitynote : null } : {}),
         })),
       })
       onDone()
@@ -156,6 +172,10 @@ export default function EditTrip({ tripid, onClose, onDone }) {
                 ))}
               </select>
             </label>
+            <label className="field check">
+              <input type="checkbox" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })} />
+              Critical Trip
+            </label>
           </div>
           </div>
           </div>
@@ -180,6 +200,7 @@ export default function EditTrip({ tripid, onClose, onDone }) {
                     <input value={l.pickupplace} className="upper" disabled={!may(l, 'pickupplace')}
                       onChange={setLeg(n, 'pickupplace', true)} />
                   </label>
+                  {may(l, 'pickupplace') && <AddressCheck address={l.pickupplace} label="pickup" />}
                   <div className="field span-6">Drop Off At
                     <div className="pickadd">
                       <SearchSelect items={places?.items || []} value={l.placeid} disabled={!may(l, 'dropoffplace')}
@@ -189,6 +210,34 @@ export default function EditTrip({ tripid, onClose, onDone }) {
                         onClick={() => setAdding({ kind: 'places', leg: n })}><Plus size={13} /> New Location</button>
                     </div>
                   </div>
+                  {may(l, 'dropoffplace') && <AddressCheck address={l.dropoffplace} label="drop-off" />}
+                  {/* A will-call: Ready About, and - should it run past closing - how they get home.
+                      The server refuses a return that needs a plan and has none. */}
+                  {l.willcall && (<>
+                    <label className="field span-3">Ready About
+                      <input type="datetime-local" value={l.readyabout} disabled={!may(l, 'pickupat')}
+                        onChange={(e) => putLeg(n, { readyabout: e.target.value })} />
+                    </label>
+                  </>)}
+                  {/* Every return says who brings the passenger home. Not decided keeps the trip
+                      there from being given a driver. */}
+                  {l.legnumber > 1 && (<>
+                    <label className="field span-3">Who Brings Them Home
+                      <select value={l.responsibility} disabled={!may(l, 'pickupat') || l.handedback}
+                        onChange={(e) => putLeg(n, { responsibility: e.target.value })}>
+                        <option value="provider">We do</option>
+                        {(f.brokerid || l.handedback) && <option value="broker">{l.handedback ? 'The broker (asked)' : 'Ask the broker to take it'}</option>}
+                        <option value="other">Another provider (confirmed)</option>
+                        <option value="unconfirmed">Not decided yet</option>
+                      </select>
+                    </label>
+                    {l.responsibility === 'other' && (
+                      <label className="field span-3">Provider And Confirmation *
+                        <input value={l.responsibilitynote} className="upper" disabled={!may(l, 'pickupat')}
+                          onChange={(e) => putLeg(n, { responsibilitynote: e.target.value.toUpperCase() })} />
+                      </label>
+                    )}
+                  </>)}
                   {l.route && (
                     <div className={`span-6 routeline${l.route.error ? ' st-expired' : ''}`}>
                       {l.route.error ? l.route.error
@@ -209,7 +258,7 @@ export default function EditTrip({ tripid, onClose, onDone }) {
             <label className="field span-6">Note
               <textarea value={f.note} className="upper" onChange={set('note', true)} />
             </label>
-            <label className="field span-6">Why Is It Being Changed{rules.reasonrequired ? ' *' : ''}
+            <label className="field span-6">Why Is It Being Changed{rules.reasonrequired && !onlyCritical ? ' *' : ''}
               <textarea value={f.reason} className="upper" onChange={set('reason', true)} />
             </label>
           </div>

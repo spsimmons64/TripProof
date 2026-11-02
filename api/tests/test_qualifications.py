@@ -307,7 +307,10 @@ def test_a_payer_line_is_matched_by_the_state_the_trip_begins_in(client, q):
     # Begun in Florida, the same payer is carried for - the return into Georgia included.
     trip["legs"] = [{"pickupat": f"{on}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
                      "dropoffplace": "12 OAK ST, VALDOSTA, GA 31601"}]
-    assert client.post("/api/trips", headers=h, json=trip).status_code == 200
+    # It passes the payer line; this company has nobody who could drive it, so it stops at
+    # availability - the next gate - and not at the line.
+    begun = client.post("/api/trips", headers=h, json=trip)
+    assert begun.status_code == 409 and "Not booked" in begun.text and "not set up" not in begun.text, begun.text
     with q["db"].connect() as conn:
         leg = {"vehicleid": None, "pickupat": datetime.combine(on, datetime.min.time()),
                "tripdate": on, "brokerid": p, "payer": "broker", "servicelevel": "ambulatory",

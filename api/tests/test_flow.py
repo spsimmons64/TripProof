@@ -86,6 +86,17 @@ def test_full_flow(client, ctx):
 
     # The same bytes cannot be imported twice.
     assert client.post("/api/imports", files={"file": ("again.csv", CSV, "text/csv")}, headers=h).status_code == 409
+    # The broker's changed manifest, sent again: the trip already on file takes the new time - one
+    # trip, not two.
+    moved = CSV.split(b"\n")[0] + b"\n" + b"T1001,03/20/2026,9:45 AM,DRV-7,Maria Lopez,V12,ModivCare,AMB,$45.00,Jane Doe,123456789,1 Main St Tampa,2 Clinic Rd,Y,Y\n"
+    again = client.post("/api/imports", files={"file": ("changed.csv", moved, "text/csv")}, headers=h)
+    assert again.status_code == 200, again.text
+    took = client.post(f"/api/imports/{again.json()['recordid']}/accept", headers=h)
+    assert took.status_code == 200 and took.json()["trips"] == 0 and took.json()["updated"] == 1, took.text
+    with ctx["db"].connect() as conn:
+        legs = conn.execute(text("SELECT l.pickupat FROM triplegs l JOIN trips t ON t.recordid = l.tripid "
+                                 "WHERE t.externalid = 'T1001' AND t.accountid = :a"), {"a": me["accountid"]}).scalars().all()
+    assert [str(x) for x in legs] == ["2026-03-20 09:45:00"], legs
 
     # --- exposure: nobody on these trips has been hired -----------------------------------------
     t = trips_by_ext(client, ctx)

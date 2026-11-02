@@ -113,6 +113,9 @@ function PayerDialog({ held, categories, data, offered, onPick, lines, reload, o
     ...Object.fromEntries(ADDRESS.map((k) => [k, held[k] || ''])),
     active: held.active === undefined ? true : Boolean(held.active),
     scheduleid: (held.privatepay ? data.privatepayschedule : held.scheduleid) || '',
+    // The broker's will-call terms (none for private pay).
+    pickuplimit: held.pickuplimit ?? '', clockstarts: held.clockstarts || '',
+    afterhourscontact: held.afterhourscontact || '',
   })
   const [busy, setBusy] = useState(null)
   const [err, setErr] = useState(null)
@@ -144,7 +147,14 @@ function PayerDialog({ held, categories, data, offered, onPick, lines, reload, o
     </label>
   )
   // Saved as the company's own for every payer, a shared one and private pay included.
-  const keepSchedule = (id) => api.put(`/company/payers/${id}/schedule`, { scheduleid: f.scheduleid })
+  const keepSchedule = async (id) => {
+    await api.put(`/company/payers/${id}/schedule`, { scheduleid: f.scheduleid })
+    if (id !== 'privatepay') {
+      await api.put(`/company/payers/${id}/willcall-rules`, {
+        pickuplimit: f.pickuplimit === '' ? null : Number(f.pickuplimit), clockstarts: f.clockstarts || null,
+        afterhourscontact: f.afterhourscontact })
+    }
+  }
   const save = () => act(async () => {
     if (held.privatepay) return keepSchedule('privatepay')
     if (held.shared) {
@@ -283,6 +293,23 @@ function PayerDialog({ held, categories, data, offered, onPick, lines, reload, o
 
           <label className="field span-6">Notes
             <textarea disabled={locked} value={f.notes} onChange={set('notes')} rows={3} />
+          </label>
+
+          {/* This company's will-call terms with the payer - its own, even at a shared broker.
+              Never one number for every broker. */}
+          <h3 className="formsection span-6">Will-Call Rules</h3>
+          <label className="field span-2">Pickup Limit (Minutes)
+            <input type="number" min="5" max="600" value={f.pickuplimit} onChange={set('pickuplimit')} />
+          </label>
+          <label className="field span-4">Clock Starts From
+            <select value={f.clockstarts} onChange={set('clockstarts')}>
+              <option value="">Choose</option>
+              {Object.entries(data.clockstarts || {}).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
+          <label className="field span-6">After-Hours Contact
+            <input value={f.afterhourscontact} className="upper"
+              onChange={(e) => setF({ ...f, afterhourscontact: e.target.value.toUpperCase() })} />
           </label>
         </div>
         </fieldset>

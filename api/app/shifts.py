@@ -105,6 +105,32 @@ def clash(conn: Connection, accountid: str, day: date, driverid: str, vehicleid:
     return None
 
 
+def on_call(conn: Connection, accountid: str, day: date) -> list[dict]:
+    """The day's on-call list, each read as a shift: from closing (from midnight on a day with no
+    hours) until the time given, or to the end of the day - in the vehicle they would take."""
+    from app.routers.shifts import company_hours
+    h = company_hours(conn, accountid, day)
+    starts = as_time(h["close"]) if h and not h.get("closed") else time(0, 0)
+    out = rows(conn, """
+        SELECT o.recordid, o.workday, o.driverid, o.vehicleid, o.untilat, d.phone,
+               TRIM(CONCAT(d.firstname, ' ', d.lastname)) AS drivername, v.externalid AS vehiclename
+        FROM oncall o JOIN drivers d ON d.recordid = o.driverid JOIN vehicles v ON v.recordid = o.vehicleid
+        WHERE o.accountid = :a AND o.workday = :w
+    """, a=accountid, w=day)
+    for o in out:
+        o.update(startsat=starts, endsat=as_time(o["untilat"]) if o["untilat"] is not None else time(23, 59),
+                 oncall=1, source="oncall")
+    return out
+
+
+def working(conn: Connection, accountid: str, day: date) -> list[str]:
+    """The drivers who could drive that day, weeks ahead: every hired driver - anybody out is left
+    to the trip check, which asks it of the trip's own time."""
+    return [d["recordid"] for d in rows(conn, """
+        SELECT recordid FROM drivers WHERE accountid = :a AND deleted IS NULL AND stub = 0 AND status = 'hired'
+    """, a=accountid)]
+
+
 def _usual(conn: Connection, accountid: str) -> dict[str, str]:
     """The vehicle each driver drove most recently - on a shift, or on a trip."""
     out = {}
@@ -165,7 +191,6 @@ def generate(conn: Connection, accountid: str, day: date, wanted: list[dict]) ->
     held = [h for h in rows(conn, """
         SELECT driverid, vehicleid, startsat, endsat FROM dayshifts WHERE accountid = :a AND workday = :w
     """, a=accountid, w=day) if h["driverid"] not in planning]
-
     options = {}
     for w in wanted:
         at = datetime.combine(day, as_time(w.get("startsat") or DEFAULT_START))
@@ -196,12 +221,12 @@ def generate(conn: Connection, accountid: str, day: date, wanted: list[dict]) ->
     # The driver with the fewest vehicles open to them chooses first.
     order = sorted(wanted, key=lambda w: sum(1 for o in options[w["driverid"]].values() if o["ok"]))
     for w in order:
+        name = row(conn, "SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS n FROM drivers WHERE recordid = :d",
+                   d=w["driverid"])["n"]
         start, end = as_time(w.get("startsat") or DEFAULT_START), as_time(w.get("endsat") or DEFAULT_END)
         a, b = span(day, start, end)
         free = [vid for vid, o in options[w["driverid"]].items() if o["ok"]
                 and not any(t[0] == vid and a < t[2] and t[1] < b for t in taken)]
-        name = row(conn, "SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS n FROM drivers WHERE recordid = :d",
-                   d=w["driverid"])["n"]
         standing = hos.standing(conn, accountid, w["driverid"], day)
         hours = hos.hours(standing["weektotal"]) if standing else None
         if not free:

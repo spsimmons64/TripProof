@@ -241,6 +241,7 @@ def kind_of(schedule: dict) -> str | None:
     return "private" if schedule.get("privatepay") else (schedule.get("payerkinds") or None)
 
 
+# How a company ranks who pays, for Auto Assign when there are not drivers enough for every trip.
 def set_payer_schedule(conn: Connection, accountid: str, payerid: str, kind: str,
                        scheduleid: str | None, userid: str | None) -> None:
     """The fee schedule this company is paid under by a payer - one of its own type, and active."""
@@ -382,6 +383,7 @@ def payers(conn: Connection, accountid: str) -> list[dict]:
                -- Whether THIS company works with it: its own say about a shared payer first.
                COALESCE(ap.active, p.active) AS active, ap.active IS NOT NULL AS decided,
                ap.scheduleid,
+               ap.pickuplimit, ap.clockstarts, ap.afterhourscontact,
                p.accountid IS NULL AS shared,
                -- A company's own broker that is also on the master list reads its address and
                -- contact from the master, so there is one copy of where a broker is.

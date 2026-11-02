@@ -242,7 +242,7 @@ function CompanyForm({ company, onSaved }) {
               </div>
             </div>
             <div className="card qualcard">
-              <div className="infotabs"><h3>Hours Of Operation</h3></div>
+              <div className="infotabs"><h3>Transportation Hours</h3></div>
               <div className="panelbody">
                 <table className="residencetable recordtable hourstable">
                   <thead><tr><th>Day</th><th>Opens</th><th>Closes</th><th>Closed</th></tr></thead>

@@ -1463,6 +1463,12 @@ def stand(rule: dict, evidence: dict | None, today: date,
         due = (rule.get("duetext") or "").strip()
         return "pending", f"Nothing on file yet. {due}." if due else "Nothing on file yet."
 
+    # An exclusion screening is renewed by TripProof itself (the daily OIG and SAM jobs), so a trip
+    # weeks ahead is not refused because this month's screening will have run out by then - it will
+    # have been screened again. Judged as of today; on the day, the trip is judged as of the day.
+    if rule.get("evidencekind") == "exclusioncheck" and today > date.today():
+        today = date.today()
+
     finding = (evidence.get("determination") or "").lower()
     # 391.25: "qualified, with corrective action noted" does not clear the driver on its own - the
     # action is outstanding until a later review records it done. Said, and not counted as clear.

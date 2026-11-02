@@ -108,6 +108,14 @@ function WhatHappened({ leg, issues, changes, words }) {
   )
 }
 
+// Where a trip, or one ride home, stands with the broker once it has been handed back.
+const BROKERSAID = { returnpending: 'Request For Broker Return', returned: 'Returned To Broker', offered: 'Offered By Broker' }
+// The broker's confirmation number, from the latest return they confirmed.
+const confirmed = (rejections) => {
+  const ref = [...(rejections || [])].reverse().find((r) => r.acknowledgedon)?.acknowledgedref
+  return ref ? ` - Confirmation #: ${ref}` : ''
+}
+
 // Whether a text to a driver went, in a word or two.
 const TEXTSTATUS = { sent: 'Sent', queued: 'Sending', failed: 'Not sent', off: 'Not sent (texting not set up)',
                      nophone: 'Not sent (no mobile number)' }
@@ -145,6 +153,8 @@ export default function TripDetail() {
           <h1 className="row">Trip <span className="mono" style={{ fontSize: 20 }}>{trip.externalid}</span>
             {atRisk ? <Badge state="atrisk" /> : <Badge state="clean" />}</h1>
           <div className="muted">{date(trip.tripdate)} · {trip.brokername || 'Unknown broker'} · {trip.servicelevel || 'level not given'} · {money(trip.billedamount)} · {trip.billingstatus}</div>
+          {/* Handed back to the broker: where the whole trip stands, said before anything else. */}
+          {BROKERSAID[trip.brokerstate] && <div className="tripbroker">{BROKERSAID[trip.brokerstate]}{confirmed(trip.rejections)}</div>}
         </div>
         <div className="row">
           <button type="button" className="back" onClick={back}><ChevronLeft size={14} /> Back</button>
@@ -180,7 +190,8 @@ export default function TripDetail() {
         const checks = trip.checks.filter((c) => c.legid === leg.recordid)
         return (
           <div className="card" key={leg.recordid}>
-            <h2>Leg {leg.legnumber} · pickup {datetime(leg.pickupat)}</h2>
+            <h2>Leg {leg.legnumber} · pickup {datetime(leg.pickupat)}
+              {BROKERSAID[leg.brokerstate] && <span> · {BROKERSAID[leg.brokerstate]}{leg.brokerstate === 'returned' ? confirmed(trip.rejections) : ''}</span>}</h2>
             <div className="row muted" style={{ marginBottom: 12 }}>
               <span>Driver: {leg.driverid ? <Link to={`/drivers/${leg.driverid}`}>{leg.drivername}</Link> : (leg.driverexternal || 'none')}</span>
               <span>· Vehicle: {leg.vehicleid ? <Link to={`/vehicles/${leg.vehicleid}`}>{leg.unit || 'vehicle'}{leg.modelyear ? ` (${leg.modelyear})` : ''}</Link> : (leg.vehicleexternal || 'none')}</span>

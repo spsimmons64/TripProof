@@ -544,7 +544,7 @@ def test_5d_a_will_call_is_booked_without_a_time_and_released_when_the_passenger
     co = make()
     c, h = co["client"], co["h"]
     on = date.today() + timedelta(days=4)
-    there = {"pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, ORLANDO, FL 32801"}
+    there = {"pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}
     back = {"pickupplace": there["dropoffplace"], "dropoffplace": there["pickupplace"], "pickupat": None}
     assert c.post("/api/trips", headers=h, json={"passenger": "WILL CALL", "tripdate": str(on),
                                                  "legs": [{**there, "pickupat": None}]}).status_code == 400
@@ -561,7 +561,7 @@ def test_5d_a_will_call_is_booked_without_a_time_and_released_when_the_passenger
                                           headers=h).json()["items"]}
     # Waiting for the call, it is on every day's board; canceled, only on the day it was canceled.
     other = c.post("/api/trips", headers=h, json={"passenger": "WILL CALL TWO", "tripdate": str(on),
-                                                  "legs": [{**there, "pickupat": f"{on}T08:00:00"}, back]})
+                                                  "legs": [{**there, "pickupat": f"{on}T11:00:00"}, back]})
     with co["db"].connect() as conn:
         gone = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t AND legnumber = 2"),
                             {"t": other.json()["recordid"]}).scalar()
@@ -574,12 +574,14 @@ def test_5d_a_will_call_is_booked_without_a_time_and_released_when_the_passenger
     # A call is not always "come and get me". Not ready: written down, still waiting. Not needed:
     # the return is closed as canceled, with why - and "something else" has to say what.
     third = c.post("/api/trips", headers=h, json={"passenger": "WILL CALL THREE", "tripdate": str(on),
-                                                  "legs": [{**there, "pickupat": f"{on}T08:00:00"}, back]})
+                                                  "legs": [{**there, "pickupat": f"{on}T14:00:00"}, back]})
     with co["db"].connect() as conn:
         late = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t AND legnumber = 2"),
                             {"t": third.json()["recordid"]}).scalar()
     assert c.post(f"/api/legs/{late}/call", headers=h,
-                  json={"answer": "notready", "note": "CALL BACK AT 3"}).status_code == 200
+                  json={"answer": "notready", "note": "CALL BACK AT 3"}).status_code == 400
+    assert c.post(f"/api/legs/{late}/call", headers=h, json={"answer": "notready", "note": "CALL BACK AT 3",
+                                                             "readyabout": f"{on}T15:00:00"}).status_code == 200
     waiting = next(i for i in c.get(f"/api/dispatch/board?day={on}&state=all&pagesize=200",
                                     headers=h).json()["items"] if i["legid"] == late)
     assert waiting["outcomestate"] is None and "NOT READY YET - CALL BACK AT 3" in waiting["lastcall"]
@@ -1461,3 +1463,669 @@ def test_5w_an_accepted_broker_trip_goes_back_to_the_broker(make):
         {"pickupat": f"{on}T11:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
          "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]}).json()
     assert c.post(f"/api/trips/{mine['recordid']}/return", headers=h, json={"reason": "other"}).status_code == 409
+
+
+def test_5x_auto_assign_places_only_the_ticked_trips_and_saves_them_all(make):
+    """Auto Assign plans only the trips the dispatcher ticked, refuses an empty tick list, and saves
+    every one of a plan in one request - each through the ordinary assignment, which commits."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=6)
+    assert c.post("/api/shifts", headers=h, json={"day": str(on), "driverid": co["driver"],
+                                                  "vehicleid": co["vehicle"], "startsat": "08:00",
+                                                  "endsat": "16:00"}).status_code == 200
+    legs = []
+    for at in ("09:00", "11:00", "13:00"):
+        trip = c.post("/api/trips", headers=h, json={"passenger": f"TICK {at}", "tripdate": str(on), "legs": [
+            {"pickupat": f"{on}T{at}:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+             "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+        assert trip.status_code == 200, trip.text
+        with co["db"].connect() as conn:
+            legs.append(conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"),
+                                     {"t": trip.json()["recordid"]}).scalar())
+    assert c.post("/api/dispatch/autoplan", headers=h, json={"day": str(on), "legids": []}).status_code == 400
+    planned = c.post("/api/dispatch/autoplan", headers=h, json={"day": str(on), "legids": legs[:2]})
+    assert planned.status_code == 200, planned.text
+    assert {p["legid"] for p in planned.json()["proposal"]} == set(legs[:2])
+    got = c.post("/api/dispatch/autoplan/save", headers=h, json={"items": [
+        {"legid": l, "driverid": co["driver"], "vehicleid": co["vehicle"]} for l in legs[:2]]})
+    assert got.status_code == 200 and got.json() == {"saved": 2, "refused": []}, got.text
+    with co["db"].connect() as conn:
+        held = conn.execute(text("SELECT recordid, driverid FROM triplegs WHERE recordid IN :l")
+                            .bindparams(bindparam("l", expanding=True)), {"l": legs}).all()
+    assert {r[0]: r[1] for r in held} == {legs[0]: co["driver"], legs[1]: co["driver"], legs[2]: None}
+
+
+def test_5y_a_critical_trip_is_placed_before_an_earlier_ordinary_one(make):
+    """Two trips at once for the only driver on shift: the critical one gets the driver though it is
+    later, and the other says it gave way. A location marked Critical Care keeps the mark."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=6)
+    assert c.post("/api/shifts", headers=h, json={"day": str(on), "driverid": co["driver"],
+                                                  "vehicleid": co["vehicle"], "startsat": "08:00",
+                                                  "endsat": "16:00"}).status_code == 200
+    legs = {}
+    for who, at, critical in (("ORDINARY", "10:00", False), ("DIALYSIS", "10:05", True)):
+        trip = c.post("/api/trips", headers=h, json={"passenger": who, "tripdate": str(on), "critical": critical,
+            "legs": [{"pickupat": f"{on}T{at}:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+                      "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+        assert trip.status_code == 200, trip.text
+        with co["db"].connect() as conn:
+            legs[who] = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"),
+                                     {"t": trip.json()["recordid"]}).scalar()
+    got = c.post("/api/dispatch/autoplan", headers=h, json={"day": str(on), "legids": list(legs.values())})
+    assert got.status_code == 200, got.text
+    plan = {p["passenger"]: p for p in got.json()["proposal"]}
+    assert [p["passenger"] for p in got.json()["proposal"]] == ["ORDINARY", "DIALYSIS"]   # read by time
+    assert plan["DIALYSIS"]["priority"] == "critical" and plan["ORDINARY"]["priority"] == "confirmed"
+    if plan["DIALYSIS"]["driverid"]:
+        assert plan["ORDINARY"]["driverid"] is None and plan["ORDINARY"]["gaveway"], plan
+        assert any("DIALYSIS, a critical trip" in b for b in plan["ORDINARY"]["blocked"]), plan
+    else:
+        assert plan["DIALYSIS"]["blocked"] and not plan["DIALYSIS"]["gaveway"], plan
+    place = c.post("/api/places", headers=h, json={"name": "KIDNEY CENTER", "address": "5 RIVER RD",
+                                                   "city": "JACKSONVILLE", "state": "FL", "zip": "32207",
+                                                   "critical": True})
+    assert place.status_code == 200 and place.json()["critical"] == 1, place.text
+    listed = next(p for p in c.get("/api/places", headers=h).json()["items"] if p["name"] == "KIDNEY CENTER")
+    assert listed["critical"] == 1
+
+
+def test_5z_a_driver_sent_home_loses_the_trips_still_to_do_but_not_a_passenger_aboard(make):
+    """Driver Out from noon until half past three: a trip not yet started in that time comes off -
+    one from earlier in the day that never started included - a trip with the passenger aboard
+    stays theirs and is said, and one after they are back stays theirs. The day's roster shows
+    them out, and the driver is texted once, told until when."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=2)
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = '8135550100' WHERE recordid = :d"), {"d": co["driver"]})
+    assert c.post("/api/shifts", headers=h, json={"day": str(on), "driverid": co["driver"],
+                                                  "vehicleid": co["vehicle"], "startsat": "08:00",
+                                                  "endsat": "18:00"}).status_code == 200
+
+    def their_shifts():
+        got = c.get(f"/api/shifts?day={on}", headers=h).json()["shifts"]
+        return sorted((s["startsat"][:5], s["endsat"][:5]) for s in got if s["driverid"] == co["driver"])
+    legs = {}
+    # BACK at five: the drive from LATER's drop-off back across town takes most of an hour.
+    for who, at in (("EARLY", "08:00"), ("ABOARD", "11:00"), ("LATER", "15:00"), ("BACK", "17:00")):
+        trip = c.post("/api/trips", headers=h, json={"passenger": who, "tripdate": str(on), "legs": [
+            {"pickupat": f"{on}T{at}:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+             "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]}).json()
+        with co["db"].begin() as conn:
+            legs[who] = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"),
+                                     {"t": trip["recordid"]}).scalar()
+            conn.execute(text("UPDATE triplegs SET driverid = :d, vehicleid = :v, executionstate = :st "
+                              "WHERE recordid = :l"),
+                         {"d": co["driver"], "v": co["vehicle"], "l": legs[who],
+                          "st": "onboard" if who == "ABOARD" else "scheduled"})
+    got = c.post("/api/dispatch/out", headers=h, json={
+        "kind": "driver", "recordid": co["driver"], "reason": "sick",
+        "fromat": f"{on}T12:00:00", "untilat": f"{on}T15:30:00"})        # back at half past three
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert {t["passenger"] for t in body["trips"]} == {"EARLY", "LATER"}, body
+    assert [t["passenger"] for t in body["aboard"]] == ["ABOARD"], body
+    with co["db"].connect() as conn:
+        held = dict(conn.execute(text("SELECT recordid, driverid FROM triplegs WHERE recordid IN :l")
+                                 .bindparams(bindparam("l", expanding=True)), {"l": list(legs.values())}).all())
+        told = conn.execute(text("SELECT body FROM drivertexts WHERE driverid = :d AND kind = 'removed'"),
+                            {"d": co["driver"]}).scalars().all()
+    assert held == {legs["EARLY"]: None, legs["ABOARD"]: co["driver"], legs["LATER"]: None,
+                    legs["BACK"]: co["driver"]}                                 # after they are back: kept
+    assert len(told) == 1 and "2 trips" in told[0] and "until 3:30 PM" in told[0], told
+    roster = c.get(f"/api/shifts?day={on}", headers=h).json()
+    assert [o["reason"] for o in roster["out"][co["driver"]]] == ["sick"], roster.get("out")
+    # Their van is free while they are out, theirs again when they are back at half past three.
+    assert [v["vehiclename"] for v in body["freed"]] == ["AV1"], body["freed"]
+    assert their_shifts() == [("08:00", "12:00"), ("15:30", "18:00")], their_shifts()
+    # Driver Is Back: an absence not begun yet is taken away (this one is two days off).
+    gone = c.delete(f"/api/dispatch/out/driver/{roster['out'][co['driver']][0]['recordid']}", headers=h)
+    assert gone.status_code == 200, gone.text
+    assert co["driver"] not in c.get(f"/api/shifts?day={on}", headers=h).json()["out"]
+    # ...and the van is theirs for the time they were to be out, the afternoon whole again.
+    assert "AV1 is theirs again" in gone.json()["vehicle"], gone.json()
+    assert their_shifts() == [("08:00", "12:00"), ("12:00", "18:00")], their_shifts()
+
+
+def test_6a_a_short_trip_holds_its_driver_for_the_drive_not_ninety_minutes():
+    """How long a leg holds its driver: the recorded drop-off; else the appointment; else the drive
+    between its two addresses and ten minutes to unload. A four-mile hop at 11:30 is over well
+    before a noon close - the flat 90 minutes is only for a leg with no place known."""
+    from datetime import datetime as dt
+    from app import dispatch
+    at = dt(2026, 10, 30, 11, 30)
+    hop = {"pickupat": at, "pickuplat": 28.2906, "pickuplng": -82.6756,      # Little Rd to Plathe Rd
+           "dropofflat": 28.2389, "dropofflng": -82.6926}
+    assert 15 <= dispatch.leg_minutes(hop) <= 30, dispatch.leg_minutes(hop)
+    assert at + timedelta(minutes=dispatch.leg_minutes(hop)) <= dt(2026, 10, 30, 12, 0)
+    assert dispatch.leg_minutes({**hop, "appointmentat": dt(2026, 10, 30, 11, 50)}) == 30
+    assert dispatch.leg_minutes({**hop, "dropoffat": dt(2026, 10, 30, 11, 52)}) == 22
+    assert dispatch.leg_minutes({"pickupat": at}) == 90
+
+
+def test_6b_a_will_call_that_could_run_past_closing_is_booked_with_a_plan(make):
+    """Open until noon. A will-call return ready about midday could get the passenger home after
+    closing, so it is booked with a plan or not at all. The broker arranging it hands the ride home
+    back at once: ours until they confirm it, never given a driver, never called in by us - while the
+    outbound stays ours. Only a broker's trip can have the broker arrange it, and an on-call
+    assignment is the only kind allowed after closing."""
+    co = make()
+    add_line(co, co["payer"], "GA")
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=4)
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE accounts SET hours = :h WHERE recordid = :a"), {"a": co["acct"], "h": json.dumps(
+            {str(d): {"open": "08:00", "close": "12:00"} for d in range(7)})})
+    home, clinic = "12 OAK ST, VALDOSTA, GA 31601", "9 ELM ST, VALDOSTA, GA 31601"
+
+    def book(plan=None, broker=True, at="10:30"):
+        return c.post("/api/trips", headers=h, json={
+            "passenger": "LATE RETURN", "tripdate": str(on), **({"payer": "broker", "brokerid": co["payer"]} if broker else {}),
+            "legs": [{"pickupat": f"{on}T{at}:00", "appointmentat": f"{on}T11:00:00", "pickupplace": home, "dropoffplace": clinic},
+                     {"pickupat": None, "pickupplace": clinic, "dropoffplace": home, "returnplan": plan}]})
+
+    refused = book()
+    assert refused.status_code == 409 and "past closing" in refused.text, refused.text
+    assert book("broker", broker=False).status_code == 400
+    got = book("broker")
+    assert got.status_code == 200, got.text
+    with co["db"].connect() as conn:
+        out, back = conn.execute(text("SELECT recordid, brokerstate, readyabout, returnplan, responsibility FROM triplegs "
+                                      "WHERE tripid = :t ORDER BY legnumber"), {"t": got.json()["recordid"]}).mappings().all()
+        handed = conn.execute(text("SELECT COUNT(*) FROM triprejections WHERE legid = :l"), {"l": back["recordid"]}).scalar()
+    assert out["brokerstate"] is None and back["brokerstate"] == "returnpending" and handed == 1
+    # Asked, not yet taken: the return is still ours until the broker confirms it.
+    assert str(back["readyabout"]).endswith("12:00:00") and back["responsibility"] == "provider"
+    called = c.post(f"/api/legs/{back['recordid']}/call", headers=h, json={"answer": "ready", "pickupat": f"{on}T12:00:00"})
+    assert called.status_code == 409 and "handed back to the broker" in called.text, called.text
+    done = c.post(f"/api/legs/{back['recordid']}/return/acknowledged", headers=h, json={"ref": "MC-1", "sentby": "phone"})
+    assert done.status_code == 200 and done.json()["state"] == "returned", done.text
+    # An on-call driver as the plan, and the driver kept for after closing.
+    # The first trip off the board, so it does not hold the only driver.
+    assert c.post(f"/api/trips/{got.json()['recordid']}/cancel", headers=h, json={"reason": "passenger"}).status_code == 200
+    assert book("oncall").status_code == 200
+    late = {"day": str(on), "driverid": co["driver"], "vehicleid": co["vehicle"], "startsat": "12:00", "endsat": "15:00"}
+    assert c.post("/api/shifts", headers=h, json=late).status_code == 409
+    # Kept for after closing on the on-call list instead: from closing until three.
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = '(904) 555-0177' WHERE recordid = :d"), {"d": co["driver"]})
+    kept = c.put("/api/oncall", headers=h, json={"day": str(on), "items": [
+        {"driverid": co["driver"], "vehicleid": co["vehicle"], "until": "15:00"}]})
+    assert kept.status_code == 200, kept.text
+    roster = c.get(f"/api/shifts?day={on}", headers=h).json()
+    assert roster["shifts"] == [] and [(o["startsat"], o["until"]) for o in roster["oncall"]] == [("12:00", "15:00")]
+    # No until: the rest of the day.
+    assert c.put("/api/oncall", headers=h, json={"day": str(on), "items": [
+        {"driverid": co["driver"], "vehicleid": co["vehicle"]}]}).status_code == 200
+    assert [o["endsat"] for o in c.get(f"/api/shifts?day={on}", headers=h).json()["oncall"]] == ["23:59"]
+
+
+def test_6c_the_on_call_driver_takes_the_will_call_and_the_office_reviews_it(make):
+    """After closing nobody is in the office: the driver on call sees today's waiting will-calls in
+    the app and says I'm Going - pickup now, theirs in the on-call vehicle. A driver not on call
+    cannot. The office finds it under After-Hours Review the next morning, and it is not billed
+    until somebody has reviewed it."""
+    from app.db import localnow
+    from app import dispatch as dsp
+    from app.routers.driverapp import start_session
+    co = make()
+    c, h = co["client"], co["h"]
+    with co["db"].begin() as conn:
+        today = localnow(dsp.zone(conn, co["acct"])).date()
+        mine = start_session(conn, co["driver"])
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = '(904) 555-0177' WHERE recordid = :d"), {"d": co["driver"]})
+    assert c.put("/api/oncall", headers=h, json={"day": str(today), "items": [
+        {"driverid": co["driver"], "vehicleid": co["vehicle"]}]}).status_code == 200
+    trip = c.post("/api/trips", headers=h, json={"passenger": "ON CALL RETURN", "tripdate": str(today), "legs": [
+        {"pickupat": f"{today}T00:30:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+         "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"},
+        {"pickupat": None, "pickupplace": "1 MAIN ST, JACKSONVILLE, FL 32202",
+         "dropoffplace": "40 BAY ST, JACKSONVILLE, FL 32207", "returnplan": "oncall"}]})
+    assert trip.status_code == 200, trip.text
+    me = {"Authorization": f"Bearer {mine}"}
+    work = c.get("/api/driver/trips", headers=me).json()
+    assert work["oncall"] and [w["passenger"] for w in work["oncall"]["items"]] == ["ON CALL RETURN"], work.get("oncall")
+    legid = work["oncall"]["items"][0]["legid"]
+    other = new_driver(co, "Nora")
+    with co["db"].begin() as conn:
+        theirs = start_session(conn, other)
+    assert c.post(f"/api/driver/legs/{legid}/take", headers={"Authorization": f"Bearer {theirs}"}).status_code == 409
+    took = c.post(f"/api/driver/legs/{legid}/take", headers=me)
+    assert took.status_code == 200, took.text
+    with co["db"].connect() as conn:
+        leg = conn.execute(text("SELECT driverid, vehicleid, pickupat, selfassignedon FROM triplegs WHERE recordid = :l"),
+                           {"l": legid}).mappings().one()
+    assert leg["driverid"] == co["driver"] and leg["vehicleid"] == co["vehicle"]
+    assert leg["pickupat"] is not None and leg["selfassignedon"] is not None
+    board = c.get("/api/dispatch/board?state=attention&pagesize=200", headers=h).json()["items"]
+    assert next(i for i in board if i["legid"] == legid)["afterhours"] is True
+    tid = trip.json()["recordid"]
+    assert c.patch(f"/api/trips/{tid}", headers=h, json={"billingstatus": "billed"}).status_code == 409
+    assert c.post(f"/api/legs/{legid}/afterhours/reviewed", headers=h).status_code == 200
+    assert c.patch(f"/api/trips/{tid}", headers=h, json={"billingstatus": "billed"}).status_code == 200
+    # A will-call from yesterday that nobody ever took is Never Called, to be closed out.
+    gone = c.post("/api/trips", headers=h, json={"passenger": "NEVER CALLED", "tripdate": str(today - timedelta(days=1)),
+        "legs": [{"pickupat": f"{today - timedelta(days=1)}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+                  "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"},
+                 {"pickupat": None, "pickupplace": "1 MAIN ST, JACKSONVILLE, FL 32202",
+                  "dropoffplace": "40 BAY ST, JACKSONVILLE, FL 32207", "returnplan": "oncall"}]})
+    assert gone.status_code == 200, gone.text
+    board = c.get("/api/dispatch/board?state=attention&pagesize=200", headers=h).json()["items"]
+    assert [i["attention"] for i in board if i["passenger"] == "NEVER CALLED" and not i["pickupat"]] == ["nevercalled"]
+
+
+def test_6d_a_trip_nobody_can_take_is_not_booked_or_changed(make):
+    """Every booking and every change asks whether anybody can take the trip. With the day's vehicle
+    assignments made, a pickup no assignment covers is refused, booked or moved into; inside one it
+    goes through."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=5)
+    assert c.post("/api/shifts", headers=h, json={"day": str(on), "driverid": co["driver"], "vehicleid": co["vehicle"],
+                                                  "startsat": "08:00", "endsat": "12:00"}).status_code == 200
+
+    def book(at):
+        return c.post("/api/trips", headers=h, json={"passenger": "AVAILABLE?", "tripdate": str(on), "legs": [
+            {"pickupat": f"{on}T{at}:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+             "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+    late = book("15:00")
+    assert late.status_code == 409 and "Not booked" in late.text and "Nobody is in a vehicle" in late.text, late.text
+    with co["db"].connect() as conn:
+        assert not conn.execute(text("SELECT COUNT(*) FROM trips WHERE passenger = 'AVAILABLE?'")).scalar()
+    ok = book("09:00")
+    assert ok.status_code == 200, ok.text
+    t = c.get(f"/api/trips/{ok.json()['recordid']}", headers=h).json()
+    moved = c.put(f"/api/trips/{t['recordid']}", headers=h, json={
+        "passenger": t["passenger"], "servicelevel": t["servicelevel"], "payer": t["payer"],
+        "legs": [{"legid": t["legs"][0]["recordid"], "pickupat": f"{on}T15:00:00"}]})
+    assert moved.status_code == 409 and "Not changed" in moved.text, moved.text
+
+
+def test_6e_the_on_call_driver_is_texted_once_when_on_call_begins_and_as_each_will_call_comes_due(make):
+    """The driver on call is told when on call begins, with what is waiting, and again as each
+    will-call reaches its Ready About time - each text once, never twice, and no names in them."""
+    from app.db import localnow
+    from app import dispatch as dsp, willcall
+    co = make()
+    c, h = co["client"], co["h"]
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = '(727) 555-0199' WHERE recordid = :d"), {"d": co["driver"]})
+        today = localnow(dsp.zone(conn, co["acct"])).date()
+    assert c.put("/api/oncall", headers=h, json={"day": str(today), "items": [
+        {"driverid": co["driver"], "vehicleid": co["vehicle"]}]}).status_code == 200
+    trip = c.post("/api/trips", headers=h, json={"passenger": "DUE NOW", "tripdate": str(today), "legs": [
+        {"pickupat": f"{today}T00:10:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+         "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"},
+        {"pickupat": None, "readyabout": f"{today}T00:20:00", "returnplan": "oncall",
+         "pickupplace": "1 MAIN ST, JACKSONVILLE, FL 32202", "dropoffplace": "40 BAY ST, JACKSONVILLE, FL 32207"}]})
+    assert trip.status_code == 200, trip.text
+    for _ in range(2):
+        with co["db"].begin() as conn:
+            willcall.tick(conn)
+    with co["db"].connect() as conn:
+        kinds = conn.execute(text("SELECT kind, body FROM drivertexts WHERE driverid = :d AND kind IN "
+                                  "('oncall', 'willcalldue')"), {"d": co["driver"]}).all()
+    assert sorted(k for k, _ in kinds) == ["oncall", "willcalldue"], kinds
+    assert all("DUE NOW" not in b for _, b in kinds)
+
+def test_6f_a_confirmed_trip_keeps_its_place_whoever_pays(make):
+    """One driver. A private trip confirmed at 10:00 keeps them: a broker trip at 10:05, booked
+    after it, is refused - payer ranking or not - and only a critical trip may go in front of it.
+    Auto Assign then gives the driver to the critical trip, and says the private one gave way."""
+    co = make()
+    add_line(co, co["payer"], "FL")
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=6)
+    assert c.post("/api/shifts", headers=h, json={"day": str(on), "driverid": co["driver"], "vehicleid": co["vehicle"],
+                                                  "startsat": "08:00", "endsat": "16:00"}).status_code == 200
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+
+    def book(who, at, broker=False, critical=False):
+        return c.post("/api/trips", headers=h, json={"passenger": who, "tripdate": str(on), "critical": critical,
+            **({"payer": "broker", "brokerid": co["payer"]} if broker else {}),
+            "legs": [{"pickupat": f"{on}T{at}:00", "pickupplace": a, "dropoffplace": b}]})
+    first = book("PRIVATE FIRST", "10:00")
+    assert first.status_code == 200, first.text
+    later = book("BROKER LATER", "10:05", broker=True)
+    assert later.status_code == 409 and first.json()["externalid"] in later.text, later.text
+    crit = book("CRITICAL LATER", "10:05", critical=True)
+    assert crit.status_code == 200, crit.text
+    with co["db"].connect() as conn:
+        legs = conn.execute(text("SELECT l.recordid FROM triplegs l JOIN trips t ON t.recordid = l.tripid "
+                                 "WHERE t.passenger IN ('PRIVATE FIRST', 'CRITICAL LATER')")).scalars().all()
+    plan = {p["passenger"]: p for p in c.post("/api/dispatch/autoplan", headers=h, json={
+        "day": str(on), "legids": list(legs)}).json()["proposal"]}
+    assert plan["PRIVATE FIRST"]["priority"] == "confirmed" and plan["CRITICAL LATER"]["priority"] == "critical"
+    if plan["CRITICAL LATER"]["driverid"]:
+        assert plan["PRIVATE FIRST"]["driverid"] is None and plan["PRIVATE FIRST"]["gaveway"], plan
+
+
+def test_6g_who_brings_them_home_is_decided_before_the_trip_there_goes(make):
+    """Every return says who brings the passenger home. Not decided: the outbound is not given a
+    driver until somebody decides. Another provider needs its name and confirmation. Activating the
+    will-call keeps where the word came from and the broker's ready time; and each broker's own
+    will-call rules are kept with the company's terms."""
+    co = make()
+    add_line(co, co["payer"], "FL")
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=3)
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+
+    def book(**home):
+        return c.post("/api/trips", headers=h, json={"passenger": "WHO HOME", "tripdate": str(on),
+            "payer": "broker", "brokerid": co["payer"],
+            "legs": [{"pickupat": f"{on}T09:00:00", "pickupplace": a, "dropoffplace": b},
+                     {"pickupat": None, "pickupplace": b, "dropoffplace": a, **home}]})
+    assert book(responsibility="other").status_code == 400                          # who, and their confirmation
+    got = book(responsibility="unconfirmed")
+    assert got.status_code == 200, got.text
+    tid = got.json()["recordid"]
+    with co["db"].connect() as conn:
+        out, back = [r[0] for r in conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t ORDER BY legnumber"),
+                                                {"t": tid})]
+    refused = c.post(f"/api/legs/{out}/assign", headers=h, json={"driverid": co["driver"], "vehicleid": co["vehicle"],
+                                                                 "overridereason": "TEST"})
+    assert refused.status_code == 409 and "has not been decided" in refused.text, refused.text
+    t = c.get(f"/api/trips/{tid}", headers=h).json()
+    decided = c.put(f"/api/trips/{tid}", headers=h, json={
+        "passenger": t["passenger"], "servicelevel": t["servicelevel"], "payer": t["payer"], "brokerid": t["brokerid"],
+        "reason": "DECIDED", "legs": [{"legid": back, "responsibility": "provider"}]})
+    assert decided.status_code == 200, decided.text
+    took = c.post(f"/api/legs/{out}/assign", headers=h, json={"driverid": co["driver"], "vehicleid": co["vehicle"],
+                                                              "overridereason": "TEST"})
+    assert took.status_code == 200, took.text
+    called = c.post(f"/api/legs/{back}/call", headers=h, json={"answer": "ready", "pickupat": f"{on}T11:00:00",
+                                                              "source": "brokerphone", "readysince": f"{on}T10:40:00"})
+    assert called.status_code == 200, called.text
+    with co["db"].connect() as conn:
+        act = conn.execute(text("SELECT activationsource, activatedon, brokerreadyat FROM triplegs WHERE recordid = :l"),
+                           {"l": back}).mappings().one()
+    assert act["activationsource"] == "brokerphone" and act["activatedon"] and str(act["brokerreadyat"]).endswith("10:40:00")
+    rules = c.put(f"/api/company/payers/{co['payer']}/willcall-rules", headers=h, json={
+        "pickuplimit": 45, "clockstarts": "passenger", "afterhourscontact": "RIDE ASSIST 866-000-0000"})
+    assert rules.status_code == 200, rules.text
+    held = next(p for p in c.get("/api/company/payers", headers=h).json()["payers"] if p["recordid"] == co["payer"])
+    assert held["pickuplimit"] == 45 and held["clockstarts"] == "passenger"
+
+
+def test_6h_a_will_call_out_at_closing_is_covered_on_the_record_and_has_its_deadline(make):
+    """After closing, a will-call the company still answers for shows Coverage Needed until somebody
+    records who covers it - and how they are reached and until when; a name alone is not coverage.
+    Once activated, a broker's pickup limit from the passenger's call is the card's deadline."""
+    from app.db import localnow
+    from app import dispatch as dsp
+    co = make()
+    add_line(co, co["payer"], "FL")
+    c, h = co["client"], co["h"]
+    with co["db"].begin() as conn:
+        today = localnow(dsp.zone(conn, co["acct"])).date()
+        conn.execute(text("UPDATE accounts SET hours = :h WHERE recordid = :a"), {"a": co["acct"], "h": json.dumps(
+            {str(d): {"open": "00:00", "close": "00:01"} for d in range(7)})})            # closed for the day
+    assert c.put(f"/api/company/payers/{co['payer']}/willcall-rules", headers=h,
+                 json={"pickuplimit": 45, "clockstarts": "passenger"}).status_code == 200
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+    trip = c.post("/api/trips", headers=h, json={"passenger": "OUT AT CLOSING", "tripdate": str(today),
+        "payer": "broker", "brokerid": co["payer"],
+        "legs": [{"pickupat": f"{today}T00:00:00", "pickupplace": a, "dropoffplace": b},
+                 {"pickupat": None, "pickupplace": b, "dropoffplace": a, "responsibility": "unconfirmed"}]})
+    assert trip.status_code == 200, trip.text
+    with co["db"].connect() as conn:
+        back = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t AND legnumber = 2"),
+                            {"t": trip.json()["recordid"]}).scalar()
+
+    def attention():
+        return next((i for i in c.get("/api/dispatch/board?state=attention&pagesize=200", headers=h).json()["items"]
+                     if i["legid"] == back), None)
+    assert attention()["attention"] == "coverage"
+    assert c.post(f"/api/legs/{back}/coverage", headers=h,
+                  json={"kind": "oncall", "people": [{"person": "ALICE"}]}).status_code == 400
+    covered = c.post(f"/api/legs/{back}/coverage", headers=h, json={"kind": "oncall", "people": [
+        {"person": "ALICE COMPLIANT", "contact": "(727) 555-0100", "until": f"{today}T23:00:00"},
+        {"person": "BOB BACKUP", "contact": "(727) 555-0101", "until": f"{today}T22:00:00"}]})
+    assert covered.status_code == 200, covered.text
+    item = attention()
+    assert item is None or item["attention"] != "coverage", item
+    held = next(i for i in c.get(f"/api/dispatch/board?day={today}&state=all&pagesize=200", headers=h).json()["items"]
+                if i["legid"] == back)["coverage"]
+    assert [p["person"] for p in held["people"]] == ["ALICE COMPLIANT", "BOB BACKUP"], held
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT responsibility FROM triplegs WHERE recordid = :l"), {"l": back}).scalar() == "provider"
+    assert c.post(f"/api/legs/{back}/call", headers=h, json={"answer": "ready", "pickupat": f"{today}T10:30:00",
+                                                             "source": "brokerphone", "readysince": f"{today}T10:00:00"}).status_code == 200
+    board = c.get(f"/api/dispatch/board?day={today}&state=all&pagesize=200", headers=h).json()["items"]
+    assert str(next(i for i in board if i["legid"] == back)["deadline"]).endswith("10:45:00")
+
+
+def test_6i_a_will_call_gone_quiet_is_flagged_and_is_collected_where_they_are_now(make):
+    """Half an hour past Ready About with no call recorded, the will-call is Call Overdue. When the
+    call comes, the passenger is collected where they are now, not where they were left."""
+    from datetime import timedelta
+    from app.db import localnow
+    from app import dispatch as dsp
+    co = make()
+    add_line(co, co["payer"], "FL")
+    c, h = co["client"], co["h"]
+    with co["db"].begin() as conn:
+        here = localnow(dsp.zone(conn, co["acct"]))
+        conn.execute(text("UPDATE accounts SET hours = :h WHERE recordid = :a"), {"a": co["acct"], "h": json.dumps(
+            {str(d): {"open": "00:00", "close": "23:59"} for d in range(7)})})
+    today = here.date()
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+    trip = c.post("/api/trips", headers=h, json={"passenger": "GONE QUIET", "tripdate": str(today),
+        "payer": "broker", "brokerid": co["payer"],
+        "legs": [{"pickupat": f"{today}T00:00:00", "pickupplace": a, "dropoffplace": b},
+                 {"pickupat": None, "pickupplace": b, "dropoffplace": a, "responsibility": "provider"}]})
+    assert trip.status_code == 200, trip.text
+    with co["db"].begin() as conn:
+        back = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t AND legnumber = 2"),
+                            {"t": trip.json()["recordid"]}).scalar()
+        conn.execute(text("UPDATE triplegs SET readyabout = :r WHERE recordid = :l"),
+                     {"r": here.replace(tzinfo=None) - timedelta(minutes=40), "l": back})
+
+    def item(state):
+        return next((i for i in c.get(f"/api/dispatch/board?day={today}&state={state}&pagesize=200", headers=h).json()["items"]
+                     if i["legid"] == back), None)
+    # Covered, so Coverage Needed (if it is that late) does not stand in front of it.
+    assert c.post(f"/api/legs/{back}/coverage", headers=h, json={"kind": "oncall", "people": [
+        {"person": "ALICE", "contact": "(904) 555-0100", "until": f"{today}T23:59:00"}]}).status_code == 200
+    assert item("attention")["attention"] == "calloverdue"
+    # Not ready yet: a new Ready About, and it is no longer overdue.
+    assert c.post(f"/api/legs/{back}/call", headers=h, json={"answer": "notready",
+        "readyabout": (here.replace(tzinfo=None) + timedelta(minutes=20)).isoformat(timespec="seconds")}).status_code == 200
+    assert (item("all") or {}).get("attention") != "calloverdue"
+    moved = "300 W ADAMS ST, JACKSONVILLE, FL 32202"
+    called = c.post(f"/api/legs/{back}/call", headers=h, json={"answer": "ready", "pickupat": f"{today}T23:30:00",
+                                                                "source": "facility", "pickupplace": moved})
+    assert called.status_code == 200, called.text
+    leg = item("all")
+    assert leg["pickupplace"] == moved and leg["attention"] != "calloverdue", leg
+
+
+def test_6j_the_office_is_texted_once_when_a_flag_on_the_board_stands_unanswered(make):
+    """Somebody in the office taking dispatch alerts is texted once for a trip about to pick up with
+    no driver and once for a will-call gone quiet - never twice, never with a name in it. Alerts need
+    a mobile to go to."""
+    from datetime import timedelta
+    from app.db import localnow
+    from app import dispatch as dsp, willcall
+    co = make()
+    c, h = co["client"], co["h"]
+    me = c.get("/api/account/users", headers=h).json()["me"]
+    assert c.patch(f"/api/account/users/{me}", headers=h, json={"dispatchalerts": True}).status_code == 400
+    assert c.patch(f"/api/account/users/{me}", headers=h,
+                   json={"mobile": "(904) 555-0123", "dispatchalerts": True}).status_code == 200
+    with co["db"].begin() as conn:
+        here = localnow(dsp.zone(conn, co["acct"])).replace(tzinfo=None)
+        conn.execute(text("UPDATE accounts SET hours = :h WHERE recordid = :a"), {"a": co["acct"], "h": json.dumps(
+            {str(d): {"open": "00:00", "close": "23:59"} for d in range(7)})})
+    today = here.date()
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+    trip = c.post("/api/trips", headers=h, json={"passenger": "NOBODY ON IT", "tripdate": str(today), "legs": [
+        {"pickupat": f"{today}T00:00:00", "pickupplace": a, "dropoffplace": b},
+        {"pickupat": None, "pickupplace": b, "dropoffplace": a, "responsibility": "provider"}]})
+    assert trip.status_code == 200, trip.text
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE triplegs SET readyabout = :r WHERE tripid = :t AND legnumber = 2"),
+                     {"r": here - timedelta(minutes=40), "t": trip.json()["recordid"]})
+    for _ in range(2):
+        with co["db"].begin() as conn:
+            willcall.office_alerts(conn)
+    with co["db"].connect() as conn:
+        got = conn.execute(text("SELECT kind, body FROM drivertexts WHERE userid = :u"), {"u": me}).all()
+    assert sorted(k for k, _ in got) == ["alertcall", "alertdriver"], got
+    assert all("NOBODY ON IT" not in body for _, body in got)
+
+
+def test_6k_a_driver_already_spoken_for_by_waiting_trips_is_not_free(make):
+    """One driver free from 8 to 12. A trip at 9 waiting for a driver takes them: a second at the same
+    time is refused, naming the trip that is waiting; one at 11, after it, goes through."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=5)
+    assert c.post("/api/shifts", headers=h, json={"day": str(on), "driverid": co["driver"], "vehicleid": co["vehicle"],
+                                                  "startsat": "08:00", "endsat": "12:00"}).status_code == 200
+
+    def book(who, at):
+        return c.post("/api/trips", headers=h, json={"passenger": who, "tripdate": str(on), "legs": [
+            {"pickupat": f"{on}T{at}:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+             "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+    first = book("FIRST IN", "09:00")
+    assert first.status_code == 200, first.text
+    second = book("SAME TIME", "09:05")
+    assert second.status_code == 409 and first.json()["externalid"] in second.text, second.text
+    assert book("LATER ON", "11:00").status_code == 200
+
+
+
+def test_6l_the_on_call_list_is_only_drivers_who_can_be_reached_and_go(make):
+    """Nobody goes on call who cannot be texted, and two drivers are never on call in one vehicle. A
+    driver put on call is told; one marked Out while on call comes off the list."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=3)
+    put = lambda items: c.put("/api/oncall", headers=h, json={"day": str(on), "items": items})   # noqa: E731
+    me = {"driverid": co["driver"], "vehicleid": co["vehicle"]}
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = NULL WHERE recordid = :d"), {"d": co["driver"]})
+    nophone = put([me])
+    assert nophone.status_code == 409 and "no mobile" in nophone.text, nophone.text
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = '(904) 555-0188' WHERE recordid = :d"), {"d": co["driver"]})
+    assert put([me, {**me, "driverid": "someone-else"}]).status_code == 409
+    assert put([{**me, "until": "23:00"}]).status_code == 200
+    with co["db"].connect() as conn:
+        told = conn.execute(text("SELECT body FROM drivertexts WHERE driverid = :d AND kind = 'oncallset'"),
+                            {"d": co["driver"]}).scalars().all()
+    assert len(told) == 1 and "until 11:00 PM" in told[0], told
+    out = c.post("/api/dispatch/out", headers=h, json={"kind": "driver", "recordid": co["driver"], "reason": "sick",
+                                                       "fromat": f"{on}T00:00:00", "untilat": f"{on}T23:59:00"})
+    assert out.status_code == 200 and len(out.json()["offcall"]) == 1, out.text
+    assert c.get(f"/api/shifts?day={on}", headers=h).json()["oncall"] == []
+
+
+def test_6m_trips_ahead_are_booked_against_every_driver_not_out(make):
+    """Weeks ahead nobody is in a vehicle yet: a trip is booked against every hired driver and the
+    vehicles in service - and a driver marked out that day is not counted."""
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=8)
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+
+    def book(at):
+        return c.post("/api/trips", headers=h, json={"passenger": f"AHEAD {at}", "tripdate": str(on), "legs": [
+            {"pickupat": f"{on}T{at}:00", "pickupplace": a, "dropoffplace": b}]})
+    assert book("09:00").status_code == 200
+    assert c.post("/api/dispatch/out", headers=h, json={"kind": "driver", "recordid": co["driver"], "reason": "timeoff",
+                                                        "fromat": f"{on}T00:00:00", "untilat": f"{on}T23:59:00"}).status_code == 200
+    off = book("14:00")
+    assert off.status_code == 409 and "Not booked" in off.text, off.text
+
+
+def test_6n_who_is_driving_is_ticked_on_the_day_and_each_gets_a_vehicle(make):
+    """Auto Assign asks who is driving today: every hired driver, ticked unless out. Each one ticked
+    is put in a vehicle they may take; it is decided on the day itself, and a driver with trips
+    today cannot be unticked until they are taken off them."""
+    from app.db import localnow
+    from app import dispatch as dsp
+    co = make()
+    c, h = co["client"], co["h"]
+    with co["db"].connect() as conn:
+        today = localnow(dsp.zone(conn, co["acct"])).date()
+    got = c.get(f"/api/dispatch/crew?day={today}", headers=h).json()
+    assert [(d["driverid"], d["on"]) for d in got["drivers"]] == [(co["driver"], True)] and not got["ticked"], got
+    early = c.post("/api/dispatch/crew", headers=h, json={"day": str(today + timedelta(days=1)), "driverids": [co["driver"]]})
+    assert early.status_code == 409 and "day itself" in early.text, early.text
+    put = c.post("/api/dispatch/crew", headers=h, json={"day": str(today), "driverids": [co["driver"]]})
+    assert put.status_code == 200 and put.json()["novehicle"] == [], put.text
+    shifts = c.get(f"/api/shifts?day={today}", headers=h).json()["shifts"]
+    assert [(s["driverid"], s["vehicleid"]) for s in shifts] == [(co["driver"], co["vehicle"])], shifts
+    assert c.get(f"/api/dispatch/crew?day={today}", headers=h).json()["ticked"]
+    # Unticked with nothing to do: out of the vehicle.
+    assert c.post("/api/dispatch/crew", headers=h, json={"day": str(today), "driverids": []}).status_code == 200
+    assert c.get(f"/api/shifts?day={today}", headers=h).json()["shifts"] == []
+
+
+def test_6o_a_pickup_within_two_hours_goes_before_one_booked_earlier():
+    """Auto Assign's order: critical, then a pickup within two hours, then booking order. A trip due
+    soon but booked later is placed before one booked earlier for later in the day - only critical
+    goes before it - and is said as Due Soon."""
+    from datetime import datetime as dt
+    from app import dayplan
+    early, late = dt(2026, 10, 1, 8), dt(2026, 10, 1, 9)
+    soon = {"pickupat": dt(2026, 10, 31, 14, 30), "confirmedat": late, "soon": True}
+    later = {"pickupat": dt(2026, 10, 31, 16, 30), "confirmedat": early, "soon": False}
+    crit = {**later, "critical": 1}
+    assert sorted([later, soon, crit], key=dayplan._rank) == [crit, soon, later]
+    assert dayplan.priority_of(soon) == "soon" and dayplan._said(soon) == "due within 2 hours"
+
+
+def test_6p_a_passenger_waiting_at_a_facility_about_to_close_is_flagged(make):
+    """A location can say when it closes. Booking a will-call says so if they would be ready after
+    that; within the hour of closing, one still waiting there is Facility Closing, the office is
+    texted once, and recording the call clears it."""
+    from datetime import timedelta as td
+    from app.db import localnow
+    from app import dispatch as dsp, willcall
+    co = make()
+    c, h = co["client"], co["h"]
+    with co["db"].begin() as conn:
+        here = localnow(dsp.zone(conn, co["acct"])).replace(tzinfo=None)
+    closes, today = (here + td(minutes=30)).strftime("%H:%M"), here.date()
+    me = c.get("/api/account/users", headers=h).json()["me"]
+    assert c.patch(f"/api/account/users/{me}", headers=h,
+                   json={"mobile": "(904) 555-0123", "dispatchalerts": True}).status_code == 200
+    place = c.post("/api/places", headers=h, json={"name": "EARLY CLINIC", "address": "1 MAIN ST", "city": "JACKSONVILLE",
+                                                   "state": "FL", "zip": "32202", "closesat": closes})
+    assert place.status_code == 200 and place.json()["closesat"] == closes, place.text
+    clinic, home = place.json()["full"], "40 BAY ST, JACKSONVILLE, FL 32207"
+    listed = next(p for p in c.get("/api/places", headers=h).json()["items"] if p["name"] == "EARLY CLINIC")
+    assert listed["closesat"] == closes
+    check = c.get("/api/dispatch/return-check", headers=h, params={
+        "day": str(today), "ready": here.isoformat(timespec="seconds"), "pickup": clinic, "dropoff": home}).json()
+    assert check["facility"] == "EARLY CLINIC" and check["facilitycloses"] == closes, check
+    trip = c.post("/api/trips", headers=h, json={"passenger": "LEFT OUTSIDE", "tripdate": str(today), "legs": [
+        {"pickupat": f"{today}T00:00:00", "pickupplace": home, "dropoffplace": clinic},
+        {"pickupat": None, "pickupplace": clinic, "dropoffplace": home, "responsibility": "provider"}]})
+    assert trip.status_code == 200, trip.text
+    with co["db"].connect() as conn:
+        back = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t AND legnumber = 2"),
+                            {"t": trip.json()["recordid"]}).scalar()
+
+    def item(state):
+        return next((i for i in c.get(f"/api/dispatch/board?day={today}&state={state}&pagesize=200", headers=h).json()["items"]
+                     if i["legid"] == back), None)
+    assert item("attention")["attention"] == "facilityclosing"
+    for _ in range(2):
+        with co["db"].begin() as conn:
+            willcall.office_alerts(conn)
+    with co["db"].connect() as conn:
+        told = conn.execute(text("SELECT body FROM drivertexts WHERE userid = :u AND kind = 'alertclosing'"), {"u": me}).scalars().all()
+    assert len(told) == 1 and "LEFT OUTSIDE" not in told[0], told
+    assert c.post(f"/api/legs/{back}/call", headers=h, json={"answer": "ready", "pickupat": f"{today}T23:30:00",
+                                                             "source": "facility"}).status_code == 200
+    assert item("all")["attention"] != "facilityclosing"

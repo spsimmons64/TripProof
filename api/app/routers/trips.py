@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
 from app import dayplan, dispatch, importer, phi, routing, sms, tripcheck
+from app import shifts as plan
 from app.routers import driverapp
 from app import rates as rateset
 from app import wheremap
@@ -162,6 +163,10 @@ class Leg(BaseModel):
     dropoffplace: str
     driverid: str | None = None
     vehicleid: str | None = None
+    readyabout: datetime | None = None    # a will-call return: when the passenger should be ready
+    returnplan: str | None = None         # a will-call return that could run past closing: RETURN_PLANS
+    responsibility: str | None = None     # a return: RESPONSIBILITY - who brings the passenger home
+    responsibilitynote: str | None = None # the other provider, and their confirmation
 
 
 class Booking(BaseModel):
@@ -172,6 +177,7 @@ class Booking(BaseModel):
     payer: str = "private"
     brokerid: str | None = None
     note: str | None = None
+    critical: bool = False                # cannot be missed: placed first by Auto Assign
     legs: list[Leg]
 
 
@@ -206,6 +212,114 @@ def who_should_take_it(when: datetime, minutes: int = 60, service: str = "ambula
                          service=service, seats=seats, pickup=at, trip=trip)
 
 
+# How a passenger gets home when their will-call return could run past closing. Setting a return
+# time instead is the third answer, and it is not a plan to keep: the leg is then not a will-call.
+RETURN_PLANS = {"oncall": "An on-call driver", "broker": "The broker arranges the return"}
+PAST_CLOSING = timedelta(minutes=90)      # from here, a will-call still out needs its coverage recorded
+FACILITY_WARNING = 60                     # minutes before a facility closes, with a passenger still waiting there
+CALL_OVERDUE = 30                         # minutes past Ready About with no call before somebody rings them
+# Who brings the passenger home. The broker taking it is a hand-back (brokerstate): until the
+# broker confirms, the return is still ours - asking is not the same as it being taken.
+RESPONSIBILITY = {"provider": "We bring them home", "broker": "Ask the broker to take it",
+                  "other": "Another provider (confirmed)", "unconfirmed": "Not decided yet"}
+# Where the word that a will-call passenger is ready came from.
+ACTIVATION = {"passenger": "The passenger", "facility": "The facility", "brokerportal": "The broker's portal",
+              "brokerphone": "The broker, by telephone", "driver": "The driver"}
+
+
+def return_undecided(conn: Connection, acct: str, tripid: str) -> str | None:
+    """A trip whose ride home nobody has decided on yet: the outbound is not given a driver until
+    somebody has. Returns the passenger, or None."""
+    held = row(conn, """
+        SELECT t.passenger FROM triplegs l JOIN trips t ON t.recordid = l.tripid
+        WHERE l.tripid = :t AND l.accountid = :a AND l.legnumber > 1 AND l.responsibility = 'unconfirmed'
+          AND l.brokerstate IS NULL AND l.outcomestate IS NULL LIMIT 1
+    """, t=tripid, a=acct)
+    return held["passenger"] if held else None
+
+
+def _undecided_said(passenger: str) -> str:
+    return (f"Who brings {passenger} home has not been decided. Decide it (Edit Trip, Who Brings Them "
+            f"Home) before the trip there is given a driver.")
+# A trip's broker state when it is not ours to run: offered and not accepted, or on its way back.
+# Ours otherwise - 'none' for our own, 'accepted' for a broker's - never empty.
+HANDED_BACK = ("offered", "returnpending", "returned")
+# A will-call's Ready About when nobody says: an hour after the appointment it is coming back from.
+READY_AFTER = timedelta(minutes=60)
+
+
+def _closes(conn: Connection, acct: str, day: date) -> datetime | None:
+    """When the company's Transportation Hours end that day; None where none are set."""
+    from app.routers.shifts import company_hours
+    h = company_hours(conn, acct, day)
+    if not h or h.get("closed"):
+        return None
+    return plan.span(day, h["open"], h["close"])[1]
+
+
+def _doubt(conn: Connection, acct: str, legid: str) -> str:
+    """Put first in a refusal: an address in doubt, which may be all that is wrong."""
+    from app.routers.places import misplaced
+    leg = row(conn, "SELECT pickupplace, dropoffplace FROM triplegs WHERE recordid = :l", l=legid) or {}
+    said = [f"The {what} address {why} - check it." for what, where in (("pickup", leg.get("pickupplace")),
+                                                                      ("drop-off", leg.get("dropoffplace")))
+            if where and (why := misplaced(conn, acct, where))]
+    return " ".join(said) + (" " if said else "")
+
+
+def after_hours(conn: Connection, acct: str, day: date, ready: datetime, pickupplace: str,
+                dropoffplace: str) -> dict:
+    """Whether a will-call return ready about then could get the passenger home after closing:
+    the estimate, not a promise - the drive is the one every trip is held for (leg_minutes)."""
+    from app.routers.places import _where
+    here, there = _where(conn, acct, pickupplace), _where(conn, acct, dropoffplace)
+    home = ready + timedelta(minutes=dispatch.leg_minutes({
+        "pickupat": ready, "pickuplat": here and here[0], "pickuplng": here and here[1],
+        "dropofflat": there and there[0], "dropofflng": there and there[1]}))
+    close = _closes(conn, acct, day)
+    return {"ready": ready, "home": home, "close": close, "needsplan": bool(close and home > close)}
+
+
+def _plan_said(day: date, got: dict) -> str:
+    return (f"This return could run past closing: ready about {got['ready']:%-I:%M %p}, home about "
+            f"{got['home']:%-I:%M %p}, and {day:%A} closes at {got['close']:%-I:%M %p}. "
+            f"Choose how the passenger gets home.")
+
+
+@router.get("/dispatch/return-check")
+def return_check(day: date, ready: datetime, pickup: str, dropoff: str,
+                 user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """For Book A Trip and Edit Trip, as the form is filled: does this will-call need a plan."""
+    from app.routers.places import _clock, facility_closes
+    got = after_hours(conn, user["accountid"], day, ready, pickup, dropoff)
+    place = facility_closes(conn, user["accountid"], pickup)
+    return {**got, "plans": RETURN_PLANS, "facility": place and place["name"],
+            "facilitycloses": place and _clock(place["closesat"])}
+
+
+def _hand_back_leg(conn: Connection, acct: str, user: dict, trip: dict, leg: dict, reason: str,
+                   note: str | None) -> None:
+    """One leg handed back to the broker - usually the ride home. Whoever was on it comes off and
+    is told; it stays ours, on the board, until the broker confirms they have it."""
+    if leg.get("driverid"):
+        run(conn, """
+            UPDATE tripassignments SET endedon = :now, endedby = :by, endreason = 'returned'
+            WHERE accountid = :a AND legid = :l AND endedon IS NULL
+        """, now=utcnow(), by=user["recordid"], a=acct, l=leg["recordid"])
+        run(conn, "UPDATE triplegs SET driverid = NULL, vehicleid = NULL WHERE recordid = :l AND accountid = :a",
+            l=leg["recordid"], a=acct)
+        sms.tell(conn, acct, leg["driverid"], "removed",
+                 f"Trip {trip['externalid']}, pickup {sms.when(leg['pickupat'])}, is no longer yours. Open the app.",
+                 trip["recordid"], leg["recordid"])
+    run(conn, """
+        INSERT INTO triprejections (recordid, accountid, tripid, legid, reason, note, requestedon, requestedby)
+        VALUES (:id, :a, :t, :l, :r, :n, :now, :by)
+    """, id=newid(), a=acct, t=trip["recordid"], l=leg["recordid"], r=reason,
+        n=(note or "").strip()[:600] or None, now=utcnow(), by=user["recordid"])
+    run(conn, "UPDATE triplegs SET brokerstate = 'returnpending' WHERE recordid = :l AND accountid = :a",
+        l=leg["recordid"], a=acct)
+
+
 @router.post("/trips")
 def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
                 conn: Connection = Depends(get_conn)):
@@ -232,16 +346,43 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
     priced = rateset.quote(conn, acct, payerid=body.brokerid, servicelevel=body.servicelevel,
                            on=body.tripdate, legs=len(body.legs),
                            state=tripcheck.pickup_state(body.legs[0].pickupplace))
+    # A will-call return that could get the passenger home after closing is booked with a plan for
+    # it, or not at all: found now, not at six o'clock with the passenger waiting.
+    for n, leg in enumerate(body.legs):
+        if leg.pickupat is not None:
+            continue
+        if leg.returnplan and leg.returnplan not in RETURN_PLANS:
+            raise HTTPException(400, "Unknown return plan")
+        first = body.legs[0]
+        leg.readyabout = leg.readyabout or ((first.appointmentat or first.pickupat) + READY_AFTER)
+        got = after_hours(conn, acct, body.tripdate, leg.readyabout, leg.pickupplace, leg.dropoffplace)
+        # Past closing it has to be decided, not assumed: who brings them home (we do - on call -
+        # the broker, another provider), or not decided yet, said out loud.
+        if got["needsplan"] and not leg.returnplan and not leg.responsibility:
+            raise HTTPException(409, _plan_said(body.tripdate, got))
+        if got["needsplan"] and leg.responsibility == "provider":
+            leg.returnplan = "oncall"
+    for n, leg in enumerate(body.legs):
+        if n == 0:
+            continue
+        if leg.responsibility and leg.responsibility not in RESPONSIBILITY:
+            raise HTTPException(400, "Unknown answer to who brings them home")
+        if leg.returnplan == "broker":
+            leg.responsibility = "broker"
+        if leg.responsibility == "broker" and not body.brokerid:
+            raise HTTPException(400, "Only a broker's trip can have the broker arrange the return.")
+        if leg.responsibility == "other" and not (leg.responsibilitynote or "").strip():
+            raise HTTPException(400, "Say which provider is bringing them home, and their confirmation.")
     tripid = newid()
     # Its own reference until a broker gives it one. Visibly local, so nobody mistakes it for
     # a broker's number when the two sit in one list.
     external = f"TP-{body.tripdate:%Y%m%d}-{tripid[:6].upper()}"
     run(conn, """
-        INSERT INTO trips (recordid, accountid, externalid, tripdate, servicelevel,
+        INSERT INTO trips (recordid, accountid, externalid, tripdate, servicelevel, critical,
                            billedamount, billingstatus, scheduleid, brokerid, passenger,
                            passengerphone, payer, note, bookedby, added)
-        VALUES (:id, :a, :x, :on, :svc, :amt, 'unbilled', :sched, :b, :p, :ph, :pay, :n, :by, :now)
-    """, id=tripid, a=acct, x=external, on=body.tripdate, svc=body.servicelevel,
+        VALUES (:id, :a, :x, :on, :svc, :crit, :amt, 'unbilled', :sched, :b, :p, :ph, :pay, :n, :by, :now)
+    """, id=tripid, a=acct, x=external, on=body.tripdate, svc=body.servicelevel, crit=int(body.critical),
         amt=priced["amount"] or 0, sched=priced["scheduleid"], b=body.brokerid, p=body.passenger.strip()[:160],
         ph=(body.passengerphone or "").strip()[:32] or None, pay=body.payer[:16],
         n=(body.note or "").strip()[:512] or None, by=user["recordid"], now=utcnow())
@@ -256,12 +397,18 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
         legrec = newid()
         run(conn, """
             INSERT INTO triplegs (recordid, accountid, tripid, legnumber, driverid, vehicleid,
-                                  vehicleexternal, pickupat, dropoffat, appointmentat, pickupplace, pickuplat,
+                                  vehicleexternal, pickupat, dropoffat, appointmentat, readyabout, returnplan,
+                                  responsibility, responsibilitynote, pickupplace, pickuplat,
                                   pickuplng, dropoffplace, dropofflat, dropofflng,
                                   servicelevel, loaded, signature, gps, added)
-            VALUES (:id, :a, :t, :n, :d, :v, :vx, :pa, :da, :appt, :pp, :plat, :plng, :dp, :dlat,
+            VALUES (:id, :a, :t, :n, :d, :v, :vx, :pa, :da, :appt, :ready, :rp, :resp, :respnote, :pp, :plat, :plng, :dp, :dlat,
                     :dlng, :svc, :loaded, 0, 0, :now)
         """, id=legrec, a=acct, t=tripid, n=n, d=leg.driverid, v=leg.vehicleid, appt=leg.appointmentat,
+            ready=leg.readyabout if leg.pickupat is None else None,
+            rp=leg.returnplan if leg.pickupat is None and leg.returnplan != "broker" else None,
+            # A return is ours until somebody else has confirmed it: asking the broker is a hand-back.
+            resp=None if n == 1 else ("provider" if leg.responsibility in (None, "broker") else leg.responsibility),
+            respnote=(leg.responsibilitynote or "").strip().upper()[:255] or None if leg.responsibility == "other" else None,
             vx=(row(conn, "SELECT externalid FROM vehicles WHERE recordid = :v", v=leg.vehicleid)
                 or {}).get("externalid") if leg.vehicleid else None,
             pa=leg.pickupat, da=leg.dropoffat,
@@ -287,6 +434,18 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
             """, id=newid(), a=acct, l=legrec, d=leg.driverid, v=leg.vehicleid,
                 now=utcnow(), by=user["recordid"])
             _shadow_check(conn, acct, leg.driverid, leg.vehicleid, legrec, user["recordid"])
+        # Somebody has to be able to take it, or it is not booked. Asked of the leg as written, so
+        # the answer is the one an assignment would get.
+        if leg.pickupat is not None and not leg.driverid:
+            why = dayplan.availability(conn, acct, legrec)
+            if why:
+                raise HTTPException(409, "Not booked. " + _doubt(conn, acct, legrec) + " ".join(why[:1]) +
+                                    (" " + "; ".join(why[1:]) + "." if why[1:] else ""))
+        # The ride home is the broker's to arrange: handed back now, ours until they confirm it.
+        if n > 1 and leg.responsibility == "broker":
+            _hand_back_leg(conn, acct, user, {"recordid": tripid, "externalid": external},
+                           {"recordid": legrec, "driverid": None, "pickupat": None}, "outsidehours",
+                           "RETURN ARRANGED WITH THE BROKER WHEN BOOKED: IT COULD RUN PAST CLOSING")
 
     log(conn, user, "trip-booked", "trip", tripid,
         {"passenger": body.passenger, "legs": len(body.legs)}, ip=client_ip(request))
@@ -353,7 +512,9 @@ def get_trip(tripid: str, user: dict = Depends(current_user), conn: Connection =
     if not t:
         raise HTTPException(404, "Trip not found")
     t["legs"] = rows(conn, """
-        SELECT l.recordid, l.legnumber, l.pickupat, l.dropoffat, l.appointmentat, l.signature, l.gps, l.driverid, l.vehicleid,
+        SELECT l.recordid, l.legnumber, l.pickupat, l.dropoffat, l.appointmentat, l.readyabout, l.returnplan,
+               l.brokerstate, l.responsibility, l.responsibilitynote, l.activationsource, l.activatedon,
+               l.brokerreadyat, l.signature, l.gps, l.driverid, l.vehicleid,
                l.driverexternal, l.vehicleexternal, CONCAT(d.firstname, ' ', d.lastname) AS drivername,
                l.executionstate, l.outcomestate, l.pickupplace, l.dropoffplace, l.miles,
                v.externalid AS unit, v.modelyear
@@ -512,6 +673,12 @@ class TripPatch(BaseModel):
 def patch_trip(tripid: str, body: TripPatch, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
     if body.billingstatus not in ("unbilled", "billed", "paid", "held"):
         raise HTTPException(400, "Unknown billing status")
+    # Taken by the on-call driver after closing: billed only once the office has looked at it.
+    if body.billingstatus in ("billed", "paid") and row(conn, """
+            SELECT 1 AS x FROM triplegs WHERE tripid = :t AND accountid = :a
+               AND selfassignedon IS NOT NULL AND afterhoursreviewedon IS NULL""", t=tripid, a=user["accountid"]):
+        raise HTTPException(409, "An on-call driver took part of this trip after closing. Review it "
+                                 "(Dispatch, Needs Attention) before it is billed.")
     r = run(conn, "UPDATE trips SET billingstatus = :s, updated = :now WHERE recordid = :id AND accountid = :a",
             s=body.billingstatus, now=utcnow(), id=tripid, a=user["accountid"])
     if not r.rowcount:
@@ -575,6 +742,10 @@ class LegEdit(BaseModel):
     pickupplace: str | None = None
     dropoffplace: str | None = None
     miles: float | None = None
+    readyabout: datetime | None = None    # a will-call return only
+    returnplan: str | None = None         # a will-call return only: RETURN_PLANS, or "" for none
+    responsibility: str | None = None     # a return: RESPONSIBILITY
+    responsibilitynote: str | None = None
 
 
 class TripEdit(BaseModel):
@@ -587,6 +758,7 @@ class TripEdit(BaseModel):
     brokerid: str | None = None
     note: str | None = None
     reason: str | None = None
+    critical: bool | None = None          # the office's own flag: no driver is told, no reason asked
     legs: list[LegEdit] = []
 
 
@@ -616,8 +788,9 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
     if not trip:
         raise HTTPException(404, "No such trip")
     legs = rows(conn, """
-        SELECT recordid, legnumber, pickupat, dropoffat, appointmentat, pickupplace, dropoffplace, miles,
-               driverid, vehicleid, executionstate, outcomestate
+        SELECT recordid, legnumber, pickupat, dropoffat, appointmentat, readyabout, returnplan, brokerstate,
+               responsibility, responsibilitynote,
+               pickupplace, dropoffplace, miles, driverid, vehicleid, executionstate, outcomestate
         FROM triplegs WHERE tripid = :t AND accountid = :a ORDER BY legnumber
     """, t=tripid, a=acct)
     rules = _edit_rules(trip, legs)
@@ -666,15 +839,50 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
             continue
         stage = rules["legs"][leg["recordid"]]
         mine, upd = [], {}
-        allowed = {"open": ("pickupat", "appointmentat", "pickupplace", "dropoffplace"),
+        allowed = {"open": ("pickupat", "appointmentat", "pickupplace", "dropoffplace", "readyabout", "returnplan",
+                            "responsibility", "responsibilitynote"),
                    "moving": ("dropoffplace",),
                    "done": (),
                    "closed": ()}[stage]
         for field, label in (("pickupat", "Pickup time"), ("appointmentat", "Appointment time"),
                              ("dropoffat", "Drop-off time"),
                              ("pickupplace", "Pickup address"), ("dropoffplace", "Drop-off address"),
-                             ("miles", "Miles")):
+                             ("miles", "Miles"), ("readyabout", "Ready about"), ("returnplan", "Return plan"),
+                             ("responsibility", "Who brings them home"), ("responsibilitynote", "Other provider")):
             new = getattr(want, field)
+            # Who brings them home belongs to a return leg. Asking the broker is a hand-back, made
+            # below; the return stays ours until they confirm.
+            if field in ("responsibility", "responsibilitynote"):
+                if leg["legnumber"] == 1 or new is None:
+                    continue
+                if field == "responsibility":
+                    if new not in RESPONSIBILITY:
+                        raise HTTPException(400, "Unknown answer to who brings them home")
+                    if new == "broker":
+                        if not (body.brokerid or trip["brokerid"]):
+                            raise HTTPException(400, "Only a broker's trip can have the broker arrange the return.")
+                        if not leg["brokerstate"]:
+                            upd["handback"] = True
+                            mine.append({"field": "Who brings them home" if len(legs) == 1 else
+                                         f"Leg {leg['legnumber']} who brings them home",
+                                         "old": RESPONSIBILITY.get(leg["responsibility"] or "provider"),
+                                         "new": "Asked the broker to take it"})
+                        continue
+                    if new == "other" and not ((want.responsibilitynote or "").strip() or leg["responsibilitynote"]):
+                        raise HTTPException(400, "Say which provider is bringing them home, and their confirmation.")
+                else:
+                    new = new.strip().upper()[:255] or None
+            # Ready About and the return plan belong to a will-call still waiting for its call.
+            if field in ("readyabout", "returnplan") and (leg["pickupat"] is not None or new is None):
+                continue
+            if field == "returnplan":
+                if new and new not in RETURN_PLANS:
+                    raise HTTPException(400, "Unknown return plan")
+                if leg["brokerstate"] and new != leg["returnplan"]:
+                    raise HTTPException(409, "This ride home is with the broker already; its plan cannot change.")
+                if new == "broker" and not (body.brokerid or trip["brokerid"]):
+                    raise HTTPException(400, "Only a broker's trip can have the broker arrange the return.")
+                new = new or None
             if field in ("pickupplace", "dropoffplace"):
                 new = " ".join((new or "").split()).upper()[:255] or None
                 if new is None:
@@ -702,8 +910,39 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
             legchanges[leg["recordid"]] = mine
             updates[leg["recordid"]] = upd
 
+    # Critical or not is the office's ordering of its own work: nothing the driver runs, nothing a
+    # broker pays against. Changed on its own it is kept and logged, and nobody is asked why.
+    critical = trip["critical"] if body.critical is None else int(body.critical)
+    criticalchanged = critical != trip["critical"]
+    # A will-call that could now run past closing needs its plan, as when it was booked.
+    for leg in legs:
+        if leg["pickupat"] is not None or leg["outcomestate"]:
+            continue
+        upd = updates.get(leg["recordid"], {})
+        ready = upd.get("readyabout") or leg["readyabout"]
+        if not ready:
+            continue
+        got = after_hours(conn, acct, ready.date(), ready, upd.get("pickupplace") or leg["pickupplace"],
+                          upd.get("dropoffplace") or leg["dropoffplace"])
+        resp = upd.get("responsibility", leg["responsibility"])
+        decided = (upd.get("returnplan", leg["returnplan"]) or upd.get("handback") or leg["brokerstate"]
+                   or resp in ("other", "unconfirmed"))
+        if got["needsplan"] and not decided:
+            # We bring them home, past closing: that is the on-call driver.
+            if resp == "provider":
+                upd["returnplan"] = "oncall"
+                updates[leg["recordid"]] = upd
+                legchanges.setdefault(leg["recordid"], [])
+            else:
+                raise HTTPException(409, _plan_said(ready.date(), got))
     if not tripchanges and not legchanges:
-        raise HTTPException(400, "Nothing was changed.")
+        if not criticalchanged:
+            raise HTTPException(400, "Nothing was changed.")
+        run(conn, "UPDATE trips SET critical = :c, updated = :now WHERE recordid = :t AND accountid = :a",
+            c=critical, now=utcnow(), t=tripid, a=acct)
+        log(conn, user, "trip-edited", "trip", tripid, {"critical": bool(critical)}, ip=client_ip(request))
+        saved(conn)
+        return {"ok": True}
     reason = (body.reason or "").strip()
     touched_started = any(rules["legs"][lid] != "open" for lid in legchanges) or (
         tripchanges and not rules["tripfields"])
@@ -738,9 +977,9 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
             raise HTTPException(400, tripcheck.no_line(conn, acct, body.brokerid, origin))
     run(conn, """
         UPDATE trips SET passenger = :p, passengerphone = :ph, servicelevel = :svc, brokerid = :b,
-                         payer = :pay, note = :n, tripdate = :on, updated = :now
+                         payer = :pay, note = :n, tripdate = :on, critical = :crit, updated = :now
         WHERE recordid = :t AND accountid = :a
-    """, p=passenger, ph=phone, svc=body.servicelevel, b=body.brokerid or None,
+    """, p=passenger, ph=phone, svc=body.servicelevel, b=body.brokerid or None, crit=critical,
         pay=(body.payer or "private")[:16], n=note, on=tripdate, now=now, t=tripid, a=acct)
     # A trip booked here was priced here; if what it is priced on has changed, it is priced again.
     # One that came from a broker arrived with the broker's figure and keeps it.
@@ -757,6 +996,8 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
     for lid, upd in updates.items():
         sets, params = [], {"l": lid, "a": acct}
         for field, value in upd.items():
+            if field == "handback":
+                continue
             sets.append(f"{field} = :{field}")
             params[field] = value
             if field in ("pickupplace", "dropoffplace"):
@@ -766,7 +1007,24 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
                 params[f"{pre}lat"], params[f"{pre}lng"] = (spot or (None, None))
             if field == "miles":
                 sets.append("milessource = 'office'")
-        run(conn, f"UPDATE triplegs SET {', '.join(sets)} WHERE recordid = :l AND accountid = :a", **params)
+        if sets:
+            run(conn, f"UPDATE triplegs SET {', '.join(sets)} WHERE recordid = :l AND accountid = :a", **params)
+
+    # A ride home the broker is now to arrange is handed back to them, as at booking.
+    for lid, upd in updates.items():
+        if upd.get("returnplan") == "broker" or upd.get("handback"):
+            _hand_back_leg(conn, acct, user, trip, next(l for l in legs if l["recordid"] == lid),
+                           "outsidehours", "RETURN ARRANGED WITH THE BROKER: IT COULD RUN PAST CLOSING")
+
+    # A leg nobody is on yet, changed in a way that changes who could take it, is asked again: if
+    # nobody could now, the change is not made.
+    for leg in legs:
+        moved = leg["recordid"] in updates or servicechanged or payerchanged
+        if moved and not leg["driverid"] and rules["legs"][leg["recordid"]] == "open" and not leg["outcomestate"]:
+            why = dayplan.availability(conn, acct, leg["recordid"])
+            if why:
+                raise HTTPException(409, "Not changed. " + _doubt(conn, acct, leg["recordid"]) + " ".join(why[:1]) +
+                                    (" " + "; ".join(why[1:]) + "." if why[1:] else ""))
 
     # Whoever is on a leg still to run is checked against the trip as it now reads.
     for leg in onlegs:
@@ -807,7 +1065,8 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
     if any(l["driverid"] for l in legs):
         evaluate(conn, acct, tripids=[tripid], userid=user["recordid"], reason="edit")
     log(conn, user, "trip-edited", "trip", tripid,
-        {"changes": tripchanges + [c for v in legchanges.values() for c in v], "reason": reason or None},
+        {"changes": tripchanges + [c for v in legchanges.values() for c in v], "reason": reason or None,
+         **({"critical": bool(critical)} if criticalchanged else {})},
         ip=client_ip(request))
     saved(conn)
     return {"ok": True}
@@ -815,6 +1074,7 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
 
 class ReleaseIn(BaseModel):
     pickupat: datetime
+    pickupplace: str | None = None    # where they are now, when it is not where they were left
     note: str | None = None
 
 
@@ -828,7 +1088,8 @@ def passenger_called(legid: str, body: ReleaseIn, request: Request, user: dict =
     them, and has to say they have read it: "go and collect them now" is the whole message."""
     acct = user["accountid"]
     leg = row(conn, """
-        SELECT l.recordid, l.tripid, l.pickupat, l.driverid, l.executionstate, l.outcomestate
+        SELECT l.recordid, l.tripid, l.pickupat, l.pickupplace, l.driverid, l.executionstate, l.outcomestate,
+               COALESCE(l.brokerstate, t.brokerstate) AS brokerstate
         FROM triplegs l JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
         WHERE l.recordid = :l AND l.accountid = :a
     """, l=legid, a=acct)
@@ -838,9 +1099,20 @@ def passenger_called(legid: str, body: ReleaseIn, request: Request, user: dict =
         raise HTTPException(409, "This leg already has a pickup time.")
     if leg["outcomestate"] or leg["executionstate"] == "completed":
         raise HTTPException(409, "This leg is closed.")
+    # The broker is bringing them home: the call is the broker's to take.
+    if leg["brokerstate"] in ("returnpending", "returned"):
+        raise HTTPException(409, "This ride home has been handed back to the broker.")
     now = utcnow()
+    changes = [{"field": "Pickup time", "old": "Will-call", "new": _said(body.pickupat)}]
     run(conn, "UPDATE triplegs SET pickupat = :p WHERE recordid = :l AND accountid = :a",
         p=body.pickupat, l=legid, a=acct)
+    # Discharged from another door, or moved to another facility: collected where they are now.
+    moved = " ".join((body.pickupplace or "").split()).upper()[:255]
+    if moved and moved != (leg["pickupplace"] or ""):
+        spot = wheremap.place(moved) or (None, None)
+        run(conn, "UPDATE triplegs SET pickupplace = :pp, pickuplat = :la, pickuplng = :lg "
+                  "WHERE recordid = :l AND accountid = :a", pp=moved, la=spot[0], lg=spot[1], l=legid, a=acct)
+        changes.append({"field": "Pickup address", "old": leg["pickupplace"], "new": moved})
     note = (body.note or "").strip()
     run(conn, """
         INSERT INTO tripchanges (recordid, accountid, tripid, legid, changedon, changedby, reason,
@@ -848,10 +1120,10 @@ def passenger_called(legid: str, body: ReleaseIn, request: Request, user: dict =
         VALUES (:id, :a, :t, :l, :now, :by, :r, :c, :d, :st)
     """, id=newid(), a=acct, t=leg["tripid"], l=legid, now=now, by=user["recordid"],
         r=" - ".join(x for x in ("PASSENGER CALLED", note[:1900]) if x),
-        c=json.dumps([{"field": "Pickup time", "old": "Will-call", "new": _said(body.pickupat)}]),
-        d=leg["driverid"], st=leg["executionstate"])
+        c=json.dumps(changes), d=leg["driverid"], st=leg["executionstate"])
     log(conn, user, "trip-released", "trip", leg["tripid"],
-        {"legid": legid, "pickupat": str(body.pickupat), "note": note or None}, ip=client_ip(request))
+        {"legid": legid, "pickupat": str(body.pickupat), "pickupplace": moved or None, "note": note or None},
+        ip=client_ip(request))
     saved(conn)
     return {"ok": True}
 
@@ -864,6 +1136,10 @@ NOT_NEEDED = {"otherride": "The passenger has another ride", "admitted": "The pa
 class CallIn(BaseModel):
     answer: str                       # ready | notready | notneeded
     pickupat: datetime | None = None
+    pickupplace: str | None = None    # ready: where they are now
+    source: str | None = None         # ACTIVATION: where the word came from
+    readysince: datetime | None = None  # when the broker says the passenger was ready
+    readyabout: datetime | None = None  # not ready: when they now expect to be
     reason: str | None = None
     note: str | None = None
 
@@ -879,12 +1155,22 @@ def will_call_answered(legid: str, body: CallIn, request: Request, user: dict = 
     if body.answer == "ready":
         if not body.pickupat:
             raise HTTPException(400, "Say when they are to be picked up")
-        return passenger_called(legid, ReleaseIn(pickupat=body.pickupat, note=body.note), request, user, conn)
+        if body.source and body.source not in ACTIVATION:
+            raise HTTPException(400, "Say where the call came from")
+        # Activated: where the word came from, when it reached us, and when the broker says the
+        # passenger was ready - two times that can be far apart, and a broker's clock may run from
+        # the first. Written with the pickup time, so they stand or fall together.
+        run(conn, "UPDATE triplegs SET activationsource = :s, activatedon = :now, brokerreadyat = :r "
+                  "WHERE recordid = :l AND accountid = :a AND pickupat IS NULL",
+            s=body.source, now=utcnow(), r=body.readysince, l=legid, a=user["accountid"])
+        return passenger_called(legid, ReleaseIn(pickupat=body.pickupat, pickupplace=body.pickupplace,
+                                                 note=body.note), request, user, conn)
     if body.answer not in ("notready", "notneeded"):
         raise HTTPException(400, "Say what the passenger said")
     acct = user["accountid"]
     leg = row(conn, """
-        SELECT l.recordid, l.tripid, l.pickupat, l.driverid, l.executionstate, l.outcomestate
+        SELECT l.recordid, l.tripid, l.pickupat, l.driverid, l.executionstate, l.outcomestate,
+               COALESCE(l.brokerstate, t.brokerstate) AS brokerstate
         FROM triplegs l JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
         WHERE l.recordid = :l AND l.accountid = :a
     """, l=legid, a=acct)
@@ -894,6 +1180,9 @@ def will_call_answered(legid: str, body: CallIn, request: Request, user: dict = 
         raise HTTPException(409, "This leg already has a pickup time.")
     if leg["outcomestate"] or leg["executionstate"] == "completed":
         raise HTTPException(409, "This leg is closed.")
+    # The broker is bringing them home: the call is the broker's to take.
+    if leg["brokerstate"] in ("returnpending", "returned"):
+        raise HTTPException(409, "This ride home has been handed back to the broker.")
     note = (body.note or "").strip()
     if body.answer == "notneeded":
         if body.reason not in NOT_NEEDED:
@@ -906,8 +1195,14 @@ def will_call_answered(legid: str, body: CallIn, request: Request, user: dict = 
                                       NOT_NEEDED[body.reason].upper(), note[:1800]) if x)
         changes = [{"field": "Return", "old": "Will-call", "new": "Not needed"}]
     else:
+        # Not ready: when they now expect to be, so the will-call is not overdue from the old time.
+        if not body.readyabout:
+            raise HTTPException(400, "Say when they expect to be ready")
+        old = row(conn, "SELECT readyabout FROM triplegs WHERE recordid = :l", l=legid)["readyabout"]
+        run(conn, "UPDATE triplegs SET readyabout = :r WHERE recordid = :l AND accountid = :a",
+            r=body.readyabout, l=legid, a=acct)
         said = " - ".join(x for x in ("PASSENGER CALLED", "NOT READY YET", note[:1900]) if x)
-        changes = []
+        changes = [{"field": "Ready about", "old": _said(old) if old else None, "new": _said(body.readyabout)}]
     run(conn, """
         INSERT INTO tripchanges (recordid, accountid, tripid, legid, changedon, changedby, reason,
                                  changes, driverid, legstate)
@@ -1024,6 +1319,50 @@ class OutIn(BaseModel):
     note: str | None = None
 
 
+def _shift_rows(conn: Connection, acct: str, driverid: str, a: datetime, b: datetime) -> list[dict]:
+    """This driver's vehicle assignments that touch the time from a to b, as moments."""
+    out = []
+    for s in rows(conn, """
+        SELECT s.recordid, s.workday, s.vehicleid, s.startsat, s.endsat, s.oncall, s.source, v.externalid AS vehiclename
+        FROM dayshifts s JOIN vehicles v ON v.recordid = s.vehicleid
+        WHERE s.accountid = :a AND s.driverid = :d AND s.workday BETWEEN :f AND :u
+    """, a=acct, d=driverid, f=a.date() - timedelta(days=1), u=b.date()):
+        s["from"], s["to"] = plan.span(s["workday"], s["startsat"], s["endsat"])
+        if s["from"] < b and a < s["to"]:
+            out.append(s)
+    return sorted(out, key=lambda s: s["from"])
+
+
+def _put_shift(conn: Connection, acct: str, driverid: str, vehicleid: str, a: datetime, b: datetime,
+               source: str, by: str, oncall: int = 0) -> None:
+    run(conn, """
+        INSERT INTO dayshifts (recordid, accountid, workday, driverid, vehicleid, startsat, endsat,
+                               oncall, source, added, addedby)
+        VALUES (:id, :a, :w, :d, :v, :s, :e, :oc, :src, :now, :by)
+    """, id=newid(), a=acct, w=a.date(), d=driverid, v=vehicleid, s=a.time(), e=b.time(),
+        oc=oncall, src=source, now=utcnow(), by=by)
+
+
+def _free_vehicle(conn: Connection, acct: str, driverid: str, f: datetime, u: datetime, outid: str,
+                  by: str) -> list[dict]:
+    """End the driver's vehicle assignments while they are out: what came before stays, and - back
+    at a time - they have the vehicle again from then. The absence keeps the vehicle and when its
+    assignment would have ended, for Driver Is Back."""
+    freed = []
+    for s in _shift_rows(conn, acct, driverid, f, u):
+        run(conn, "DELETE FROM dayshifts WHERE recordid = :r AND accountid = :a", r=s["recordid"], a=acct)
+        if s["from"] < f:
+            _put_shift(conn, acct, driverid, s["vehicleid"], s["from"], f, s["source"], by, s["oncall"])
+        if u < s["to"]:
+            _put_shift(conn, acct, driverid, s["vehicleid"], u, s["to"], s["source"], by, s["oncall"])
+        freed.append({"vehicleid": s["vehicleid"], "vehiclename": s["vehiclename"],
+                      "from": max(s["from"], f), "until": min(s["to"], u)})
+        if len(freed) == 1:
+            run(conn, "UPDATE driverunavailable SET vehicleid = :v, vehicleuntil = :t WHERE recordid = :r",
+                v=s["vehicleid"], t=s["to"], r=outid)
+    return freed
+
+
 @router.post("/dispatch/out")
 def someone_is_out(body: OutIn, request: Request, user: dict = Depends(editor),
                    conn: Connection = Depends(get_conn)):
@@ -1051,24 +1390,45 @@ def someone_is_out(body: OutIn, request: Request, user: dict = Depends(editor),
     if not who:
         raise HTTPException(404, f"No such {body.kind}")
 
+    outid = newid()
     run(conn, f"""
         INSERT INTO {body.kind}unavailable (recordid, accountid, {body.kind}id, fromat, untilat,
                                             reason, note, added, addedby)
         VALUES (:id, :a, :who, :f, :u, :r, :n, :now, :by)
-    """, id=newid(), a=acct, who=body.recordid, f=body.fromat, u=body.untilat, r=body.reason,
+    """, id=outid, a=acct, who=body.recordid, f=body.fromat, u=body.untilat, r=body.reason,
         n=(body.note or "").strip()[:200] or None, now=utcnow(), by=user["recordid"])
+    # Their vehicle is free while they are out, for whoever is called in to cover.
+    freed = _free_vehicle(conn, acct, body.recordid, body.fromat, body.untilat, outid,
+                          user["recordid"]) if body.kind == "driver" else []
+    # Out while on call - the driver, or the vehicle they would take: off the on-call list, so
+    # nobody believes a return is covered by somebody who cannot go.
+    offcall = []
+    for day in (body.fromat.date() - timedelta(days=1), body.fromat.date(), body.untilat.date()):
+        for o in plan.on_call(conn, acct, day):
+            if o[f"{'driverid' if body.kind == 'driver' else 'vehicleid'}"] != body.recordid:
+                continue
+            a, b = plan.span(o["workday"], o["startsat"], o["endsat"])
+            if a < body.untilat and body.fromat < b and o["recordid"] not in {x["recordid"] for x in offcall}:
+                run(conn, "DELETE FROM oncall WHERE recordid = :r AND accountid = :a", r=o["recordid"], a=acct)
+                offcall.append({"recordid": o["recordid"], "drivername": o["drivername"],
+                                "vehiclename": o["vehiclename"], "from": a})
 
     # Only work still to do. A trip driven this morning is not undone by its driver going home
-    # sick this afternoon.
+    # sick this afternoon - but one from earlier today that never started is still to do, and
+    # comes off with the rest. A passenger already aboard stays where they are: somebody has to
+    # finish that trip, or go to them, and the office is told which.
     column = "driverid" if body.kind == "driver" else "vehicleid"
-    legs = rows(conn, f"""
-        SELECT l.recordid AS legid, l.tripid, l.pickupat, t.externalid, t.passenger
+    held = rows(conn, f"""
+        SELECT l.recordid AS legid, l.tripid, l.pickupat, l.executionstate, t.externalid, t.passenger
         FROM triplegs l JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
         WHERE l.accountid = :a AND l.{column} = :who
           AND l.executionstate <> 'completed' AND l.outcomestate IS NULL
-          AND l.pickupat IS NOT NULL AND l.pickupat >= :f AND l.pickupat < :u
+          AND l.pickupat IS NOT NULL AND l.pickupat >= :day AND l.pickupat < :u
         ORDER BY l.pickupat
-    """, a=acct, who=body.recordid, f=body.fromat, u=body.untilat)
+    """, a=acct, who=body.recordid, u=body.untilat,
+        day=datetime.combine(body.fromat.date(), datetime.min.time()))
+    legs = [l for l in held if l["executionstate"] != "onboard"]
+    aboard = [l for l in held if l["executionstate"] == "onboard"]
 
     now = utcnow()
     for leg in legs:
@@ -1091,13 +1451,22 @@ def someone_is_out(body: OutIn, request: Request, user: dict = Depends(editor),
     if legs:
         evaluate(conn, acct, tripids=sorted({l["tripid"] for l in legs}),
                  userid=user["recordid"], reason="unavailable")
+        # One text for the lot, not one a trip: the driver needs to know to stop, not the list.
+        if body.kind == "driver":
+            # Back later the same day: say until when, so they know the rest of the day is theirs.
+            back = (f" until {body.untilat:%-I:%M %p}" if body.untilat.date() == body.fromat.date()
+                    and body.untilat.time() < datetime.strptime("23:59", "%H:%M").time() else "")
+            sms.tell(conn, acct, body.recordid, "removed",
+                     f"You have been taken off {len(legs)} trip{'s' if len(legs) > 1 else ''} from "
+                     f"{sms.when(body.fromat)}{back}. Call dispatch.", None, None)
     log(conn, user, "dispatch-out", body.kind, body.recordid,
         {"reason": body.reason, "from": str(body.fromat), "until": str(body.untilat),
          "lifted": len(legs)}, ip=client_ip(request))
     saved(conn)
-    return {"ok": True, "lifted": len(legs),
-            "trips": [{k: l[k] for k in ("legid", "tripid", "externalid", "passenger", "pickupat")}
-                      for l in legs]}
+    keep = ("legid", "tripid", "externalid", "passenger", "pickupat")
+    return {"ok": True, "lifted": len(legs), "freed": freed, "offcall": offcall,
+            "trips": [{k: l[k] for k in keep} for l in legs],
+            "aboard": [{k: l[k] for k in keep} for l in aboard]}
 
 
 @router.get("/dispatch/out")
@@ -1126,17 +1495,53 @@ def who_is_out(user: dict = Depends(current_user), conn: Connection = Depends(ge
 @router.delete("/dispatch/out/{kind}/{recordid}")
 def back_in(kind: str, recordid: str, request: Request, user: dict = Depends(editor),
             conn: Connection = Depends(get_conn)):
-    """They are back. The absence is removed; nothing is reassigned to them automatically - the
-    trips were covered by somebody while they were away, and taking them back is a decision."""
+    """They are back. An absence already begun ends now - the record that they were out from one
+    until twenty past two is kept - and one not begun yet is taken away. Nothing is reassigned to
+    them automatically: the trips were covered by somebody while they were away, and taking them
+    back is a decision."""
     if kind not in ("driver", "vehicle"):
         raise HTTPException(404, "No such thing")
-    r = run(conn, f"DELETE FROM {kind}unavailable WHERE recordid = :id AND accountid = :a",
-            id=recordid, a=user["accountid"])
-    if not r.rowcount:
+    acct = user["accountid"]
+    held = row(conn, f"SELECT * FROM {kind}unavailable WHERE recordid = :id AND accountid = :a",
+               id=recordid, a=acct)
+    if not held:
         raise HTTPException(404, "Not found")
-    log(conn, user, "dispatch-back", kind, recordid, {}, ip=client_ip(request))
+    here = localnow(user.get("timezone") or _account_zone(conn, acct))
+    vehicle = _vehicle_back(conn, acct, held, max(here, held["fromat"]), user["recordid"]) \
+        if kind == "driver" else None
+    if held["fromat"] < here:
+        run(conn, f"UPDATE {kind}unavailable SET untilat = :now WHERE recordid = :id AND accountid = :a",
+            now=min(here, held["untilat"]), id=recordid, a=acct)
+    else:
+        run(conn, f"DELETE FROM {kind}unavailable WHERE recordid = :id AND accountid = :a", id=recordid, a=acct)
+    log(conn, user, "dispatch-back", kind, recordid, {"at": str(here), "vehicle": vehicle},
+        ip=client_ip(request))
     saved(conn)
-    return {"ok": True}
+    return {"ok": True, "vehicle": vehicle}
+
+
+def _vehicle_back(conn: Connection, acct: str, out: dict, start: datetime, by: str) -> str | None:
+    """Back early: the vehicle they had, from now until its assignment would have ended - unless
+    somebody has been put in it meanwhile, which is said. The assignment already waiting for them
+    after a back-at time starts now instead."""
+    if not out.get("vehicleid") or not out.get("vehicleuntil") or start >= out["vehicleuntil"]:
+        return None
+    name = (row(conn, "SELECT externalid FROM vehicles WHERE recordid = :v", v=out["vehicleid"]) or {}).get("externalid")
+    waiting = next((s for s in _shift_rows(conn, acct, out["driverid"], start, out["vehicleuntil"])
+                    if s["vehicleid"] == out["vehicleid"] and s["from"] >= start), None)
+    end = waiting["from"] if waiting else out["vehicleuntil"]
+    if start >= end:
+        return None
+    taken = plan.clash(conn, acct, start.date(), out["driverid"], out["vehicleid"], start.time(),
+                       (waiting["to"] if waiting else end).time(), leaving=waiting["recordid"] if waiting else None)
+    if taken:
+        return f"{name} was not given back: {taken}"
+    if waiting:
+        run(conn, "UPDATE dayshifts SET startsat = :s, updated = :now WHERE recordid = :r",
+            s=start.time(), now=utcnow(), r=waiting["recordid"])
+    else:
+        _put_shift(conn, acct, out["driverid"], out["vehicleid"], start, out["vehicleuntil"], "manual", by)
+    return f"{name} is theirs again from {start:%-I:%M %p}."
 
 
 # What an office actually did about a problem. Chosen rather than typed, like a cancellation
@@ -1333,7 +1738,13 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     # look four hours later than it was, so an afternoon pickup read as missed before lunch.
     here = localnow(user.get("timezone") or _account_zone(conn, acct))
     where = ["t.accountid = :a", "t.deleted IS NULL"]
-    params = {"a": acct, "here": here}
+    # From ninety minutes before today's close, a will-call the company is still responsible for and
+    # nobody has collected needs its coverage recorded - who is on call for it, or who else took it.
+    # Coverage Needed, under Needs Attention, until that is on the record.
+    closes = _closes(conn, acct, here.date())
+    closesoon = closes - PAST_CLOSING if closes else None
+    params = {"a": acct, "here": here, "today": here.date(),
+              "closesoon": closesoon or datetime.combine(here.date(), datetime.max.time())}
     if day:
         # A will-call waiting for the passenger's call has no pickup time, so it is on every day's
         # board until it is called or settled. One settled before the call - canceled - belongs to
@@ -1358,10 +1769,12 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
         # driver never reporting that they set off, or a leg recorded as disputed and not settled.
         # The same legs the count on the button counts: a leg closed out - cancelled, a no-show,
         # not done - is finished business, whatever its pickup time says.
-        where.append("""(l.outcomestate IS NULL OR l.outcomestate = 'disputed')""")
-        where.append("""(
+        # Or taken by the on-call driver after closing and not yet looked at, whatever came of it.
+        where.append("""((l.selfassignedon IS NOT NULL AND l.afterhoursreviewedon IS NULL) OR (
+            (l.outcomestate IS NULL OR l.outcomestate = 'disputed') AND (
             (l.driverid IS NULL AND l.pickupat IS NOT NULL
-                 AND l.pickupat < :here + INTERVAL 2 HOUR)
+                 AND l.pickupat < :here + INTERVAL 2 HOUR
+                 AND COALESCE(l.brokerstate, t.brokerstate) NOT IN ('offered', 'returnpending', 'returned'))
             OR t.dispatchstate = 'needsreassign'
             OR (l.executionstate = 'scheduled' AND l.pickupat IS NOT NULL
                  AND l.pickupat < :here - INTERVAL :grace MINUTE)
@@ -1370,14 +1783,34 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
             OR l.outcomestate = 'disputed'
             OR EXISTS (SELECT 1 FROM tripchanges c WHERE c.legid = l.recordid
                         AND c.driverid = l.driverid AND c.seenon IS NULL)
-        )""")
+            OR (l.pickupat IS NULL AND l.brokerstate IS NULL AND t.cancelledon IS NULL
+                 AND t.brokerstate NOT IN ('offered', 'returnpending', 'returned') AND t.tripdate = :today AND :here >= :closesoon
+                 AND COALESCE(l.responsibility, 'provider') IN ('provider', 'unconfirmed')
+                 AND NOT EXISTS (SELECT 1 FROM returncoverage rc WHERE rc.legid = l.recordid))
+            -- Still waiting at a facility about to lock up: they could be left outside.
+            OR (l.pickupat IS NULL AND l.brokerstate IS NULL AND t.cancelledon IS NULL AND t.tripdate = :today
+                 AND t.brokerstate NOT IN ('offered', 'returnpending', 'returned')
+                 AND COALESCE(l.responsibility, 'provider') IN ('provider', 'unconfirmed')
+                 AND EXISTS (SELECT 1 FROM places p WHERE p.accountid = l.accountid AND p.deleted IS NULL
+                              AND CONCAT_WS(', ', p.address, p.city, CONCAT_WS(' ', p.state, p.zip)) = l.pickupplace
+                              AND TIMESTAMP(t.tripdate, p.closesat) - INTERVAL :facilitywarn MINUTE <= :here))
+            -- A will-call well past its Ready About with no call recorded: somebody rings them.
+            OR (l.pickupat IS NULL AND l.brokerstate IS NULL AND t.cancelledon IS NULL AND l.readyabout IS NOT NULL
+                 AND t.brokerstate NOT IN ('offered', 'returnpending', 'returned') AND t.tripdate = :today
+                 AND l.readyabout < :here - INTERVAL :overdue MINUTE)
+            -- A will-call from an earlier day that nobody ever took: it has to be closed, not left.
+            OR (l.pickupat IS NULL AND l.brokerstate IS NULL AND t.cancelledon IS NULL
+                 AND t.brokerstate NOT IN ('offered', 'returnpending', 'returned') AND t.tripdate < :today)
+        )))""")
         params["grace"] = LATE_AFTER
+        params["overdue"] = CALL_OVERDUE
+        params["facilitywarn"] = FACILITY_WARNING
     elif state == "incoming":
         where.append("t.brokerstate = 'offered'")
     elif state == "returning":
         # Still ours until the broker says otherwise, so it stays on the board rather than
         # disappearing the moment somebody pressed Return.
-        where.append("t.brokerstate = 'returnpending'")
+        where.append("COALESCE(l.brokerstate, t.brokerstate) = 'returnpending'")
     if q:
         where.append("(t.externalid LIKE CONCAT('%', :q, '%') OR t.passenger LIKE CONCAT('%', :q, '%'))")
         params["q"] = q
@@ -1392,7 +1825,23 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
                 AND e.state = 'onboard') AS onboardat,
                l.pickuplat, l.pickuplng, l.dropofflat, l.dropofflng, l.pickupplace,
                l.dropoffplace, l.executionstate, l.outcomestate, l.driverid, l.vehicleid,
-               t.recordid AS tripid, t.externalid, t.passenger, t.servicelevel, t.brokerstate,
+               l.readyabout, l.returnplan, l.brokerstate IS NOT NULL AS legreturn, t.tripdate,
+               l.selfassignedon, l.afterhoursreviewedon, l.responsibility, l.responsibilitynote,
+               l.activationsource, l.activatedon, l.brokerreadyat, t.brokerid,
+               (SELECT GROUP_CONCAT(CONCAT_WS('|', rc.kind, rc.person, COALESCE(rc.contact, ''), COALESCE(rc.until, ''))
+                                    ORDER BY rc.person SEPARATOR '\n')
+                  FROM returncoverage rc WHERE rc.legid = l.recordid
+                   AND rc.recordedon = (SELECT MAX(x.recordedon) FROM returncoverage x WHERE x.legid = l.recordid)) AS coverage,
+               (l.legnumber = 1 AND EXISTS (SELECT 1 FROM triplegs r WHERE r.tripid = l.tripid AND r.legnumber > 1
+                    AND r.responsibility = 'unconfirmed' AND r.brokerstate IS NULL AND r.outcomestate IS NULL)) AS returnundecided,
+               t.recordid AS tripid, t.externalid, t.passenger, t.servicelevel, t.critical,
+               COALESCE(l.brokerstate, t.brokerstate) AS brokerstate,
+               (SELECT MIN(p.closesat) FROM places p WHERE p.accountid = l.accountid AND p.deleted IS NULL
+                   AND CONCAT_WS(', ', p.address, p.city, CONCAT_WS(' ', p.state, p.zip)) = l.pickupplace) AS facilitycloses,
+               -- The broker's confirmation number, once they have confirmed taking it back.
+               (SELECT r.acknowledgedref FROM triprejections r WHERE r.tripid = t.recordid
+                   AND (r.legid = l.recordid OR r.legid IS NULL) AND r.acknowledgedon IS NOT NULL
+                 ORDER BY r.acknowledgedon DESC LIMIT 1) AS brokerref,
                t.dispatchstate, b.code AS broker, t.billingstatus, t.cancelledon IS NOT NULL AS cancelled,
                (SELECT c.reason FROM tripchanges c WHERE c.legid = l.recordid AND l.pickupat IS NULL
                 ORDER BY c.changedon DESC LIMIT 1) AS lastcall,
@@ -1427,7 +1876,8 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
         WHERE t.accountid = :a AND t.deleted IS NULL AND (l.outcomestate = 'disputed' OR (
             l.outcomestate IS NULL AND (
             (l.driverid IS NULL AND l.pickupat IS NOT NULL
-                 AND l.pickupat < :here + INTERVAL 2 HOUR)
+                 AND l.pickupat < :here + INTERVAL 2 HOUR
+                 AND COALESCE(l.brokerstate, t.brokerstate) NOT IN ('offered', 'returnpending', 'returned'))
             OR t.dispatchstate = 'needsreassign'
             OR (l.executionstate = 'scheduled' AND l.pickupat IS NOT NULL
                  AND l.pickupat < :here - INTERVAL :grace MINUTE)
@@ -1472,6 +1922,9 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     # trips as fine.
     # The app's moments are instants (UTC); the board reads wall clock in the company's zone.
     shift_to_local = timedelta(minutes=round((here - utcnow()).total_seconds() / 60))
+    # Each broker's will-call terms with this company (Payers, Will-Call Rules), for the deadlines.
+    terms = {r["payerid"]: r for r in rows(conn, "SELECT payerid, pickuplimit, clockstarts FROM accountpayers "
+                                                  "WHERE accountid = :a AND pickuplimit IS NOT NULL", a=acct)}
     seen = dispatch._last_seen(conn, acct) if any(
         i["executionstate"] in ("enroute", "arrived", "onboard") for i in items) else {}
     for i in items:
@@ -1511,11 +1964,47 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
         # board selects it by - so a row there never reads "Scheduled" and leaves the dispatcher
         # to work out what is wrong with it.
         i["attention"] = None
+        # A will-call waiting at a place within the hour of closing, or already closed.
+        i["facilitycloses"] = (datetime.combine(i["tripdate"], plan.as_time(i["facilitycloses"]))
+                               if i["facilitycloses"] is not None else None)
+        i["closingsoon"] = bool(i["facilitycloses"] and not i["pickupat"] and not i["outcomestate"]
+                                and not i["cancelled"] and i["brokerstate"] not in HANDED_BACK
+                                and i["tripdate"] == here.date()
+                                and here >= i["facilitycloses"] - timedelta(minutes=FACILITY_WARNING))
         if not i["outcomestate"] and not i["late"]:
             if i["dispatchstate"] == "needsreassign":
                 i["attention"] = "reassign"
-            elif i["needsdriver"] and i["pickupat"] and i["pickupat"] < here + timedelta(hours=2):
+            # Asked back from the broker: waiting on them, not on a driver.
+            elif (i["needsdriver"] and i["pickupat"] and i["pickupat"] < here + timedelta(hours=2)
+                  and i["brokerstate"] not in HANDED_BACK):
                 i["attention"] = "nodriver"
+            elif (not i["pickupat"] and i["brokerstate"] not in HANDED_BACK and not i["cancelled"] and closesoon
+                  and i["tripdate"] == here.date() and here >= closesoon and not i["coverage"]
+                  and (i["responsibility"] or "provider") in ("provider", "unconfirmed")):
+                i["attention"] = "coverage"
+            elif i["closingsoon"] and (i["responsibility"] or "provider") in ("provider", "unconfirmed"):
+                i["attention"] = "facilityclosing"
+            elif (not i["pickupat"] and i["brokerstate"] not in HANDED_BACK and not i["cancelled"] and i["readyabout"]
+                  and i["tripdate"] == here.date() and i["readyabout"] < here - timedelta(minutes=CALL_OVERDUE)):
+                i["attention"] = "calloverdue"
+            elif not i["pickupat"] and i["brokerstate"] not in HANDED_BACK and not i["cancelled"] and i["tripdate"] < here.date():
+                i["attention"] = "nevercalled"
+        # Taken by the on-call driver after closing: the office's to look at in the morning.
+        i["afterhours"] = bool(i["selfassignedon"] and not i["afterhoursreviewedon"])
+        if i["coverage"]:
+            people = [(p.split("|") + ["", "", "", ""])[:4] for p in i["coverage"].split("\n")]
+            i["coverage"] = {"kind": people[0][0], "people": [
+                {"person": person, "contact": contact or None, "until": until or None}
+                for _, person, contact, until in people]}
+        # A will-call activated for a broker with a pickup limit: when it has to be collected by,
+        # from the passenger's call if that is when the broker's clock starts and we were told it.
+        i["deadline"] = None
+        rule = terms.get(i["brokerid"]) if i["brokerid"] else None
+        if (rule and rule["pickuplimit"] and i["activatedon"] and i["legnumber"] > 1
+                and i["executionstate"] in ("scheduled", "enroute", "arrived") and not i["outcomestate"]):
+            start = (i["brokerreadyat"] if rule["clockstarts"] == "passenger" and i["brokerreadyat"]
+                     else i["activatedon"] + (here - utcnow()))
+            i["deadline"] = start + timedelta(minutes=rule["pickuplimit"])
         i["detail"] = _what_went_wrong(i, here)
         # A change the driver on the leg has not read. Said before anything else on the row: with
         # the passenger aboard it is a telephone call, not a note.
@@ -1658,9 +2147,15 @@ def assign_leg(legid: str, body: AssignIn, request: Request, user: dict = Depend
     # Called gives it its time, and then it is assigned like any other leg.
     if body.driverid and not said["leg"]["pickupat"]:
         raise HTTPException(409, "A will-call gets its driver once the passenger calls and it has a pickup time.")
-    gone = row(conn, "SELECT brokerstate FROM trips WHERE recordid = :t", t=said["leg"]["tripid"]) or {}
+    gone = row(conn, "SELECT COALESCE(l.brokerstate, t.brokerstate) AS brokerstate FROM triplegs l "
+                     "JOIN trips t ON t.recordid = l.tripid WHERE l.recordid = :l", l=legid) or {}
     if body.driverid and gone.get("brokerstate") in ("returnpending", "returned"):
         raise HTTPException(409, "This trip has been sent back to the broker, so it cannot be given a driver.")
+    # The trip there is not dispatched while nobody has decided who brings the passenger home.
+    first = row(conn, "SELECT legnumber FROM triplegs WHERE recordid = :l", l=legid) or {}
+    undecided = return_undecided(conn, acct, said["leg"]["tripid"]) if first.get("legnumber") == 1 else None
+    if body.driverid and undecided:
+        raise HTTPException(409, _undecided_said(undecided))
     chosen_driver = next((d for d in said["drivers"] if d["driverid"] == body.driverid), None)
     chosen_vehicle = next((v for v in said["vehicles"] if v["vehicleid"] == body.vehicleid), None)
     if body.driverid and not chosen_driver:
@@ -1670,9 +2165,15 @@ def assign_leg(legid: str, body: AssignIn, request: Request, user: dict = Depend
 
     # A hard block has no override, by anybody. Not a disabled control, not a confirmation: the
     # answer is no, and the reason is the one the engine gave.
+    # Said with who it is about, and for which trip day: on a board of a dozen drivers "On file, but
+    # it ran out" names nobody.
     for who in (chosen_driver, chosen_vehicle):
         if who and who["blocked"]:
-            raise HTTPException(409, who["blocked"][0])
+            name = (who.get("name") or who.get("externalid") or "").title() if who is chosen_driver \
+                else who.get("externalid") or who.get("name") or ""
+            raise HTTPException(409, f"{name} cannot take this trip"
+                                     + (f" on {said['leg']['pickupat']:%m/%d/%Y}" if said['leg'].get("pickupat") else "")
+                                     + f": {who['blocked'][0]}")
 
     warnings = (chosen_driver or {}).get("warnings", []) + (chosen_vehicle or {}).get("warnings", [])
     # A restricted driving record is accepted for a trip by an owner or admin only; every other
@@ -1763,10 +2264,18 @@ class DayIn(BaseModel):
     day: date
 
 
+class AutoPlanIn(BaseModel):
+    day: date
+    legids: list[str] | None = None   # the ticked trips; none given is every unassigned trip
+
+
 @router.post("/dispatch/autoplan")
-def auto_plan(body: DayIn, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
-    """A driver for each of the day's unassigned trips, with the reasons. Nothing is saved."""
-    return {"proposal": dayplan.propose(conn, user["accountid"], body.day)}
+def auto_plan(body: AutoPlanIn, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """A driver for each of the chosen unassigned trips, with the reasons. Nothing is saved."""
+    if body.legids is not None and not body.legids:
+        raise HTTPException(400, "Tick the trips to assign")
+    only = set(body.legids) if body.legids is not None else None
+    return {"proposal": dayplan.propose(conn, user["accountid"], body.day, only)}
 
 
 class PlannedLeg(BaseModel):
@@ -1872,7 +2381,7 @@ def accept_trip(tripid: str, request: Request, user: dict = Depends(editor),
         raise HTTPException(404, "No such trip")
     if held["brokerstate"] != "offered":
         raise HTTPException(409, "That trip is not an open offer")
-    run(conn, "UPDATE trips SET brokerstate = 'accepted', updated = :now WHERE recordid = :t",
+    run(conn, "UPDATE trips SET brokerstate = 'accepted', confirmedon = :now, updated = :now WHERE recordid = :t",
         now=utcnow(), t=tripid)
     log(conn, user, "trip-accepted", "trip", tripid, {}, ip=client_ip(request))
     saved(conn)
@@ -1941,7 +2450,7 @@ def return_acknowledged(tripid: str, body: AcknowledgedIn, request: Request,
     acct = user["accountid"]
     pending = row(conn, """
         SELECT recordid FROM triprejections
-        WHERE accountid = :a AND tripid = :t AND acknowledgedon IS NULL
+        WHERE accountid = :a AND tripid = :t AND legid IS NULL AND acknowledgedon IS NULL
         ORDER BY requestedon DESC LIMIT 1
     """, a=acct, t=tripid)
     if not pending:
@@ -1958,6 +2467,141 @@ def return_acknowledged(tripid: str, body: AcknowledgedIn, request: Request,
         ip=client_ip(request))
     saved(conn)
     return {"ok": True, "state": "returned"}
+
+
+@router.post("/legs/{legid}/return")
+def return_leg(legid: str, body: ReturnIn, request: Request, user: dict = Depends(editor),
+               conn: Connection = Depends(get_conn)):
+    """Hand one leg back to the broker - the ride home we cannot cover - and keep the rest of the
+    trip. Ours, on the board, until the broker confirms they have it."""
+    acct = user["accountid"]
+    leg = row(conn, "SELECT recordid, tripid, driverid, pickupat, executionstate, outcomestate, brokerstate "
+                    "FROM triplegs WHERE recordid = :l AND accountid = :a", l=legid, a=acct)
+    if not leg:
+        raise HTTPException(404, "No such leg")
+    trip = row(conn, "SELECT recordid, externalid, brokerid, brokerstate, cancelledon FROM trips "
+                     "WHERE recordid = :t AND accountid = :a AND deleted IS NULL", t=leg["tripid"], a=acct)
+    if not trip or not trip["brokerid"]:
+        raise HTTPException(409, "This trip did not come from a broker, so there is nobody to return it to.")
+    if trip["cancelledon"]:
+        raise HTTPException(409, "This trip is canceled. There is nothing to return.")
+    if trip["brokerstate"] in ("returnpending", "returned") or leg["brokerstate"]:
+        raise HTTPException(409, "This has already been sent back to the broker.")
+    if leg["executionstate"] != "scheduled" or leg["outcomestate"]:
+        raise HTTPException(409, "This leg has already started or been closed, so it can no longer be returned.")
+    if body.reason not in RETURN_REASONS:
+        raise HTTPException(400, "Say why it is going back")
+    _hand_back_leg(conn, acct, user, trip, leg, body.reason, body.note)
+    log(conn, user, "leg-returned", "trip", trip["recordid"],
+        {"leg": legid, "reason": body.reason, "note": body.note}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True, "state": "returnpending"}
+
+
+@router.post("/legs/{legid}/return/acknowledged")
+def leg_return_acknowledged(legid: str, body: AcknowledgedIn, request: Request,
+                            user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """The broker has confirmed they are bringing the passenger home. Only this closes the leg."""
+    acct = user["accountid"]
+    pending = row(conn, """
+        SELECT recordid, tripid FROM triprejections
+        WHERE accountid = :a AND legid = :l AND acknowledgedon IS NULL
+        ORDER BY requestedon DESC LIMIT 1
+    """, a=acct, l=legid)
+    if not pending:
+        raise HTTPException(404, "Nothing is waiting to be acknowledged on that leg")
+    now = utcnow()
+    run(conn, """
+        UPDATE triprejections SET acknowledgedon = :now, acknowledgedref = :ref,
+               senton = COALESCE(senton, :now), sentby = COALESCE(sentby, :how)
+        WHERE recordid = :id
+    """, now=now, ref=(body.ref or "").strip()[:64] or None, how=body.sentby[:16], id=pending["recordid"])
+    run(conn, "UPDATE triplegs SET brokerstate = 'returned' WHERE recordid = :l AND accountid = :a", l=legid, a=acct)
+    log(conn, user, "leg-return-acknowledged", "trip", pending["tripid"], {"leg": legid, "ref": body.ref},
+        ip=client_ip(request))
+    saved(conn)
+    return {"ok": True, "state": "returned"}
+
+
+class OnCallIn(BaseModel):
+    person: str
+    contact: str | None = None        # how they are reached
+    until: datetime | None = None     # the end of their cover
+
+
+class CoverageIn(BaseModel):
+    kind: str                         # oncall | other
+    person: str | None = None         # other: the provider that took it
+    contact: str | None = None        # other: the provider's confirmation
+    people: list[OnCallIn] = []       # oncall: everybody on call for it
+
+
+@router.post("/legs/{legid}/coverage")
+def record_coverage(legid: str, body: CoverageIn, request: Request, user: dict = Depends(editor),
+                    conn: Connection = Depends(get_conn)):
+    """How a will-call still out near closing gets the passenger home, on the record: the person on
+    call for it, how they are reached and until when - or the other provider that has taken it,
+    which makes the return theirs. Acknowledging is not coverage; this is."""
+    acct = user["accountid"]
+    leg = row(conn, "SELECT recordid, tripid, pickupat, outcomestate, brokerstate FROM triplegs "
+                    "WHERE recordid = :l AND accountid = :a", l=legid, a=acct)
+    if not leg:
+        raise HTTPException(404, "No such leg")
+    if leg["pickupat"] is not None or leg["outcomestate"] or leg["brokerstate"]:
+        raise HTTPException(409, "This return is no longer waiting for its call.")
+    clean = lambda v: (v or "").strip().upper()[:160] or None                  # noqa: E731
+    if body.kind == "oncall":
+        people = [(clean(p.person), clean(p.contact), p.until) for p in body.people]
+        if not people or any(not p for p, _, _ in people):
+            raise HTTPException(400, "Say who is covering it")
+        if any(not c or not u for _, c, u in people):
+            raise HTTPException(400, "Say how each person on call is reached, and until when.")
+    elif body.kind == "other":
+        person, contact = clean(body.person), clean(body.contact)
+        if not person:
+            raise HTTPException(400, "Say who is covering it")
+        if not contact:
+            raise HTTPException(400, "Give the other provider's confirmation.")
+        people = [(person, contact, None)]
+    else:
+        raise HTTPException(400, "Say who is covering it")
+    # One recording, one row per person: the rows written together are the coverage.
+    now = utcnow()
+    for p, c, u in people:
+        run(conn, """
+            INSERT INTO returncoverage (recordid, accountid, legid, kind, person, contact, until, recordedon, recordedby)
+            VALUES (:id, :a, :l, :k, :p, :c, :u, :now, :by)
+        """, id=newid(), a=acct, l=legid, k=body.kind, p=p, c=c, u=u, now=now, by=user["recordid"])
+    if body.kind == "other":
+        run(conn, "UPDATE triplegs SET responsibility = 'other', responsibilitynote = :n WHERE recordid = :l",
+            n=f"{person} - {contact}"[:255], l=legid)
+    elif row(conn, "SELECT 1 AS x FROM triplegs WHERE recordid = :l AND responsibility = 'unconfirmed'", l=legid):
+        run(conn, "UPDATE triplegs SET responsibility = 'provider' WHERE recordid = :l", l=legid)
+    log(conn, user, "return-coverage", "trip", leg["tripid"],
+        {"legid": legid, "kind": body.kind,
+         "people": [{"person": p, "contact": c, "until": str(u) if u else None} for p, c, u in people]},
+        ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
+@router.post("/legs/{legid}/afterhours/reviewed")
+def after_hours_reviewed(legid: str, request: Request, user: dict = Depends(editor),
+                         conn: Connection = Depends(get_conn)):
+    """The office has looked at a will-call the on-call driver took after closing: who took it,
+    when, and what the app recorded. Until this, the trip is not billed."""
+    acct = user["accountid"]
+    leg = row(conn, "SELECT tripid, selfassignedon, afterhoursreviewedon FROM triplegs "
+                    "WHERE recordid = :l AND accountid = :a", l=legid, a=acct)
+    if not leg or not leg["selfassignedon"]:
+        raise HTTPException(404, "No after-hours trip to review on that leg")
+    if leg["afterhoursreviewedon"]:
+        raise HTTPException(409, "This has already been reviewed.")
+    run(conn, "UPDATE triplegs SET afterhoursreviewedon = :now, afterhoursreviewedby = :by "
+              "WHERE recordid = :l AND accountid = :a", now=utcnow(), by=user["recordid"], l=legid, a=acct)
+    log(conn, user, "afterhours-reviewed", "trip", leg["tripid"], {"legid": legid}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
 
 
 # Why a trip is not going to happen. Chosen, not typed: a passenger who cancelled an hour before

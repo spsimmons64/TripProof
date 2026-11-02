@@ -94,10 +94,46 @@ def _because(stop: dict) -> str:
 # query reads "until further notice" and a driver with a trip booked for noon is busy for the rest
 # of their career.
 LEG_ALLOWANCE = timedelta(minutes=90)
+# Getting the passenger out and settled at the far end, on top of the drive.
+UNLOAD = 10
+
+
+def leg_minutes(leg: dict) -> int:
+    """How long a leg will hold its driver: the drop-off the driver recorded; else the appointment
+    it is for; else the drive between its two addresses - the estimate the calendar shows - with
+    time to unload. Never under fifteen minutes. Only a leg with no place known for either end is
+    given the flat allowance: 90 minutes for every trip made a ten-minute hop look like an hour and
+    a half of somebody's day, and a trip at half past eleven run past a noon close."""
+    start = leg.get("pickupat")
+    if start and leg.get("dropoffat"):
+        return max(15, int((leg["dropoffat"] - start).total_seconds() // 60))
+    if start and leg.get("appointmentat") and leg["appointmentat"] > start:
+        return max(15, int((leg["appointmentat"] - start).total_seconds() // 60) + UNLOAD)
+    a = (leg.get("pickuplat"), leg.get("pickuplng"))
+    b = (leg.get("dropofflat"), leg.get("dropofflng"))
+    if None not in a and None not in b:
+        from app import routing          # routing reads _miles from here
+        road = _miles((float(a[0]), float(a[1])), (float(b[0]), float(b[1]))) * routing.ROAD_FACTOR
+        return max(15, round(road / routing.TOWN_MPH * 60) + UNLOAD)
+    return int(LEG_ALLOWANCE.total_seconds() // 60)
+
+
+def drive_minutes(a, b) -> int:
+    """The drive from one place to another, empty: the same road estimate a leg is timed by, without
+    the unloading. Nothing when either place is not known."""
+    if not a or not b or None in a or None in b:
+        return 0
+    from app import routing
+    road = _miles((float(a[0]), float(a[1])), (float(b[0]), float(b[1]))) * routing.ROAD_FACTOR
+    return round(road / routing.TOWN_MPH * 60)
+
+
+# The furthest a driver is looked for either side of a leg: an hour and a half's empty drive.
+REACH = timedelta(minutes=90)
 
 
 def _busy(conn: Connection, accountid: str, when: datetime, minutes: int,
-          exceptleg: str | None = None) -> dict[str, str]:
+          exceptleg: str | None = None, ends: tuple | None = None) -> dict[str, str]:
     """Drivers and vehicles already committed across the window, and to what.
 
     Committed means WORK STILL TO DO. A completed leg does not hold anybody: the trip happened,
@@ -114,16 +150,26 @@ def _busy(conn: Connection, accountid: str, when: datetime, minutes: int,
     """
     until = when + timedelta(minutes=minutes)
     taken: dict[str, str] = {}
+    # `ends`, this leg's pickup and drop-off: a driver is also busy when they cannot get from the
+    # last drop-off to this pickup, or from this drop-off to their next pickup, in time.
+    here, there = ends or (None, None)
+    reach = REACH if ends else timedelta(0)
+    # Narrowed by the database to the last few hours, then each leg held only as long as it will
+    # take (leg_minutes).
     for leg in rows(conn, """
-        SELECT l.driverid, l.vehicleid, l.pickupat, l.dropoffat, t.externalid
+        SELECT l.driverid, l.vehicleid, l.pickupat, l.dropoffat, l.appointmentat, l.pickuplat,
+               l.pickuplng, l.dropofflat, l.dropofflng, t.externalid
         FROM triplegs l
         JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
         WHERE l.accountid = :a AND l.pickupat < :until
           AND (:notleg IS NULL OR l.recordid <> :notleg)
           AND l.executionstate <> 'completed' AND l.outcomestate IS NULL
-          AND COALESCE(l.dropoffat, l.pickupat + INTERVAL :allow MINUTE) > :when
-    """, a=accountid, when=when, until=until, notleg=exceptleg,
-        allow=int(LEG_ALLOWANCE.total_seconds() // 60)):
+          AND COALESCE(l.dropoffat, l.pickupat + INTERVAL 6 HOUR) > :when
+    """, a=accountid, when=when - reach, until=until + reach, notleg=exceptleg):
+        before = timedelta(minutes=drive_minutes((leg["dropofflat"], leg["dropofflng"]), here))
+        after = timedelta(minutes=drive_minutes(there, (leg["pickuplat"], leg["pickuplng"])))
+        if leg["pickupat"] + timedelta(minutes=leg_minutes(leg)) + before <= when or leg["pickupat"] >= until + after:
+            continue
         for who in (leg["driverid"], leg["vehicleid"]):
             if who:
                 taken[who] = leg["externalid"]
@@ -134,7 +180,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
                 pickup: tuple[float, float] | None = None,
                 exceptleg: str | None = None, only: set[str] | None = None,
                 vehicle_of: dict[str, str] | None = None, timed: bool = True,
-                vehicle: str | None = None) -> list[dict]:
+                vehicle: str | None = None, ends: tuple | None = None) -> list[dict]:
     """Every driver, ranked for this job, each saying why.
 
     Order: the ones who can go, nearest first; then the ones who could but should not; then
@@ -145,7 +191,7 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
     # `timed` False: a will-call with no time yet. Nobody can be busy at no time, and whether they
     # are on at that hour is unanswerable - so neither is asked. (Asked as of now, it refused a
     # driver for the trip's own outbound leg.)
-    committed = _busy(conn, accountid, when, minutes, exceptleg) if timed else {}
+    committed = _busy(conn, accountid, when, minutes, exceptleg, ends) if timed else {}
     seen = _last_seen(conn, accountid)
     out = []
     for d in rows(conn, """
@@ -254,7 +300,8 @@ def _last_seen(conn: Connection, accountid: str) -> dict[str, dict]:
 
 def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: int,
                  exceptleg: str | None = None,
-                 service: str = "ambulatory", seats: int = 1, timed: bool = True) -> list[dict]:
+                 service: str = "ambulatory", seats: int = 1, timed: bool = True,
+                 ends: tuple | None = None) -> list[dict]:
     """Every vehicle, ranked for this job, each saying why.
 
     The compliance engine owns whether a van may go out, exactly as it owns whether a driver may
@@ -265,7 +312,7 @@ def vehicles_for(conn: Connection, accountid: str, *, when: datetime, minutes: i
     """
     today = when.date() if isinstance(when, datetime) else date.today()
     needs = SERVICE.get(service, SERVICE["ambulatory"])
-    committed = _busy(conn, accountid, when, minutes, exceptleg) if timed else {}
+    committed = _busy(conn, accountid, when, minutes, exceptleg, ends) if timed else {}
     out = []
     for v in rows(conn, """
         SELECT recordid, externalid, make, model, modelyear, seats, lift
@@ -363,6 +410,7 @@ def for_leg(conn: Connection, accountid: str, legid: str, only: set[str] | None 
     are judged, since the vehicle has been chosen."""
     leg = row(conn, """
         SELECT l.recordid AS legid, l.tripid, l.driverid, l.vehicleid, l.pickupat, l.dropoffat,
+               l.appointmentat, l.dropofflat, l.dropofflng,
                l.pickuplat, l.pickuplng, l.signature, l.gps, l.servicelevel AS legservice,
                l.pickupplace, l.dropoffplace,
                t.externalid, t.brokerid, t.servicelevel, t.billedamount, t.passenger
@@ -374,18 +422,18 @@ def for_leg(conn: Connection, accountid: str, legid: str, only: set[str] | None 
     # A will-call return has no pickup time yet. Everything time-based - who is free, who is near -
     # is unanswerable until it is released, so the question is asked as of now and said to be.
     when = leg["pickupat"] or localnow(zone(conn, accountid))
-    minutes = 60
-    if leg["pickupat"] and leg["dropoffat"]:
-        minutes = max(15, int((leg["dropoffat"] - leg["pickupat"]).total_seconds() // 60))
+    minutes = leg_minutes(leg) if leg["pickupat"] else 60
     service = leg["legservice"] or leg["servicelevel"] or "ambulatory"
     pickup = ((leg["pickuplat"], leg["pickuplng"])
               if leg["pickuplat"] is not None and leg["pickuplng"] is not None else None)
 
+    ends = (pickup, (leg["dropofflat"], leg["dropofflng"]) if leg["dropofflat"] is not None else None)
     drivers = drivers_for(conn, accountid, when=when, minutes=minutes, pickup=pickup,
                           exceptleg=legid, only=only, vehicle_of=vehicle_of,
-                          timed=leg["pickupat"] is not None, vehicle=vehicle)
+                          timed=leg["pickupat"] is not None, vehicle=vehicle, ends=ends)
     vehicles = [] if vehicle else vehicles_for(conn, accountid, when=when, minutes=minutes, service=service,
-                                               seats=1, exceptleg=legid, timed=leg["pickupat"] is not None)
+                                               seats=1, exceptleg=legid, timed=leg["pickupat"] is not None,
+                                               ends=ends)
 
     _judge(conn, accountid, drivers, vehicles, leg=leg, when=when, service=service,
            vehicle_of=vehicle_of if not vehicle else {d["driverid"]: vehicle for d in drivers})

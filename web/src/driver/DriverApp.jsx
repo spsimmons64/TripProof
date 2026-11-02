@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRight, Check, Clock, LogOut, ClipboardCheck, ListChecks, MapPin, Navigation, Navigation2, Phone, RefreshCw,
-  UserCheck } from 'lucide-react'
+  Loader2, UserCheck } from 'lucide-react'
 import { date, time } from '../lib/format.js'
 
 // The driver's app.
@@ -576,6 +576,8 @@ function Work({ me, onOut }) {
       right={<button className="dvicon" onClick={onOut} aria-label="Sign out"><LogOut size={20} /></button>}>
       {err && <div className="dverr">{err}</div>}
       <Reporting {...reporting} />
+      {/* On call, after closing: the will-calls nobody is in the office to send out. */}
+      {data?.oncall && <OnCall oncall={data.oncall} onTaken={async (legid) => { await load(); setOpen(legid) }} />}
       <div className="dvlisthead">
         <span>{items.length ? `${items.length} trip${items.length === 1 ? '' : 's'}` : 'Nothing assigned'}</span>
         <button className="dvicon" onClick={load} aria-label="Refresh"><RefreshCw size={18} /></button>
@@ -596,11 +598,65 @@ function Work({ me, onOut }) {
         </button>
       ))}
       </div>
-      {!items.length && !err && (
+      {!items.length && !err && !data?.oncall && (
         <p className="dvempty">Nothing is assigned to you right now.</p>
       )}
     </Shell>
   )
+}
+
+// On call: today's will-calls still waiting for their call. When the passenger - or the facility -
+// rings, the driver finds them here and says I'm Going: the trip is theirs, pickup now, in their
+// on-call vehicle, after the same checks the office's assignment goes through. Asked twice, so a
+// thumb in a pocket does not take a trip.
+function OnCall({ oncall, onTaken }) {
+  const [sure, setSure] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const take = async (legid) => {
+    setBusy(true); setErr(null)
+    try { await call(`/legs/${legid}/take`, {}); setSure(null); onTaken(legid) }
+    catch (x) { setErr(x.message) } finally { setBusy(false) }
+  }
+  return (
+    <section className="dvoncall">
+      <div className="dvoncallhead">On Call · {oncall.vehiclename} until {when(oncall.until)}</div>
+      {err && <div className="dverr">{err}</div>}
+      {!oncall.items.length && <p className="dvoncallnone">No will-calls are waiting.</p>}
+      {oncall.items.map((w) => (
+        <div key={w.legid} className="dvcall">
+          <div className="dvrowtop">
+            <span className="dvtime">{w.readyabout ? `~${when(w.readyabout)}` : 'Will-call'}</span>
+            <span className="dvwho">{w.passenger}</span>
+          </div>
+          <span className="dvaddr">From {w.pickupplace}</span>
+          <span className="dvaddr">Home {w.dropoffplace}</span>
+          {w.note && <span className="dvaddr">{w.note}</span>}
+          {/* Not called yet: the driver can ring them. */}
+          {w.passengerphone && sure !== w.legid && (
+            <button type="button" className="dvsecond" onClick={() => dial(w.passengerphone)}>
+              <Phone size={18} /> Call {w.passengerphone}
+            </button>
+          )}
+          {sure === w.legid ? (
+            <div className="dvcallgo">
+              <button type="button" className="dvgo" disabled={busy} onClick={() => take(w.legid)}>
+                {busy ? <Loader2 size={20} className="spin" /> : `Yes, I'm Going`}
+              </button>
+              <button type="button" className="dvsecond" disabled={busy} onClick={() => setSure(null)}>Cancel</button>
+            </div>
+          ) : (
+            <button type="button" className="dvgo" onClick={() => setSure(w.legid)}>I'm Going</button>
+          )}
+        </div>
+      ))}
+    </section>
+  )
+}
+
+// The phone's own dialler, with the number ready.
+function dial(phone) {
+  window.location.href = `tel:${String(phone).replace(/[^\d+]/g, '')}`
 }
 
 // Where this leg has got to, as one mark. A row a driver scans down between jobs should answer

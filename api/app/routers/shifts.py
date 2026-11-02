@@ -6,17 +6,17 @@ shift per driver, one vehicle per shift at a time - here, on the server, whateve
 
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
-from app import dispatch
+from app import dispatch, sms
 from app import shifts as plan
 from app import tripcheck
 from app.activity import log
-from app.db import engine, get_conn, newid, row, rows, run, saved, utcnow
+from app.db import engine, get_conn, localnow, newid, row, rows, run, saved, utcnow
 from app.security import client_ip, current_user, editor
 
 router = APIRouter(prefix="/api", tags=["shifts"])
@@ -32,13 +32,13 @@ def the_day(day: date, user: dict = Depends(current_user), conn: Connection = De
     and the drivers and vehicles that could be put on a shift."""
     acct = user["accountid"]
     held = rows(conn, """
-        SELECT s.recordid, s.driverid, s.vehicleid, s.startsat, s.endsat, s.source, s.reasons,
-               TRIM(CONCAT(d.firstname, ' ', d.lastname)) AS drivername, v.externalid AS vehiclename,
+        SELECT s.recordid, s.driverid, s.vehicleid, s.startsat, s.endsat, s.oncall, s.source, s.reasons,
+               TRIM(CONCAT(d.firstname, ' ', d.lastname)) AS drivername, d.phone, v.externalid AS vehiclename,
                TRIM(CONCAT(COALESCE(v.make, ''), ' ', COALESCE(v.model, ''))) AS vehicledescr
         FROM dayshifts s JOIN drivers d ON d.recordid = s.driverid
         JOIN vehicles v ON v.recordid = s.vehicleid
         WHERE s.accountid = :a AND s.workday = :w
-        ORDER BY d.lastname, d.firstname
+        ORDER BY d.lastname, d.firstname, v.externalid
     """, a=acct, w=day)
     for s in held:
         s["startsat"], s["endsat"] = _clock(s["startsat"]), _clock(s["endsat"])
@@ -52,7 +52,7 @@ def the_day(day: date, user: dict = Depends(current_user), conn: Connection = De
         ORDER BY l.pickupat
     """, a=acct, w=day)
     drivers = rows(conn, """
-        SELECT recordid AS driverid, TRIM(CONCAT(firstname, ' ', lastname)) AS name
+        SELECT recordid AS driverid, TRIM(CONCAT(firstname, ' ', lastname)) AS name, phone
         FROM drivers WHERE accountid = :a AND deleted IS NULL AND stub = 0 AND status = 'hired'
         ORDER BY lastname, firstname
     """, a=acct)
@@ -62,8 +62,93 @@ def the_day(day: date, user: dict = Depends(current_user), conn: Connection = De
     """, a=acct)
     # When each driver's phone last said where they were (UTC), for the GPS line under their name.
     gps = {d: str(w["when"]) for d, w in dispatch._last_seen(conn, acct).items()}
+    # Who is out some of this day - sick, sent home, at an appointment until three - and when: their
+    # column is shaded for each time. Wall clock, as the trips are. A driver can be out twice.
+    out: dict[str, list] = {}
+    for r in rows(conn, """
+        SELECT recordid, driverid, fromat, untilat, reason FROM driverunavailable
+        WHERE accountid = :a AND fromat < :end AND untilat > :start ORDER BY fromat
+    """, a=acct, start=datetime.combine(day, time.min), end=datetime.combine(day + timedelta(days=1), time.min)):
+        out.setdefault(r["driverid"], []).append({k: r[k] for k in ("recordid", "fromat", "untilat", "reason")})
+    # Who is on call, apart from the vehicle assignments: from closing until when (Dispatch, On Call List).
+    oncall = [{"recordid": o["recordid"], "driverid": o["driverid"], "vehicleid": o["vehicleid"],
+               "drivername": o["drivername"], "vehiclename": o["vehiclename"], "phone": o["phone"],
+               "startsat": f"{o['startsat']:%H:%M}", "endsat": f"{o['endsat']:%H:%M}",
+               "until": f"{plan.as_time(o['untilat']):%H:%M}" if o["untilat"] is not None else None}
+              for o in plan.on_call(conn, acct, day)]
     return {"day": day, "shifts": held, "legs": legs, "drivers": drivers, "vehicles": vehicles,
-            "hours": company_hours(conn, acct, day), "gps": gps}
+            "hours": company_hours(conn, acct, day), "gps": gps, "out": out, "oncall": oncall}
+
+
+class OnCallOne(BaseModel):
+    driverid: str
+    vehicleid: str
+    until: str | None = None          # none: the rest of the day
+
+
+class OnCallIn(BaseModel):
+    day: date
+    items: list[OnCallOne] = []
+
+
+@router.put("/oncall")
+def set_on_call(body: OnCallIn, request: Request, user: dict = Depends(editor),
+                conn: Connection = Depends(get_conn)):
+    """The day's on-call list, as ticked: each driver on call from closing until the time given, or
+    for the rest of the day, in the vehicle they would take - which they have to be allowed to."""
+    acct = user["accountid"]
+    if len({o.driverid for o in body.items}) != len(body.items):
+        raise HTTPException(400, "Each driver once")
+    if len({o.vehicleid for o in body.items}) != len(body.items):
+        raise HTTPException(409, "Two drivers on call in one vehicle: the second to go would have nothing to drive.")
+    h = company_hours(conn, acct, body.day)
+    starts = datetime.combine(body.day, plan.as_time(h["close"]) if h and not h.get("closed") else time.min)
+    for o in body.items:
+        # The will-calls reach them by text: a driver who cannot be texted cannot be on call.
+        d = row(conn, "SELECT phone, TRIM(CONCAT(firstname, ' ', lastname)) AS n FROM drivers "
+                      "WHERE recordid = :d AND accountid = :a", d=o.driverid, a=acct)
+        if not d:
+            raise HTTPException(404, "No such driver")
+        if not sms.number(d["phone"]):
+            raise HTTPException(409, f"{d['n'].title()} has no mobile number on file, so cannot be texted the "
+                                     f"will-calls. Add it to their driver record first.")
+        if o.until:
+            try:
+                plan.as_time(o.until)
+            except (ValueError, IndexError):
+                raise HTTPException(400, "Give the until time as hours and minutes") from None
+        got = plan.fit(conn, acct, o.driverid, o.vehicleid, starts)
+        if not got["ok"]:
+            who = row(conn, "SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS n FROM drivers WHERE recordid = :d "
+                            "AND accountid = :a", d=o.driverid, a=acct)
+            unit = row(conn, "SELECT externalid FROM vehicles WHERE recordid = :v AND accountid = :a",
+                       v=o.vehicleid, a=acct)
+            raise HTTPException(409, f"{(who or {}).get('n', 'This driver').title()} may not take "
+                                     f"{(unit or {}).get('externalid', 'this vehicle')}: {got['refused'][0]}")
+    was = {o["driverid"]: o for o in plan.on_call(conn, acct, body.day)}
+    run(conn, "DELETE FROM oncall WHERE accountid = :a AND workday = :w", a=acct, w=body.day)
+    for o in body.items:
+        run(conn, """
+            INSERT INTO oncall (recordid, accountid, workday, driverid, vehicleid, untilat, added, addedby)
+            VALUES (:id, :a, :w, :d, :v, :u, :now, :by)
+        """, id=newid(), a=acct, w=body.day, d=o.driverid, v=o.vehicleid,
+            u=plan.as_time(o.until) if o.until else None, now=utcnow(), by=user["recordid"])
+    # Told when they are put on call, or taken off it - not left to find out at closing.
+    after = {o["driverid"]: o for o in plan.on_call(conn, acct, body.day)}
+    for did, o in after.items():
+        before = was.get(did)
+        if not before or (before["vehicleid"], before["untilat"]) != (o["vehicleid"], o["untilat"]):
+            start, end = plan.span(body.day, o["startsat"], o["endsat"])
+            sms.tell(conn, acct, did, "oncallset",
+                     f"You are on call {body.day:%a %m/%d} from {start:%-I:%M %p} "
+                     + (f"until {end:%-I:%M %p}" if o["untilat"] is not None else "for the rest of the day")
+                     + f" in {o['vehiclename']}.")
+    for did in set(was) - set(after):
+        sms.tell(conn, acct, did, "oncalloff", f"You are no longer on call {body.day:%a %m/%d}.")
+    log(conn, user, "oncall-list", "account", acct,
+        {"day": str(body.day), "items": [o.model_dump() for o in body.items]}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
 
 
 def company_hours(conn: Connection, acct: str, day: date) -> dict | None:
@@ -156,10 +241,11 @@ def _checked(conn: Connection, acct: str, body: ShiftIn, leaving: str | None = N
         raise HTTPException(400, "Give the start and end times") from None
     if plan.as_time(body.startsat) == plan.as_time(body.endsat):
         raise HTTPException(400, "The shift has to end at a different time from when it starts")
-    # Within the company's hours that day, where they have been set.
+    # Within the company's hours that day, where they have been set. After closing is the on-call
+    # list's (Dispatch, On Call List).
     hours = company_hours(conn, acct, body.day)
     if hours and hours.get("closed"):
-        raise HTTPException(409, f"The company is closed on {body.day:%A}s (Company, Hours Of Operation).")
+        raise HTTPException(409, f"The company is closed on {body.day:%A}s (Company, Transportation Hours).")
     if hours:
         opens, closes = plan.span(body.day, hours["open"], hours["close"])
         starts, ends = plan.span(body.day, body.startsat, body.endsat)
@@ -301,3 +387,83 @@ def save_plan(body: PlanIn, request: Request, user: dict = Depends(editor),
         {"day": str(body.day), "shifts": len(body.shifts)}, ip=client_ip(request))
     saved(conn)
     return {"ok": True, "saved": len(body.shifts)}
+
+
+# ------------------------------------------------------------------------------------------------
+# Who is driving today
+#
+# Every vehicle in service is there every day unless it is out or not compliant; what changes is who
+# drives. That is decided the morning of: Auto Assign asks "Who's driving today?" - every hired
+# driver, ticked unless out - and each driver ticked is put in a vehicle they may take (their usual
+# one first). Only ever on the day itself.
+# ------------------------------------------------------------------------------------------------
+class CrewIn(BaseModel):
+    day: date
+    driverids: list[str] = []
+
+
+@router.get("/dispatch/crew")
+def crew(day: date, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """Every hired driver, and whether they are driving today: as ticked already this morning, or -
+    nothing ticked yet - everybody not out."""
+    acct = user["accountid"]
+    hours = company_hours(conn, acct, day) or {}
+    at = datetime.combine(day, plan.as_time(hours.get("open") or "08:00"))
+    away = dispatch._unavailable(conn, acct, at)["drivers"]
+    held = {s["driverid"]: s for s in rows(conn, """
+        SELECT s.driverid, v.externalid AS vehiclename FROM dayshifts s JOIN vehicles v ON v.recordid = s.vehicleid
+        WHERE s.accountid = :a AND s.workday = :w AND s.driverid IS NOT NULL
+    """, a=acct, w=day)}
+    drivers = rows(conn, """
+        SELECT recordid AS driverid, TRIM(CONCAT(firstname, ' ', lastname)) AS name FROM drivers
+        WHERE accountid = :a AND deleted IS NULL AND stub = 0 AND status = 'hired' ORDER BY lastname, firstname
+    """, a=acct)
+    for d in drivers:
+        d["out"] = away.get(d["driverid"])
+        d["vehiclename"] = (held.get(d["driverid"]) or {}).get("vehiclename")
+        d["on"] = d["driverid"] in held if held else not d["out"]
+    return {"day": day, "drivers": drivers, "ticked": bool(held)}
+
+
+@router.post("/dispatch/crew")
+def set_crew(body: CrewIn, request: Request, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """Today's drivers, as ticked: each one not yet in a vehicle is given one they may take, over the
+    company's hours; one unticked comes out of theirs - unless they still have trips today, which are
+    taken off them first (Driver Out). Says who could not be given a vehicle, and why."""
+    acct = user["accountid"]
+    if body.day != localnow(dispatch.zone(conn, acct)).date():
+        raise HTTPException(409, "Who is driving is decided on the day itself.")
+    keep = set(body.driverids)
+    held = rows(conn, "SELECT recordid, driverid FROM dayshifts WHERE accountid = :a AND workday = :w "
+                      "AND driverid IS NOT NULL", a=acct, w=body.day)
+    for s in held:
+        if s["driverid"] in keep:
+            continue
+        busy = row(conn, """
+            SELECT TRIM(CONCAT(d.firstname, ' ', d.lastname)) AS n, COUNT(*) AS k FROM triplegs l
+            JOIN drivers d ON d.recordid = l.driverid JOIN trips t ON t.recordid = l.tripid
+            WHERE l.accountid = :a AND l.driverid = :d AND t.tripdate = :w AND l.outcomestate IS NULL
+              AND l.executionstate <> 'completed' GROUP BY d.recordid
+        """, a=acct, d=s["driverid"], w=body.day)
+        if busy:
+            raise HTTPException(409, f"{busy['n'].title()} still has {busy['k']} trip{'s' if busy['k'] != 1 else ''} "
+                                     f"today. Use Driver Out to take them off first.")
+        run(conn, "DELETE FROM dayshifts WHERE recordid = :r", r=s["recordid"])
+    have = {s["driverid"] for s in held}
+    hours = company_hours(conn, acct, body.day) or {}
+    opens, closes = (hours.get("open") or "08:00")[:5], (hours.get("close") or "17:00")[:5]
+    wanted = [{"driverid": d, "startsat": opens, "endsat": closes} for d in body.driverids if d not in have]
+    novehicle = []
+    for p in plan.generate(conn, acct, body.day, wanted) if wanted else []:
+        if not p["vehicleid"]:
+            novehicle.append(f"{p['drivername'].title()}: {(p['blocked'] or ['No vehicle they may take'])[0]}")
+            continue
+        run(conn, """
+            INSERT INTO dayshifts (recordid, accountid, workday, driverid, vehicleid, startsat, endsat,
+                                   source, reasons, added, addedby)
+            VALUES (:id, :a, :w, :d, :v, :s, :e, 'auto', :r, :now, :by)
+        """, id=newid(), a=acct, w=body.day, d=p["driverid"], v=p["vehicleid"], s=plan.as_time(p["startsat"]),
+            e=plan.as_time(p["endsat"]), r=json.dumps(p["reasons"]), now=utcnow(), by=user["recordid"])
+    log(conn, user, "crew", "account", acct, {"day": str(body.day), "drivers": body.driverids}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True, "novehicle": novehicle}

@@ -61,12 +61,32 @@ class AccountUserIn(BaseModel):
     email: str
     name: str
     role: str = "staff"
+    mobile: str | None = None
+    dispatchalerts: bool = False
 
 
 class AccountUserPatch(BaseModel):
     name: str | None = None
     role: str | None = None
     disabled: bool | None = None
+    mobile: str | None = None
+    dispatchalerts: bool | None = None
+
+
+def _alerts(conn: Connection, accountid: str, userid: str, mobile: str | None, alerts: bool | None) -> None:
+    """Their mobile and whether they are texted dispatch alerts. Alerts need a mobile to go to."""
+    from app import sms
+    if mobile is not None and mobile.strip() and not sms.number(mobile):
+        raise HTTPException(400, "The mobile is not a ten-digit number")
+    if mobile is not None:
+        run(conn, "UPDATE users SET mobile = :m WHERE recordid = :u AND accountid = :a",
+            m=mobile.strip() or None, u=userid, a=accountid)
+    if alerts is not None:
+        held = row(conn, "SELECT mobile FROM users WHERE recordid = :u", u=userid)
+        if alerts and not (held or {}).get("mobile"):
+            raise HTTPException(400, "Give a mobile to text the dispatch alerts to")
+        run(conn, "UPDATE users SET dispatchalerts = :d WHERE recordid = :u AND accountid = :a",
+            d=1 if alerts else 0, u=userid, a=accountid)
 
 
 def _their_user(conn: Connection, accountid: str, userid: str) -> dict:
@@ -88,7 +108,7 @@ def account_users(user: dict = Depends(account_admin), conn: Connection = Depend
     used = ("EXISTS (SELECT 1 FROM activitylog l WHERE l.userid = u.recordid "
             "AND l.action IN ('password-set', 'login'))")
     return {"items": rows(conn, f"""
-        SELECT u.recordid, u.email, u.name, u.role, u.lastlogin, u.added, u.deleted,
+        SELECT u.recordid, u.email, u.name, u.role, u.mobile, u.dispatchalerts, u.lastlogin, u.added, u.deleted,
                {used} AS passwordset,
                -- 49 CFR 382.603. Who may call a reasonable suspicion test, and whether they
                -- have signed for the training that lets them - which is a different fact from
@@ -128,6 +148,7 @@ def add_account_user(body: AccountUserIn, request: Request, tasks: BackgroundTas
         raise HTTPException(400, "Unknown role")
     made = admin._create_user(conn, user["accountid"], body.email, body.name.strip(), body.role,
                               None, user.get("timezone"))
+    _alerts(conn, user["accountid"], made["recordid"], body.mobile, body.dispatchalerts)
     invited = admin._invite(conn, tasks, made["recordid"], "invite", user)
     log(conn, user, "account-add-user", "user", made["recordid"],
         {"email": made["email"], "role": body.role}, ip=client_ip(request))
@@ -167,6 +188,7 @@ def change_account_user(userid: str, body: AccountUserPatch, request: Request,
     """, n=(body.name or "").strip() or None, r=body.role,
         dis=None if body.disabled is None else (1 if body.disabled else 0),
         now=utcnow(), u=userid, a=user["accountid"])
+    _alerts(conn, user["accountid"], userid, body.mobile, body.dispatchalerts)
     log(conn, user, "account-change-user", "user", userid, body.model_dump(exclude_none=True),
         ip=client_ip(request))
     saved(conn)

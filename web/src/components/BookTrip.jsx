@@ -5,6 +5,7 @@ import { date, money } from '../lib/format.js'
 import { Modal } from '../admin/common.jsx'
 import { useLoad } from './ui.jsx'
 import SearchSelect from './SearchSelect.jsx'
+import AddressCheck from './AddressCheck.jsx'
 import { PhoneInput, ZipInput } from './MaskedInput.jsx'
 import { US_STATES } from '../admin/CustomerProfile.jsx'
 
@@ -13,17 +14,19 @@ import { US_STATES } from '../admin/CustomerProfile.jsx'
 
 
 const EMPTY = {
-  passenger: '', passengerphone: '', tripdate: '', servicelevel: 'ambulatory',
+  passenger: '', passengerphone: '', tripdate: '', servicelevel: 'ambulatory', critical: false,
+  readyabout: '', responsibility: 'provider', responsibilitynote: '', responsibilityChosen: false,
   payer: 'private', brokerid: '', note: '', pickupplace: '', dropoffplace: '', pickupat: '',
   ret: 'no', returnat: '', appointmentat: '',
 }
 
-export default function BookTrip({ onClose, onBooked }) {
-  // Most trips are booked for today, so the date starts there.
+// `day`: the day the screen it is opened from is showing - Dispatch's date - which the trip starts on.
+export default function BookTrip({ day, onClose, onBooked }) {
+  // Otherwise most trips are booked for today, so the date starts there.
   const [f, setF] = useState(() => {
     const d = new Date()
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    return { ...EMPTY, tripdate: today }
+    return { ...EMPTY, tripdate: day || today }
   })
   // The drive from the pickup to the drop-off, worked out once the appointment, the pickup and the
   // drop-off are all known; the pickup time is set from it - the drive and ten minutes before the
@@ -54,6 +57,24 @@ export default function BookTrip({ onClose, onBooked }) {
   // which rule set the trip is checked against, so a trip booked without one is a trip checked
   // against the federal baseline alone.
   const [payers] = useLoad(() => api.get('/company/payers'), [])
+  // A will-call return: Ready About follows the appointment (an hour after) until it is typed in,
+  // and is asked whether it could get the passenger home after closing.
+  const [readyByHand, setReadyByHand] = useState(false)
+  const [late, setLate] = useState(null)
+  const readyDefault = f.appointmentat ? addMinutes(f.appointmentat, 60) : f.pickupat ? addMinutes(f.pickupat, 120) : ''
+  const readyAt = readyByHand ? f.readyabout : readyDefault
+  useEffect(() => {
+    setLate(null)
+    if (f.ret !== 'willcall' || !f.tripdate || !readyAt || !f.pickupplace.trim() || !f.dropoffplace.trim()) return undefined
+    let dropped = false
+    const wait = setTimeout(() => {
+      const qs = new URLSearchParams({ day: f.tripdate, ready: `${f.tripdate}T${readyAt}:00`,
+                                       pickup: f.dropoffplace.trim(), dropoff: f.pickupplace.trim() })
+      api.get(`/dispatch/return-check?${qs}`).then((got) => { if (!dropped) setLate(got) }).catch(() => {})
+    }, 500)
+    return () => { dropped = true; clearTimeout(wait) }
+  }, [f.ret, f.tripdate, readyAt, f.pickupplace, f.dropoffplace])
+  const needsPlan = f.ret === 'willcall' && late?.needsplan
   // The passengers and places already on file, chosen from rather than typed again.
   const [riders, , reloadRiders] = useLoad(() => api.get('/passengers'), [])
   const [places, , reloadPlaces] = useLoad(() => api.get('/places'), [])
@@ -70,7 +91,9 @@ export default function BookTrip({ onClose, onBooked }) {
   const pickPlace = (id, list = places?.items) => {
     const p = (list || []).find((x) => x.recordid === id)
     setPlaceid(id)
-    setF((was) => ({ ...was, dropoffplace: p?.full || p?.address || '' }))
+    // A place every trip to is critical - dialysis, a cancer centre - ticks the trip; another place
+    // leaves the tick as it was.
+    setF((was) => ({ ...was, dropoffplace: p?.full || p?.address || '', critical: was.critical || Boolean(p?.critical) }))
   }
   // What this trip will be billed at, and what picking this payer does to who may drive it.
   // Asked as the form is filled rather than discovered afterwards: a dispatcher choosing
@@ -80,9 +103,15 @@ export default function BookTrip({ onClose, onBooked }) {
   const [err, setErr] = useState(null)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
 
+  // Who brings them home: every return says, and past closing it has to be chosen, not assumed.
+  const roundtrip = f.ret === 'yes' || f.ret === 'willcall'
+  const whoHome = needsPlan && !f.responsibilityChosen ? '' : f.responsibility
+  const home = { responsibility: whoHome || null,
+                 responsibilitynote: whoHome === 'other' ? f.responsibilitynote.trim() : null }
   // A round trip needs its return time; a will-call return is the one that does not.
   const ready = f.passenger.trim() && f.tripdate && f.pickupat
     && f.pickupplace.trim() && f.dropoffplace.trim() && (f.ret !== 'yes' || f.returnat)
+    && (!roundtrip || whoHome) && (whoHome !== 'other' || f.responsibilitynote.trim())
 
   const save = async () => {
     setBusy(true); setErr(null)
@@ -98,6 +127,7 @@ export default function BookTrip({ onClose, onBooked }) {
           pickupat: `${f.tripdate}T${f.returnat}:00`,
           pickupplace: f.dropoffplace.trim(),
           dropoffplace: f.pickupplace.trim(),
+          ...home,
         })
       } else if (f.ret === 'willcall') {
         // No time and nobody on it yet: who is free and nearest is a question for when the
@@ -106,6 +136,8 @@ export default function BookTrip({ onClose, onBooked }) {
           pickupat: null,
           pickupplace: f.dropoffplace.trim(),
           dropoffplace: f.pickupplace.trim(),
+          readyabout: readyAt ? `${f.tripdate}T${readyAt}:00` : null,
+          ...home,
         })
       }
       const got = await api.post('/trips', {
@@ -113,6 +145,7 @@ export default function BookTrip({ onClose, onBooked }) {
         passengerphone: f.passengerphone.trim() || null,
         tripdate: f.tripdate,
         servicelevel: f.servicelevel,
+        critical: f.critical,
         payer: f.payer,
         brokerid: f.brokerid || null,
         note: f.note.trim() || null,
@@ -156,6 +189,12 @@ export default function BookTrip({ onClose, onBooked }) {
               <button type="button" onClick={() => setAdding('passengers')}><Plus size={13} /> New Passenger</button>
             </div>
           </div>
+          {/* Where they are collected: their home when chosen, and can be changed. */}
+          <label className="field span-6">Pick Up At *
+            <input value={f.pickupplace} className="upper"
+              onChange={(e) => setF({ ...f, pickupplace: e.target.value.toUpperCase() })} />
+          </label>
+          <AddressCheck address={f.pickupplace} label="pickup" />
           <div className="field span-6">Drop Off At *
             <div className="pickadd">
               <SearchSelect items={places?.items || []} value={placeid} onChange={pickPlace}
@@ -163,6 +202,7 @@ export default function BookTrip({ onClose, onBooked }) {
               <button type="button" onClick={() => setAdding('places')}><Plus size={13} /> New Location</button>
             </div>
           </div>
+          <AddressCheck address={f.dropoffplace} label="drop-off" />
           <div className="fourup span-6">
             <label className="field">Date *
               <input type="date" value={f.tripdate} onChange={set('tripdate')} />
@@ -185,10 +225,6 @@ export default function BookTrip({ onClose, onBooked }) {
           </div>
           <label className="field span-2">Telephone
             <PhoneInput value={f.passengerphone} onChange={set('passengerphone')} />
-          </label>
-          <label className="field span-4">Pick Up At *
-            <input value={f.pickupplace} className="upper"
-              onChange={(e) => setF({ ...f, pickupplace: e.target.value.toUpperCase() })} />
           </label>
           {route && (
             <div className={`span-6 routeline${route.error ? ' st-expired' : ''}`}>
@@ -225,6 +261,50 @@ export default function BookTrip({ onClose, onBooked }) {
               <input type="time" value={f.returnat} onChange={set('returnat')} />
             </label>
           )}
+          {f.ret === 'willcall' && (
+            <label className="field span-2">Ready About
+              <input type="time" value={readyAt}
+                onChange={(e) => { setReadyByHand(true); setF({ ...f, readyabout: e.target.value }) }} />
+            </label>
+          )}
+          {/* Home after closing: how they get there is settled now, not at six o'clock. */}
+          {needsPlan && (
+            <div className="span-6 routeline pastclosing">
+              Could run past closing: ready about {clock(readyAt)}, home about {clock(late.home.slice(11, 16))}, and {weekday(f.tripdate)} closes at {clock(late.close.slice(11, 16))}.
+            </div>
+          )}
+          {/* Ready after the place has locked up: said while it can still be changed. */}
+          {f.ret === 'willcall' && late?.facilitycloses && readyAt >= late.facilitycloses && (
+            <div className="span-6 routeline pastclosing">
+              {late.facility} closes at {clock(late.facilitycloses)}, before they would be ready.
+            </div>
+          )}
+          {roundtrip && (<>
+            <label className="field span-3">Who Brings Them Home *
+              <select value={whoHome} onChange={(e) => {
+                // A set time instead: no longer a will-call, a return at the time they should be ready.
+                if (e.target.value === 'timed') setF({ ...f, ret: 'yes', returnat: readyAt, responsibility: 'provider', responsibilityChosen: true })
+                else setF({ ...f, responsibility: e.target.value, responsibilityChosen: true })
+              }}>
+                {needsPlan && <option value="">Choose</option>}
+                <option value="provider">{needsPlan ? 'We do - an on-call driver' : 'We do'}</option>
+                {f.brokerid && <option value="broker">Ask the broker to take it</option>}
+                <option value="other">Another provider (confirmed)</option>
+                <option value="unconfirmed">Not decided yet</option>
+                {needsPlan && <option value="timed">Set a return time instead</option>}
+              </select>
+            </label>
+            {whoHome === 'other' && (
+              <label className="field span-3">Provider And Confirmation *
+                <input value={f.responsibilitynote} className="upper"
+                  onChange={(e) => setF({ ...f, responsibilitynote: e.target.value.toUpperCase() })} />
+              </label>
+            )}
+          </>)}
+          <label className="field check">
+            <input type="checkbox" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })} />
+            Critical Trip
+          </label>
           <label className="field span-6">Note
             <textarea value={f.note} className="upper"
               onChange={(e) => setF({ ...f, note: e.target.value.toUpperCase() })} />
@@ -260,7 +340,7 @@ export default function BookTrip({ onClose, onBooked }) {
 export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved }) {
   const [v, setV] = useState(() => ({ name: '', address: '', city: '', state: '', zip: '', phone: '', dob: '',
     ...(entry ? Object.fromEntries(Object.entries(entry).map(([k, x]) => [k, x ?? ''])) : {}),
-    ...(entry?.dob ? { dob: String(entry.dob).slice(0, 10) } : {}) }))
+    ...(entry?.dob ? { dob: String(entry.dob).slice(0, 10) } : {}), critical: Boolean(entry?.critical) }))
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const [asking, setAsking] = useState(false)
@@ -268,7 +348,8 @@ export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved })
   const save = async () => {
     setBusy(true); setErr(null)
     const body = { name: v.name, address: v.address, city: v.city, state: v.state, zip: v.zip, phone: v.phone,
-                   dob: passenger ? v.dob : null }
+                   dob: passenger ? v.dob : null, critical: !passenger && v.critical,
+                   closesat: passenger ? null : v.closesat || null }
     try { onAdded(await (entry ? api.put(`/${kind}/${entry.recordid}`, body) : api.post(`/${kind}`, body))) }
     catch (e) { setErr(e.message); setBusy(false) }
   }
@@ -336,10 +417,34 @@ export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved })
           <label className="field span-2">ZIP *
             <ZipInput value={v.zip} onChange={(e) => setV({ ...v, zip: e.target.value })} />
           </label>
+          {/* Dialysis, a cancer centre: every trip booked to it is ticked Critical. */}
+          {!passenger && (
+            <label className="field check">
+              <input type="checkbox" checked={v.critical} onChange={(e) => setV({ ...v, critical: e.target.checked })} />
+              Critical Care
+            </label>
+          )}
+          {!passenger && (
+            <label className="field span-2">Closes At
+              <input type="time" value={v.closesat || ''} onChange={(e) => setV({ ...v, closesat: e.target.value })} />
+            </label>
+          )}
         </div>
       </div>
     </Modal>
   )
+}
+
+// "13:30" and 60 minutes: "14:30".
+function addMinutes(hhmm, add) {
+  const [h, m] = String(hhmm).split(':').map(Number)
+  const t = Math.min(h * 60 + m + add, 23 * 60 + 59)
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`
+}
+
+// "2026-10-30": "Friday".
+function weekday(ymd) {
+  return new Date(`${ymd}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
 }
 
 // "14:05" as the office reads it: 2:05 PM.

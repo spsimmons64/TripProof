@@ -21,7 +21,6 @@ import { typedInUpperCase } from './lib/casing.js'
 import Dashboard from './pages/Dashboard.jsx'
 import Trips from './pages/Trips.jsx'
 import Dispatch from './pages/Dispatch.jsx'
-import Shifts from './pages/Shifts.jsx'
 import ProblemAlert from './components/ProblemAlert.jsx'
 import SavedList from './pages/SavedList.jsx'
 import DriverApp from './driver/DriverApp.jsx'
@@ -283,7 +282,6 @@ export default function App() {
           <Route path="/review" element={<ToReview />} />
           <Route path="/users" element={<AccountUsers />} />
           <Route path="/dispatch" element={<Dispatch />} />
-          <Route path="/vehicle-assignments" element={<Shifts />} />
           <Route path="/trips" element={<Trips />} />
           <Route path="/trips/:id" element={<TripDetail />} />
           <Route path="/import" element={<Import />} />

@@ -32,6 +32,9 @@ os.environ["STRIPE_SECRET_KEY"] = os.environ["STRIPE_PUBLISHABLE_KEY"] = ""
 os.environ["SMTP_HOST"] = ""
 # Never text a real phone from a test run: texts are kept, as "off", and not sent.
 os.environ["TWILIO_ACCOUNT_SID"] = ""
+# The will-call line is signed with this, never the real token; and no on-call texts run behind the tests.
+os.environ["TWILIO_AUTH_TOKEN"] = "test-twilio-token"
+os.environ["ONCALL_TEXTS"] = "false"
 
 
 @pytest.fixture(scope="session")

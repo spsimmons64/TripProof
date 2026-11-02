@@ -7,6 +7,7 @@ import { Loading, useLoad } from '../components/ui.jsx'
 import { Modal } from '../admin/common.jsx'
 import SupervisorRecord from '../components/SupervisorRecord.jsx'
 import DataGrid, { useGridParams } from '../components/DataGrid.jsx'
+import { PhoneInput } from '../components/MaskedInput.jsx'
 
 // Who at this company can sign in.
 //
@@ -170,6 +171,7 @@ function UserDialog({ held, isme, companyroles, onReset, onClose, onDone }) {
   const was = heldRoles(held.heldroles)
   const [v, setV] = useState({
     name: held.name || '', email: held.email || '', role: held.role || 'staff',
+    mobile: held.mobile || '', dispatchalerts: Boolean(held.dispatchalerts),
   })
   // The appointments this person holds. Ticked here and written through the same endpoints
   // the Company Requirements screen appoints from - one store, two doors, so a supervisor
@@ -180,7 +182,7 @@ function UserDialog({ held, isme, companyroles, onReset, onClose, onDone }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const set = (k) => (e) => setV({ ...v, [k]: e.target.value })
-  const missing = !v.name.trim() || (!made && !v.email.trim())
+  const missing = !v.name.trim() || (!made && !v.email.trim()) || (v.dispatchalerts && !v.mobile.trim())
 
   // Only what changed, and by the appointment's own id where one is being ended.
   const saveRoles = async (userid) => {
@@ -200,7 +202,7 @@ function UserDialog({ held, isme, companyroles, onReset, onClose, onDone }) {
         // Role is left out when it is their own login - the API refuses it, and sending it
         // only to be refused turns a rename into an error.
         await api.patch(`/account/users/${held.recordid}`,
-          isme ? { name: v.name.trim() } : { name: v.name.trim(), role: v.role })
+          { name: v.name.trim(), ...(isme ? {} : { role: v.role }), mobile: v.mobile, dispatchalerts: v.dispatchalerts })
         await saveRoles(held.recordid)
         onDone(null)
       } else {
@@ -246,6 +248,14 @@ function UserDialog({ held, isme, companyroles, onReset, onClose, onDone }) {
               different mailbox, which is a reset, not an edit. */}
           <label className="field span-6">Email {made ? '' : '*'}
             <input type="email" value={v.email} onChange={set('email')} disabled={made} />
+          </label>
+          <label className="field span-3">Mobile {v.dispatchalerts ? '*' : ''}
+            <PhoneInput value={v.mobile} onChange={set('mobile')} />
+          </label>
+          <label className="field check span-3">
+            <input type="checkbox" checked={v.dispatchalerts}
+              onChange={(e) => setV({ ...v, dispatchalerts: e.target.checked })} />
+            <span>Text Me Dispatch Alerts</span>
           </label>
         </div>
 

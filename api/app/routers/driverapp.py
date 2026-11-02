@@ -288,7 +288,105 @@ def my_work(driver: dict = Depends(current_driver), conn: Connection = Depends(g
         if i["changes"]:
             i["next"] = ()
             i["nextsaid"] = None
-    return {"items": items}
+    return {"items": items, "oncall": _on_call_work(conn, driver)}
+
+
+# -------------------------------------------------------------------------------------------
+# On call: after closing, the will-calls are the on-call driver's to take
+# -------------------------------------------------------------------------------------------
+# Nobody is in the office to press Passenger Called, so the passenger - or the facility - rings
+# the driver on call, and the driver takes it from here: I'm Going makes it theirs, through the
+# same checks an assignment from the office goes through. The office looks at every one of them
+# the next morning (After-Hours Review), and none is billed until it has.
+ONCALL_LEAD = timedelta(minutes=30)       # the list is there half an hour before on-call begins
+
+
+def _on_call(conn: Connection, driver: dict) -> dict | None:
+    """The on-call assignment this driver is in now (or about to be), and its vehicle."""
+    from app import shifts as plan
+    here = localnow(dispatch.zone(conn, driver["accountid"]))
+    for s in [o for day in (here.date() - timedelta(days=1), here.date())
+              for o in plan.on_call(conn, driver["accountid"], day) if o["driverid"] == driver["recordid"]]:
+        start, end = plan.span(s["workday"], s["startsat"], s["endsat"])
+        if start - ONCALL_LEAD <= here < end:
+            return {**s, "from": start, "until": end}
+    return None
+
+
+def _waiting_calls(conn: Connection, accountid: str, day, legid: str | None = None) -> list[dict]:
+    """Today's will-calls still waiting for their call, nobody on them, not handed to the broker."""
+    return rows(conn, f"""
+        SELECT l.recordid AS legid, l.tripid, l.pickupplace, l.dropoffplace, l.readyabout, l.returnplan,
+               t.externalid, t.passenger, t.passengerphone, t.servicelevel, t.note
+        FROM triplegs l JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
+        WHERE l.accountid = :a AND l.pickupat IS NULL AND l.driverid IS NULL AND l.outcomestate IS NULL
+          AND l.brokerstate IS NULL AND t.brokerstate NOT IN ('offered', 'returnpending', 'returned')
+          AND t.cancelledon IS NULL
+          AND t.tripdate = :day {"AND l.recordid = :l" if legid else ""}
+        ORDER BY l.returnplan = 'oncall' DESC, l.readyabout IS NULL, l.readyabout, t.passenger
+    """, a=accountid, day=day, l=legid)
+
+
+def _on_call_work(conn: Connection, driver: dict) -> dict | None:
+    on = _on_call(conn, driver)
+    if not on:
+        return None
+    return {"vehiclename": on["vehiclename"], "from": on["from"], "until": on["until"],
+            "items": _waiting_calls(conn, driver["accountid"], on["from"].date())}
+
+
+@router.post("/legs/{legid}/take")
+def take_the_call(legid: str, request: Request, driver: dict = Depends(current_driver),
+                  conn: Connection = Depends(get_conn)):
+    """I'm Going: the on-call driver takes a will-call the passenger rang them about. The pickup is
+    now, the leg is theirs in their on-call vehicle, and it passes every check an office
+    assignment does - one that needs somebody's say-so is not taken, it is the supervisor's."""
+    from app.evaluator import evaluate
+    from app.routers import trips as office
+    from app.activity import log
+    acct, me = driver["accountid"], driver["recordid"]
+    on = _on_call(conn, driver)
+    if not on:
+        raise HTTPException(409, "You are not on call right now.")
+    leg = next(iter(_waiting_calls(conn, acct, on["from"].date(), legid)), None)
+    if not leg:
+        raise HTTPException(409, "This will-call is no longer waiting - somebody has it, or it was settled.")
+    here = localnow(dispatch.zone(conn, acct)).replace(second=0, microsecond=0)
+    run(conn, "UPDATE triplegs SET pickupat = :p WHERE recordid = :l AND accountid = :a", p=here, l=legid, a=acct)
+    said = dispatch.for_leg(conn, acct, legid, only={me}, vehicle_of={me: on["vehicleid"]})
+    d = next((x for x in said.get("drivers", []) if x["driverid"] == me), None)
+    v = next((x for x in said.get("vehicles", []) if x["vehicleid"] == on["vehicleid"]), None)
+    for who in (d, v):
+        if who and who["blocked"]:
+            raise HTTPException(409, f"You cannot take this trip: {who['blocked'][0]}. Call your supervisor.")
+    warned = (d or {}).get("warnings", []) + (v or {}).get("warnings", [])
+    if warned:
+        raise HTTPException(409, f"{warned[0]}. This needs the office to accept it - call your supervisor.")
+    now = utcnow()
+    run(conn, """
+        INSERT INTO tripchanges (recordid, accountid, tripid, legid, changedon, changedby, reason, changes,
+                                 driverid, legstate)
+        VALUES (:id, :a, :t, :l, :now, :by, :r, :c, NULL, 'scheduled')
+    """, id=newid(), a=acct, t=leg["tripid"], l=legid, now=now, by=me,
+        r="PASSENGER CALLED THE ON-CALL DRIVER - READY",
+        c=json.dumps([{"field": "Pickup time", "old": "Will-call", "new": f"{here:%m/%d/%Y %-I:%M %p}"}]))
+    run(conn, """
+        INSERT INTO tripassignments (recordid, accountid, legid, driverid, vehicleid, assignedon, assignedby)
+        VALUES (:id, :a, :l, :d, :v, :now, NULL)
+    """, id=newid(), a=acct, l=legid, d=me, v=on["vehicleid"], now=now)
+    run(conn, """
+        UPDATE triplegs SET driverid = :d, vehicleid = :v, vehicleexternal = :vx, selfassignedon = :now,
+                            activationsource = 'driver', activatedon = :now
+        WHERE recordid = :l AND accountid = :a
+    """, d=me, v=on["vehicleid"], vx=on["vehiclename"], now=now, l=legid, a=acct)
+    office._shadow_check(conn, acct, me, on["vehicleid"], legid, None)
+    office._settle_dispatch_state(conn, acct, leg["tripid"])
+    evaluate(conn, acct, tripids=[leg["tripid"]], userid=None, reason="assignment")
+    log(conn, None, "willcall-taken-oncall", "trip", leg["tripid"],
+        {"legid": legid, "driverid": me, "vehicleid": on["vehicleid"], "pickupat": str(here)},
+        ip=client_ip(request), accountid=acct)
+    saved(conn)
+    return {"ok": True, "legid": legid}
 
 
 def _unread(conn: Connection, driver: dict, legid: str, local=lambda v: v) -> list[dict]:
@@ -359,7 +457,7 @@ def _taken(at: datetime | None) -> datetime:
 
 def _my_leg(conn: Connection, driver: dict, legid: str) -> dict:
     held = row(conn, """
-        SELECT l.recordid, l.tripid, l.vehicleid, l.executionstate, l.pickupat, l.dropoffat
+        SELECT l.recordid, l.tripid, l.vehicleid, l.executionstate, l.pickupat, l.dropoffat, l.legnumber
         FROM triplegs l JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL
         WHERE l.recordid = :id AND l.accountid = :a AND l.driverid = :d
     """, id=legid, a=driver["accountid"], d=driver["recordid"])
@@ -426,6 +524,10 @@ def move_leg(legid: str, body: StateIn, request: Request,
         held = _before_setting_off(conn, driver, leg["vehicleid"], {})
         if held and held["enforced"]:
             raise HTTPException(409, held["why"])
+        # Nobody sets off with a passenger whose ride home is undecided.
+        from app.routers.trips import return_undecided
+        if leg["legnumber"] == 1 and return_undecided(conn, driver["accountid"], leg["tripid"]):
+            raise HTTPException(409, "The office has not decided who brings this passenger home. Call the office before you set off.")
     run(conn, "UPDATE triplegs SET executionstate = :s WHERE recordid = :l", s=body.state, l=legid)
     # The moment itself, kept. `executionstate` says where the leg is; this says when it got there
     # and who was standing where when they said so. Appended, so the sequence survives the next

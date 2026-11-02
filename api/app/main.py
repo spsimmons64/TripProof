@@ -14,6 +14,7 @@ from app.routers import (admin, apply, audits, auth, billing, dashboard, drivera
 # the order the routes are matched in is the order they had there.
 from app.routers import (backgroundscreening, companyusers, drugalcohol, employerinquiries,
                          exposure, hoursofservice, payers, places, roadtest, shifts, vehicles)
+from app import willcall
 
 # TripProof's own log lines (mail sent / failed, billing…) go to the container log next to uvicorn's.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s: %(message)s")
@@ -33,6 +34,10 @@ for r in (auth, vault, companyusers, drugalcohol, employerinquiries, roadtest, h
           driverapply, driverapp, signing, uploading, employerreply, roadtestreply,
           live, gps, operating, places, shifts):
     app.include_router(r.router)
+
+
+# The on-call driver's texts, looked for once a minute.
+willcall.start()
 
 
 @app.get("/api/health")

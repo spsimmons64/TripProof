@@ -59,6 +59,23 @@ def tell(conn: Connection, accountid: str, driverid: str | None, kind: str, text
             lambda: threading.Thread(target=_send, args=(rid, to, body), daemon=True).start())
 
 
+def tell_user(conn: Connection, accountid: str, userid: str, kind: str, text: str,
+              tripid: str | None = None, legid: str | None = None) -> None:
+    """Queue a text to somebody in the office, at the mobile on their login."""
+    u = row(conn, "SELECT mobile FROM users WHERE recordid = :u AND accountid = :a", u=userid, a=accountid)
+    to = number((u or {}).get("mobile"))
+    status = "queued" if settings.twilio_account_sid and to else ("nophone" if not to else "off")
+    rid = newid()
+    body = f"TripProof: {text}"[:480]
+    run(conn, """
+        INSERT INTO drivertexts (recordid, accountid, userid, tripid, legid, kind, tonumber, body, status, added)
+        VALUES (:id, :a, :u, :t, :l, :k, :to, :b, :s, :now)
+    """, id=rid, a=accountid, u=userid, t=tripid, l=legid, k=kind, to=to, b=body, s=status, now=utcnow())
+    if status == "queued":
+        conn.info.setdefault("after_commit", []).append(
+            lambda: threading.Thread(target=_send, args=(rid, to, body), daemon=True).start())
+
+
 def _send(rid: str, to: str, body: str) -> None:
     sid, token = settings.twilio_account_sid, settings.twilio_auth_token
     url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"

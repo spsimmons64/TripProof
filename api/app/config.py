@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_from: str = ""             # the number texts come from, +1XXXXXXXXXX
+    # The on-call driver's texts (app/willcall.py), looked for once a minute in the API process.
+    oncall_texts: bool = True
     # Where routes are worked out (app/routing.py): an OSRM server. Empty means the public one.
     osrm_url: str = ""
     # Certn, the screening vendor before them. Kept so orders placed through Certn can still be

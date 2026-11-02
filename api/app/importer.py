@@ -325,6 +325,35 @@ def reject(conn: Connection, user: dict, batchid: str):
     run(conn, "UPDATE importbatches SET status = 'rejected', decidedon = :now WHERE recordid = :id", now=utcnow(), id=batchid)
 
 
+def _update_leg(conn: Connection, user: dict, tripid: str, r: dict) -> int:
+    """A trip already on file, sent again - a manifest the broker has changed since: the leg it names
+    takes the new times, if it has not started. Never a second copy of the trip. A driver already on
+    the leg is told, as with any change, and the change is written down. Returns 1 if it changed."""
+    acct = user["accountid"]
+    leg = row(conn, """
+        SELECT recordid, legnumber, pickupat, dropoffat, driverid, executionstate, outcomestate FROM triplegs
+        WHERE tripid = :t AND accountid = :a AND legnumber = :n
+    """, t=tripid, a=acct, n=r["leg"] or 1)
+    if not leg or leg["executionstate"] != "scheduled" or leg["outcomestate"]:
+        return 0
+    # Staged rows are kept as text: read back as the times they are.
+    when = lambda v: datetime.fromisoformat(v) if isinstance(v, str) and v else (v or None)  # noqa: E731
+    new = {"pickupat": when(r["pickupat"]), "dropoffat": when(r["dropoffat"])}
+    changes = [{"field": f, "old": str(leg[f]) if leg[f] else "-", "new": str(v)}
+               for f, v in new.items() if v and v != leg[f]]
+    if not changes:
+        return 0
+    run(conn, "UPDATE triplegs SET pickupat = COALESCE(:p, pickupat), dropoffat = COALESCE(:o, dropoffat) "
+              "WHERE recordid = :l", p=new["pickupat"], o=new["dropoffat"], l=leg["recordid"])
+    run(conn, """
+        INSERT INTO tripchanges (recordid, accountid, tripid, legid, changedon, changedby, reason, changes,
+                                 driverid, legstate)
+        VALUES (:id, :a, :t, :l, :now, :by, 'BROKER MANIFEST UPDATE', :c, :d, 'scheduled')
+    """, id=newid(), a=acct, t=tripid, l=leg["recordid"], now=utcnow(), by=user["recordid"],
+        c=json.dumps(changes), d=leg["driverid"])
+    return 1
+
+
 def commit(conn: Connection, user: dict, batchid: str) -> dict:
     acct = user["accountid"]
     b = row(conn, "SELECT status FROM importbatches WHERE recordid = :id AND accountid = :a FOR UPDATE", id=batchid, a=acct)
@@ -352,11 +381,15 @@ def commit(conn: Connection, user: dict, batchid: str) -> dict:
                          VALUES (:id, :a, :ext, :vin, 1)""", id=vid, a=acct, ext=r["vehicleid"] or r["vin"], vin=r["vin"])
             created_vehicles[vk] = vid
 
-    existing = {t["externalid"] for t in rows(conn, "SELECT externalid FROM trips WHERE accountid = :a", a=acct)}
+    existing = {t["externalid"]: t["recordid"] for t in rows(conn, "SELECT recordid, externalid FROM trips "
+                                                                     "WHERE accountid = :a AND deleted IS NULL", a=acct)}
     trips: "OrderedDict[str, list[dict]]" = OrderedDict()
+    updated = 0
     for r in staged["rows"]:
         if r["tripid"] not in existing:
             trips.setdefault(r["tripid"], []).append(r)
+        else:
+            updated += _update_leg(conn, user, existing[r["tripid"]], r)
 
     trip_rows, leg_rows, newtripids = [], [], []
     for ext, legs in trips.items():
@@ -394,5 +427,6 @@ def commit(conn: Connection, user: dict, batchid: str) -> dict:
     run(conn, "UPDATE importbatches SET status = 'accepted', decidedon = :now, tripcount = :tc WHERE recordid = :id",
         now=utcnow(), tc=len(newtripids), id=batchid)
     result = evaluate(conn, acct, newtripids, user["recordid"], "import")
-    return {"trips": len(newtripids), "legs": len(leg_rows), "skipped": len(staged["rows"]) - len(leg_rows),
+    return {"trips": len(newtripids), "legs": len(leg_rows), "updated": updated,
+            "skipped": len(staged["rows"]) - len(leg_rows) - updated,
             "driverscreated": len(created_drivers), "vehiclescreated": len(created_vehicles), "evaluation": result}
