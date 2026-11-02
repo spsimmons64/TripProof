@@ -3894,3 +3894,50 @@ main > .fill.wide, main > .stack.wide { max-width: none; }   /* the day's boards
 /* Tick every unassigned trip: at the foot, beside Auto Assign. */
 .dispatchqueue .panelfoot .tickall { display: flex; align-items: center; gap: 6px; margin-right: auto; font-size: 13px;
                                      font-weight: 600; color: var(--text-2); cursor: pointer; }
+
+/* Trip Review: each leg of a finished trip, as driven. */
+.reviewtable { table-layout: auto; }
+.reviewtable th, .reviewtable td { padding-right: 16px; }
+.reviewtable th:last-child, .reviewtable td:last-child { width: auto; text-align: left; }
+.kv dd.capital { text-transform: capitalize; }
+
+/* Billing: the money across the top, each box also the way into its queue. */
+.billtiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; flex: none; }
+.billtiles button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 10px 14px; text-align: left; height: auto;
+                    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; }
+.billtiles span { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); }
+.billtiles b { font-size: 24px; color: var(--teal-900); font-variant-numeric: tabular-nums; }
+.billtiles small { font-size: 12px; font-weight: 500; color: var(--text-2); }
+.billtiles button.on { border-color: var(--teal-900); box-shadow: inset 0 -3px 0 var(--orange); }
+.billtiles button.alert span, .billtiles button.alert b { color: var(--bad); }
+.billingpage select { width: auto; }
+.billedline { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chargetable tr.chargetotal td { font-weight: 800; color: var(--text); }
+.paidfield { width: 160px; flex: none; }
+.settlerow { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+@media (max-width: 760px) { .billtiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* The payment portal: one card, on any phone. */
+.payportal { min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 32px 16px; background: var(--teal-50); }
+.payform { width: 100%; max-width: 460px; padding: 22px; }
+.payform h1 { font-size: 22px; margin: 0; }
+.payform h2 { font-size: 16px; margin: 0; color: var(--text-2); }
+.payform .paybutton { padding: 12px; font-size: 16px; }
+.simcard { gap: 12px; }
+.simcard .field { flex: 1; }
+/* A trip's legs and charges scroll on their own, between its summary and the payment buttons. */
+.billscroll { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; flex: none; }
+.billscroll table { flex: none; }
+
+.billingpage .agestrip { display: flex; gap: 8px; margin-bottom: 12px; flex: none; }
+.billingpage .agestrip span { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 6px 4px; border: 1px solid var(--border); border-radius: 8px;
+                              font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-2); background: #fff; }
+.billingpage .agestrip b { font-size: 18px; color: var(--teal-900); }
+.billingpage .agestrip span.bad, .billingpage .agestrip span.bad b { color: var(--bad); border-color: #e3b7b7; }
+.milesbtn { margin-left: 8px; padding: 1px 8px; font-size: 11px; }
+.batchscroll { max-height: 55vh; }
+.batchtable input[type="number"] { width: 110px; }
+.batchtable input[type="checkbox"] { width: auto; }
+.batchtable textarea { width: 100%; min-height: 32px; }
+.batchtable th:last-child, .batchtable td:last-child { width: 240px; }
+.paymenttable td:last-child, .paymenttable th:last-child { text-align: right; }

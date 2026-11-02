@@ -1,4 +1,4 @@
-"""Text messages to drivers, through Twilio.
+"""Text messages to drivers and the office, through Bandwidth (Twilio where Bandwidth is not set).
 
 A driver is texted when the office gives them a trip, changes one they are on, takes them off one,
 or cancels one. Only the trip's reference and its time go in the text: a text is not a secure
@@ -6,7 +6,7 @@ channel, so nothing about the passenger does. The details are in the app.
 
 Queued with the change that causes it and sent after that change is committed, on its own thread,
 so the office never waits on Twilio and a driver is never told about a change that was rolled back.
-Every text is kept (drivertexts) with what Twilio said.
+Every text is kept (drivertexts) with what the provider said.
 """
 
 import base64
@@ -14,6 +14,7 @@ import json
 import logging
 import re
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,6 +27,10 @@ from app.db import engine, newid, row, run, utcnow
 
 log = logging.getLogger(__name__)
 TIMEOUT = 15
+
+
+def can_send() -> bool:
+    return bool(settings.bandwidth_client_id or settings.twilio_account_sid)
 
 
 def number(phone: str | None) -> str | None:
@@ -47,7 +52,7 @@ def tell(conn: Connection, accountid: str, driverid: str | None, kind: str, text
         return
     d = row(conn, "SELECT phone FROM drivers WHERE recordid = :d AND accountid = :a", d=driverid, a=accountid)
     to = number((d or {}).get("phone"))
-    status = "queued" if settings.twilio_account_sid and to else ("nophone" if not to else "off")
+    status = "queued" if can_send() and to else ("nophone" if not to else "off")
     rid = newid()
     body = f"TripProof: {text}"[:480]
     run(conn, """
@@ -64,7 +69,7 @@ def tell_user(conn: Connection, accountid: str, userid: str, kind: str, text: st
     """Queue a text to somebody in the office, at the mobile on their login."""
     u = row(conn, "SELECT mobile FROM users WHERE recordid = :u AND accountid = :a", u=userid, a=accountid)
     to = number((u or {}).get("mobile"))
-    status = "queued" if settings.twilio_account_sid and to else ("nophone" if not to else "off")
+    status = "queued" if can_send() and to else ("nophone" if not to else "off")
     rid = newid()
     body = f"TripProof: {text}"[:480]
     run(conn, """
@@ -76,7 +81,53 @@ def tell_user(conn: Connection, accountid: str, userid: str, kind: str, text: st
             lambda: threading.Thread(target=_send, args=(rid, to, body), daemon=True).start())
 
 
+# A Bandwidth login token, kept until shortly before it runs out.
+_token = {"value": None, "until": 0.0}
+
+
+def _bandwidth_token() -> str:
+    if _token["value"] and time.time() < _token["until"]:
+        return _token["value"]
+    auth = base64.b64encode(f"{settings.bandwidth_client_id}:{settings.bandwidth_client_secret}".encode()).decode()
+    req = urllib.request.Request("https://api.bandwidth.com/api/v1/oauth2/token", data=b"grant_type=client_credentials",
+                                 headers={"Authorization": f"Basic {auth}", "Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as answer:              # noqa: S310
+        got = json.loads(answer.read().decode())
+    _token.update(value=got["access_token"], until=time.time() + int(got.get("expires_in", 3600)) - 60)
+    return _token["value"]
+
+
+def _bandwidth(to: str, body: str) -> tuple[str, str | None, str | None]:
+    """One text through Bandwidth: (status, its id, what went wrong). Accepted is not delivered: it
+    means Bandwidth has it."""
+    url = f"https://api.bandwidth.com/v1/build/accounts/{settings.bandwidth_account_id}/messages"
+    data = json.dumps({"to": [to], "from": settings.bandwidth_from, "text": body,
+                       "applicationId": settings.bandwidth_application_id}).encode()
+    try:
+        req = urllib.request.Request(url, data=data, headers={"Authorization": f"Bearer {_bandwidth_token()}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as answer:          # noqa: S310
+            return "sent", json.loads(answer.read().decode()).get("id"), None
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            _token["value"] = None
+        try:
+            said = json.loads(e.read().decode())
+            return "failed", None, str(said.get("description") or said.get("errors") or e.code)
+        except Exception:                                                     # noqa: BLE001
+            return "failed", None, str(e)
+    except Exception as e:                                                    # noqa: BLE001
+        return "failed", None, str(e)
+
+
 def _send(rid: str, to: str, body: str) -> None:
+    if settings.bandwidth_client_id:
+        status, twiliosid, error = _bandwidth(to, body)
+        if status == "failed":
+            log.warning("text to %s failed: %s", to, error)
+        with engine.begin() as conn:
+            run(conn, "UPDATE drivertexts SET status = :s, twiliosid = :sid, error = :e, sent = :now WHERE recordid = :r",
+                s=status, sid=twiliosid, e=(error or "")[:400] or None, now=utcnow(), r=rid)
+        return
     sid, token = settings.twilio_account_sid, settings.twilio_auth_token
     url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
     data = urllib.parse.urlencode({"To": to, "From": settings.twilio_from, "Body": body}).encode()

@@ -35,6 +35,9 @@ os.environ["TWILIO_ACCOUNT_SID"] = ""
 # The will-call line is signed with this, never the real token; and no on-call texts run behind the tests.
 os.environ["TWILIO_AUTH_TOKEN"] = "test-twilio-token"
 os.environ["ONCALL_TEXTS"] = "false"
+os.environ["PAY_SIMULATOR"] = "false"
+os.environ["BANDWIDTH_CLIENT_ID"] = ""      # never text a real phone from a test run
+os.environ["BANDWIDTH_CALLBACK_SECRET"] = ""
 
 
 @pytest.fixture(scope="session")

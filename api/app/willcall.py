@@ -156,12 +156,18 @@ def office_alerts(conn: Connection) -> int:
 
 
 def _loop() -> None:
+    last = 0.0
     while True:
         try:
             with engine.connect() as conn:
                 conn.info.pop("after_commit", None)
                 tick(conn)
                 office_alerts(conn)
+                # Invoice reminders, once an hour.
+                if clock.time() - last >= 3600:
+                    from app.routers.tripbilling import send_reminders
+                    send_reminders(conn)
+                    last = clock.time()
                 saved(conn)
         except Exception:                                                     # noqa: BLE001
             logger.exception("on-call texts")

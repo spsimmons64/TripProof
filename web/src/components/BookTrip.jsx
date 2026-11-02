@@ -6,7 +6,7 @@ import { Modal } from '../admin/common.jsx'
 import { useLoad } from './ui.jsx'
 import SearchSelect from './SearchSelect.jsx'
 import AddressCheck from './AddressCheck.jsx'
-import { PhoneInput, ZipInput } from './MaskedInput.jsx'
+import { EmailInput, PhoneInput, ZipInput } from './MaskedInput.jsx'
 import { US_STATES } from '../admin/CustomerProfile.jsx'
 
 // Booking a trip by hand - the telephone and private pay case. Who drives it is decided on
@@ -338,7 +338,7 @@ export default function BookTrip({ day, onClose, onBooked }) {
 // A new passenger or place, not on the list yet: a name, an address and a telephone.
 // `entry`: one already on the list, being put right (or, with `onRemoved`, taken off it).
 export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved }) {
-  const [v, setV] = useState(() => ({ name: '', address: '', city: '', state: '', zip: '', phone: '', dob: '',
+  const [v, setV] = useState(() => ({ name: '', address: '', city: '', state: '', zip: '', phone: '', dob: '', email: '', billingname: '', billingemail: '', billingaddress: '',
     ...(entry ? Object.fromEntries(Object.entries(entry).map(([k, x]) => [k, x ?? ''])) : {}),
     ...(entry?.dob ? { dob: String(entry.dob).slice(0, 10) } : {}), critical: Boolean(entry?.critical) }))
   const [busy, setBusy] = useState(false)
@@ -349,7 +349,8 @@ export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved })
     setBusy(true); setErr(null)
     const body = { name: v.name, address: v.address, city: v.city, state: v.state, zip: v.zip, phone: v.phone,
                    dob: passenger ? v.dob : null, critical: !passenger && v.critical,
-                   closesat: passenger ? null : v.closesat || null }
+                   closesat: passenger ? null : v.closesat || null,
+                   ...(passenger ? { email: v.email, billingname: v.billingname, billingemail: v.billingemail, billingaddress: v.billingaddress } : {}) }
     try { onAdded(await (entry ? api.put(`/${kind}/${entry.recordid}`, body) : api.post(`/${kind}`, body))) }
     catch (e) { setErr(e.message); setBusy(false) }
   }
@@ -417,6 +418,22 @@ export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved })
           <label className="field span-2">ZIP *
             <ZipInput value={v.zip} onChange={(e) => setV({ ...v, zip: e.target.value })} />
           </label>
+          {passenger && (<>
+            <label className="field span-6">Email
+              <EmailInput value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} />
+            </label>
+            {/* Somebody else who pays, such as a daughter: the invoice goes to them instead. */}
+            <h3 className="formsection span-6">Billing Contact</h3>
+            <label className="field span-3">Name
+              <input value={v.billingname} className="upper" onChange={(e) => setV({ ...v, billingname: e.target.value.toUpperCase() })} />
+            </label>
+            <label className="field span-3">Email
+              <EmailInput value={v.billingemail} onChange={(e) => setV({ ...v, billingemail: e.target.value })} />
+            </label>
+            <label className="field span-6">Address
+              <input value={v.billingaddress} className="upper" onChange={(e) => setV({ ...v, billingaddress: e.target.value.toUpperCase() })} />
+            </label>
+          </>)}
           {/* Dialysis, a cancer centre: every trip booked to it is ticked Critical. */}
           {!passenger && (
             <label className="field check">

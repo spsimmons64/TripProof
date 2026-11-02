@@ -639,7 +639,7 @@ def to_pdf(view: dict, fonts: str = "") -> bytes:
     css = [CSS(string=fonts + view["css"] + PRINT_CSS)]
 
     def draw(body: str) -> bytes:
-        page = (f'<!doctype html><html><head><meta charset="utf-8"><title>Driver application</title>'
+        page = (f'<!doctype html><html><head><meta charset="utf-8"><title>{escape(view.get("title") or "Driver application")}</title>'
                 f'</head><body class="appview">{body}</body></html>')
         return HTML(string=page).write_pdf(stylesheets=css)
 

@@ -29,12 +29,30 @@ class EntryIn(BaseModel):
     dob: date | None = None          # passengers only: to be sure who is calling
     critical: bool = False           # places only: every trip there is one that cannot be missed
     closesat: str | None = None      # places only: when it locks up ("17:00")
+    email: str | None = None         # passengers only: where an invoice goes
+    billingname: str | None = None   # passengers only: somebody else who pays, such as a daughter
+    billingemail: str | None = None
+    billingaddress: str | None = None
 
 
 def full(e: dict) -> str:
     """The whole address on one line, the way a trip carries it: 100 BAY ST, JACKSONVILLE, FL 32202."""
     tail = " ".join(x for x in (e.get("state"), e.get("zip")) if x)
     return ", ".join(x for x in (e.get("address"), e.get("city"), tail) if x)
+
+
+PAYS = ", email, billingname, billingemail, billingaddress"
+
+
+def _pays(body: EntryIn) -> dict:
+    """A passenger's email and billing contact: names and addresses upper case, emails lower."""
+    def mail(v):
+        v = (v or "").strip().lower()
+        if v and ("@" not in v or " " in v):
+            raise HTTPException(400, "That email address is not right")
+        return v[:255] or None
+    return {"em": mail(body.email), "bn": (body.billingname or "").strip().upper()[:160] or None, "be": mail(body.billingemail),
+            "ba": " ".join((body.billingaddress or "").split()).upper()[:255] or None}
 
 
 def _clock(v) -> str | None:
@@ -58,7 +76,7 @@ def facility_closes(conn: Connection, acct: str, address: str) -> dict | None:
 
 def _list(conn: Connection, table: str, acct: str) -> list[dict]:
     out = rows(conn, f"""
-        SELECT recordid, name, address, city, state, zip, phone{", dob" if table == "passengers" else ", critical, closesat"}
+        SELECT recordid, name, address, city, state, zip, phone{", dob" + PAYS if table == "passengers" else ", critical, closesat"}
         FROM {table} WHERE accountid = :a AND deleted IS NULL ORDER BY name, address
     """, a=acct)
     for e in out:
@@ -92,21 +110,22 @@ def _add(conn: Connection, table: str, body: EntryIn, user: dict, request: Reque
                    "AND name = :n AND address = :ad", a=acct, n=name, ad=address):
         raise HTTPException(409, f"{name} at {address} is already on the list.")
     closes = None if person else _closing(body)
+    pays = _pays(body)
     rid = newid()
     entry = {"address": address, "city": city, "state": state, "zip": zipcode}
     # Where it is, looked up once now: every route to or from it starts here.
     at = wheremap.place(full(entry))
     run(conn, f"""
         INSERT INTO {table} (recordid, accountid, name, address, city, state, zip, lat, lng, phone,
-                             added, addedby{", dob" if person else ", critical, closesat"})
-        VALUES (:id, :a, :n, :ad, :c, :s, :z, :lat, :lng, :p, :now, :by{", :d" if person else ", :crit, :cl"})
+                             added, addedby{", dob" + PAYS if person else ", critical, closesat"})
+        VALUES (:id, :a, :n, :ad, :c, :s, :z, :lat, :lng, :p, :now, :by{", :d, :em, :bn, :be, :ba" if person else ", :crit, :cl"})
     """, id=rid, a=acct, n=name[:160], ad=address[:255], c=city[:80], s=state[:2], z=zipcode[:10],
         lat=at and at[0], lng=at and at[1], p=phone and phone[:32], now=utcnow(),
-        by=user["recordid"], d=body.dob, crit=int(body.critical), cl=closes)
+        by=user["recordid"], d=body.dob, crit=int(body.critical), cl=closes, **pays)
     log(conn, user, f"{KINDS[table]}-added", KINDS[table], rid, {"name": name}, ip=client_ip(request))
     saved(conn)
     out = {"recordid": rid, "name": name, **entry, "full": full(entry), "phone": phone}
-    return {**out, "dob": body.dob} if person else {**out, "critical": int(body.critical), "closesat": closes}
+    return {**out, "dob": body.dob, "email": pays["em"], "billingname": pays["bn"], "billingemail": pays["be"], "billingaddress": pays["ba"]} if person else {**out, "critical": int(body.critical), "closesat": closes}
 
 
 # The list pages: searched, sorted and paged on the server, the way every grid is.
@@ -124,7 +143,7 @@ def _page(conn: Connection, table: str, acct: str, q, sort, dir, page, pagesize)
     pagesize = max(1, min(pagesize, 200))
     total = row(conn, f"SELECT COUNT(*) AS n FROM {table} WHERE {clause}", **params)["n"]
     items = rows(conn, f"""
-        SELECT recordid, name, address, city, state, zip, phone{", dob" if table == "passengers" else ", critical, closesat"}
+        SELECT recordid, name, address, city, state, zip, phone{", dob" + PAYS if table == "passengers" else ", critical, closesat"}
         FROM {table} WHERE {clause}
         ORDER BY {column} {direction}, name ASC, recordid ASC LIMIT :lim OFFSET :off
     """, lim=pagesize, off=(max(1, page) - 1) * pagesize, **params)
@@ -155,19 +174,20 @@ def _change(conn: Connection, table: str, rid: str, body: EntryIn, user: dict, r
         if body.dob >= date.today() or body.dob.year < 1900:
             raise HTTPException(400, "That date of birth cannot be right")
     closes = None if person else _closing(body)
+    pays = _pays(body)
     entry = {"address": address, "city": city, "state": state, "zip": zipcode}
     moved = full(entry) != full(held)
     at = wheremap.place(full(entry)) if moved else None
     run(conn, f"""
         UPDATE {table} SET name = :n, address = :ad, city = :c, state = :s, zip = :z, phone = :p
-               {", dob = :d" if person else ", critical = :crit, closesat = :cl"}{", lat = :lat, lng = :lng" if moved else ""}
+               {", dob = :d, email = :em, billingname = :bn, billingemail = :be, billingaddress = :ba" if person else ", critical = :crit, closesat = :cl"}{", lat = :lat, lng = :lng" if moved else ""}
         WHERE recordid = :r AND accountid = :a
     """, n=name[:160], ad=address[:255], c=city[:80], s=state[:2], z=zipcode[:10], p=phone and phone[:32],
-        d=body.dob, crit=int(body.critical), cl=closes, lat=at and at[0], lng=at and at[1], r=rid, a=acct)
+        d=body.dob, crit=int(body.critical), cl=closes, **pays, lat=at and at[0], lng=at and at[1], r=rid, a=acct)
     log(conn, user, f"{KINDS[table]}-changed", KINDS[table], rid, {"name": name}, ip=client_ip(request))
     saved(conn)
     return {"recordid": rid, "name": name, **entry, "full": full(entry), "phone": phone,
-            **({"dob": body.dob} if person else {"critical": int(body.critical), "closesat": closes})}
+            **({"dob": body.dob, "email": pays["em"], "billingname": pays["bn"], "billingemail": pays["be"], "billingaddress": pays["ba"]} if person else {"critical": int(body.critical), "closesat": closes})}
 
 
 def _remove(conn: Connection, table: str, rid: str, user: dict, request: Request) -> dict:

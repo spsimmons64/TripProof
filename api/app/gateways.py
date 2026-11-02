@@ -373,3 +373,51 @@ def describe(code: str) -> str:
 
 __all__ = ["ADAPTERS", "MODES", "ORDER", "catalog", "chosen", "configured", "describe",
            "forget", "offered", "save", "set_offered", "summary", "use"]
+
+
+# ------------------------------------------------------------------------------------------------
+# Stripe: the first processor that takes a payment. The company's own keys, and its own money. The
+# passenger pays on Stripe's hosted page, so a card number never reaches TripProof. Secrets stay in
+# this module, which makes the call rather than handing out the key.
+# ------------------------------------------------------------------------------------------------
+def has_stripe(conn: Connection, accountid: str) -> bool:
+    got = chosen(conn, accountid)
+    return bool(got and got["code"] == "stripe" and got["ready"])
+
+
+def can_take_payment(conn: Connection, accountid: str) -> bool:
+    from app.config import settings
+    return settings.pay_simulator or has_stripe(conn, accountid)
+
+
+def _stripe_creds(conn: Connection, accountid: str) -> dict:
+    r = row(conn, "SELECT * FROM accountgateways WHERE accountid = :a AND active = 1 AND gatewaycode = 'stripe' LIMIT 1", a=accountid)
+    return _unseal(r, accountid) if r else {}
+
+
+def stripe_checkout(conn: Connection, accountid: str, *, cents: int, label: str, success: str, cancel: str,
+                    email: str | None, reference: str) -> str:
+    """A hosted payment page for one amount; returns where to send the passenger."""
+    import stripe
+    made = stripe.checkout.Session.create(
+        api_key=_stripe_creds(conn, accountid).get("secret_key"), mode="payment", success_url=success, cancel_url=cancel,
+        line_items=[{"quantity": 1, "price_data": {"currency": "usd", "unit_amount": cents, "product_data": {"name": label}}}],
+        client_reference_id=reference, metadata={"reference": reference}, **({"customer_email": email} if email else {}))
+    return made.url
+
+
+def stripe_session(conn: Connection, accountid: str, sessionid: str) -> dict:
+    """What Stripe itself says about a payment page: never what the browser says."""
+    import stripe
+    got = stripe.checkout.Session.retrieve(sessionid, api_key=_stripe_creds(conn, accountid).get("secret_key"))
+    return {"id": got.id, "paid": got.payment_status == "paid", "reference": got.client_reference_id, "cents": got.amount_total}
+
+
+def stripe_event(conn: Connection, accountid: str, payload: bytes, signature: str | None) -> dict:
+    """A webhook from this company's Stripe account, its signature checked. Raises if it does not check."""
+    import stripe
+    secret = _stripe_creds(conn, accountid).get("webhook_secret")
+    if not secret:
+        raise ValueError("No webhook secret is set")
+    event = stripe.Webhook.construct_event(payload, signature, secret)
+    return event.to_dict() if hasattr(event, "to_dict") else dict(event)

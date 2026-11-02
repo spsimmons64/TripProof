@@ -117,7 +117,7 @@ const confirmed = (rejections) => {
 }
 
 // Whether a text to a driver went, in a word or two.
-const TEXTSTATUS = { sent: 'Sent', queued: 'Sending', failed: 'Not sent', off: 'Not sent (texting not set up)',
+const TEXTSTATUS = { delivered: 'Delivered', sent: 'Sent', queued: 'Sending', failed: 'Not sent', off: 'Not sent (texting not set up)',
                      nophone: 'Not sent (no mobile number)' }
 
 export default function TripDetail() {
@@ -246,7 +246,7 @@ export default function TripDetail() {
                   <td>{tzDateTime(x.added)}</td>
                   <td>{x.drivername || '-'}</td>
                   <td>{x.body}</td>
-                  <td className={x.status === 'sent' ? 'st-active' : x.status === 'queued' ? undefined : 'st-expired'}>
+                  <td className={x.status === 'delivered' ? 'st-active' : ['sent', 'queued'].includes(x.status) ? undefined : 'st-expired'}>
                     {TEXTSTATUS[x.status] || x.status}{x.status === 'failed' && x.error ? `: ${x.error}` : ''}</td>
                 </tr>
               ))}</tbody>

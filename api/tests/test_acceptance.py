@@ -1707,7 +1707,9 @@ def test_6c_the_on_call_driver_takes_the_will_call_and_the_office_reviews_it(mak
     tid = trip.json()["recordid"]
     assert c.patch(f"/api/trips/{tid}", headers=h, json={"billingstatus": "billed"}).status_code == 409
     assert c.post(f"/api/legs/{legid}/afterhours/reviewed", headers=h).status_code == 200
-    assert c.patch(f"/api/trips/{tid}", headers=h, json={"billingstatus": "billed"}).status_code == 200
+    # Past that, it is still billed only from the Billing page.
+    unread = c.patch(f"/api/trips/{tid}", headers=h, json={"billingstatus": "billed"})
+    assert unread.status_code == 409 and "Billing page" in unread.text, unread.text
     # A will-call from yesterday that nobody ever took is Never Called, to be closed out.
     gone = c.post("/api/trips", headers=h, json={"passenger": "NEVER CALLED", "tripdate": str(today - timedelta(days=1)),
         "legs": [{"pickupat": f"{today - timedelta(days=1)}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
@@ -2129,3 +2131,454 @@ def test_6p_a_passenger_waiting_at_a_facility_about_to_close_is_flagged(make):
     assert c.post(f"/api/legs/{back}/call", headers=h, json={"answer": "ready", "pickupat": f"{today}T23:30:00",
                                                              "source": "facility"}).status_code == 200
     assert item("all")["attention"] != "facilityclosing"
+
+
+def test_6q_a_clean_trip_prices_itself_and_the_rest_say_why(make):
+    """A finished trip is priced under the schedule in force, from its GPS miles and waiting. Clean,
+    it is Ready; otherwise an Exception with the reason. Billing makes a batch with the charges written
+    down; payment and denial are recorded apart. A dispute cannot be cleared."""
+    from datetime import datetime as dt
+    co = make()
+    add_line(co, co["payer"], "FL")
+    c, h = co["client"], co["h"]
+    day = date.today() - timedelta(days=1)
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+    with co["db"].begin() as conn:
+        sid = "sched-" + co["acct"][:20]
+        conn.execute(text("""INSERT INTO payerschedules (recordid, accountid, name, effectivefrom, active)
+                             VALUES (:s, :a, 'TEST RATES', '2020-01-01', 1)"""), {"s": sid, "a": co["acct"]})
+        for kind, unit, amount, inc, rnd in (("base", "leg", 20, None, None), ("mileage", "mile", 2, 1, "tenth"), ("waiting", "block15", 5, 2, None)):
+            conn.execute(text("""INSERT INTO payerrates (recordid, accountid, scheduleid, ratetype, unit, amount, includedunits, rounding, proceduracode)
+                                 VALUES (UUID(), :a, :s, :k, :u, :m, :i, :r, 'T2003')"""), {"a": co["acct"], "s": sid, "k": kind, "u": unit, "m": amount, "i": inc, "r": rnd})
+        conn.execute(text("""INSERT INTO accountpayers (accountid, payerid, scheduleid, updated) VALUES (:a, :p, :s, UTC_TIMESTAMP())
+                             ON DUPLICATE KEY UPDATE scheduleid = :s"""), {"a": co["acct"], "p": co["payer"], "s": sid})
+
+    def book(who, at):
+        got = c.post("/api/trips", headers=h, json={"passenger": who, "tripdate": str(day), "payer": "broker", "brokerid": co["payer"],
+                                                    "legs": [{"pickupat": f"{day}T{at}:00", "pickupplace": a, "dropoffplace": b}]})
+        assert got.status_code == 200, got.text
+        with co["db"].connect() as conn:
+            leg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": got.json()["recordid"]}).scalar()
+        return got.json()["recordid"], leg
+
+    def drive(leg, off, hour, gps=True, sign=True, wait=0):
+        assert c.post(f"/api/legs/{leg}/outcome", headers=h, json={"outcome": "driven", "droppedoffat": f"{day}T{off}:00"}).status_code == 200
+        aboard = dt(day.year, day.month, day.day, hour, 0)
+        with co["db"].begin() as conn:
+            conn.execute(text("UPDATE triplegs SET driverid = :d, signature = :s, miles = 9 WHERE recordid = :l"), {"d": co["driver"], "s": int(sign), "l": leg})
+            conn.execute(text("UPDATE tripevents SET happenedon = :o WHERE legid = :l AND state = 'completed'"), {"o": aboard + timedelta(minutes=30), "l": leg})
+            conn.execute(text("INSERT INTO tripevents (recordid, accountid, legid, state, happenedon, recordedon) VALUES (UUID(), :a, :l, 'onboard', :o, :o)"),
+                         {"a": co["acct"], "l": leg, "o": aboard})
+            if wait:
+                conn.execute(text("INSERT INTO tripwaits (recordid, accountid, legid, startedon, endedon, added) VALUES (UUID(), :a, :l, :s, :e, :s)"),
+                             {"a": co["acct"], "l": leg, "s": aboard, "e": aboard + timedelta(minutes=wait)})
+            if gps:
+                for n, lat in enumerate((30.30, 30.33)):      # about 2.07 miles
+                    conn.execute(text("INSERT INTO driverlocations (recordid, accountid, driverid, latitude, longitude, recordedon) VALUES (UUID(), :a, :d, :la, -81.6, :o)"),
+                                 {"a": co["acct"], "d": co["driver"], "la": lat, "o": aboard + timedelta(minutes=5 + n)})
+
+    def queue(state):
+        got = c.get(f"/api/trip-billing?state={state}&pagesize=50", headers=h).json()
+        return {t["recordid"]: t for t in got["items"]}, got["tiles"]
+
+    clean, leg = book("CLEAN TRIP", "09:00")
+    assert clean not in queue("ready")[0]                       # not finished yet
+    drive(leg, "09:30", 13, wait=50)
+    ready, tiles = queue("ready")
+    # $20 base; 2.1 miles less 1 free at $2 = $2.20; 50 minutes is four blocks, two free, two at $5 = $10.
+    assert ready[clean]["amount"] == 32.20 and tiles["ready"]["amount"] == 32.20, ready
+    nogps, leg2 = book("NO TRAIL", "11:00")
+    drive(leg2, "11:30", 15, gps=False, sign=False)
+    wrong = queue("exceptions")[0][nogps]
+    assert "GPS trail" in wrong["reason"] and wrong["more"] == 1, wrong
+    assert c.post("/api/trip-billing/bill", headers=h, json={"tripids": [nogps]}).status_code == 409
+    assert c.post(f"/api/trip-billing/{nogps}/clear", headers=h).status_code == 200
+    assert nogps in queue("ready")[0]
+    fight, leg3 = book("DISPUTED", "17:00")
+    drive(leg3, "17:30", 21)
+    assert c.post(f"/api/legs/{leg3}/outcome", headers=h, json={"outcome": "disputed", "note": "NOT DRIVEN"}).status_code == 200
+    stopped = c.post(f"/api/trip-billing/{fight}/clear", headers=h)
+    assert stopped.status_code == 409 and "NOT DRIVEN" in stopped.text, stopped.text
+
+    got = c.post("/api/trip-billing/bill", headers=h, json={"tripids": [clean, nogps]})
+    assert got.status_code == 200 and [(x["trips"]) for x in got.json()["batches"]] == [2], got.text
+    batch = got.json()["batches"][0]
+    sheet = c.get(f"/api/trip-billing/batches/{batch['batchid']}/export", headers=h)
+    assert sheet.status_code == 200 and "T2003" in sheet.text and "CLEAN TRIP" in sheet.text
+    assert clean in queue("submitted")[0] and clean not in queue("ready")[0]
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM tripcharges WHERE tripid = :t AND rateid IS NOT NULL"), {"t": clean}).scalar() == 3
+    assert c.post(f"/api/trip-billing/{clean}/payment", headers=h, json={"amount": "30.00"}).status_code == 200
+    paid = queue("paid")[0][clean]
+    assert paid["paid"] == 30.0 and paid["amount"] == 32.20, paid
+    assert c.post(f"/api/trip-billing/{nogps}/payment", headers=h, json={"denied": True}).status_code == 400
+    assert c.post(f"/api/trip-billing/{nogps}/payment", headers=h, json={"denied": True, "note": "no signature"}).status_code == 200
+    assert "DENIED" in queue("exceptions")[0][nogps]["reason"]
+    # Fixed and billed again: the old charge lines are voided, not overwritten.
+    assert c.post(f"/api/trip-billing/{nogps}/clear", headers=h).status_code == 200
+    assert c.post("/api/trip-billing/bill", headers=h, json={"tripids": [nogps]}).status_code == 200
+    with co["db"].connect() as conn:
+        voided = conn.execute(text("SELECT COUNT(*) FROM tripcharges WHERE tripid = :t AND voidedon IS NOT NULL"), {"t": nogps}).scalar()
+    assert voided > 0
+
+
+def test_6r_a_private_pay_trip_is_billed_on_a_numbered_invoice(make):
+    """The same Bill button: a private-pay trip gets a numbered invoice, billed to the passenger as
+    they read that day, and a PDF of it. Its charges are written down and a payment posts against it."""
+    co = make()
+    c, h = co["client"], co["h"]
+    day = date.today() - timedelta(days=1)
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+    with co["db"].begin() as conn:
+        sid = "psched-" + co["acct"][:20]
+        conn.execute(text("""INSERT INTO payerschedules (recordid, accountid, name, effectivefrom, active)
+                             VALUES (:s, :a, 'PRIVATE', '2020-01-01', 1)"""), {"s": sid, "a": co["acct"]})
+        conn.execute(text("""INSERT INTO payerrates (recordid, accountid, scheduleid, ratetype, unit, amount)
+                             VALUES (UUID(), :a, :s, 'base', 'leg', 35)"""), {"a": co["acct"], "s": sid})
+        conn.execute(text("""INSERT INTO accountpayers (accountid, payerid, scheduleid, updated) VALUES (:a, 'privatepay', :s, UTC_TIMESTAMP())
+                             ON DUPLICATE KEY UPDATE scheduleid = :s"""), {"a": co["acct"], "s": sid})
+        conn.execute(text("""INSERT INTO companycontracts (recordid, accountid, broker, payerid, status, added) VALUES (UUID(), :a, 'PRIVATE PAY', NULL, 'active', UTC_TIMESTAMP())"""), {"a": co["acct"]})
+    assert c.post("/api/passengers", headers=h, json={"name": "PAYS OWN WAY", "dob": "1950-01-01", "address": "40 BAY ST", "city": "JACKSONVILLE",
+                                                      "state": "FL", "zip": "32207", "phone": "9045550100"}).status_code == 200
+    got = c.post("/api/trips", headers=h, json={"passenger": "PAYS OWN WAY", "tripdate": str(day), "legs": [
+        {"pickupat": f"{day}T09:00:00", "pickupplace": a, "dropoffplace": b}]})
+    assert got.status_code == 200, got.text
+    tid = got.json()["recordid"]
+    with co["db"].begin() as conn:
+        leg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": tid}).scalar()
+    assert c.post(f"/api/legs/{leg}/outcome", headers=h, json={"outcome": "driven", "droppedoffat": f"{day}T09:30:00"}).status_code == 200
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE triplegs SET miles = 3, signature = 1 WHERE recordid = :l"), {"l": leg})
+    assert c.post(f"/api/trip-billing/{tid}/clear", headers=h).status_code == 200       # the driver's miles, looked at
+    billed = c.post("/api/trip-billing/bill", headers=h, json={"tripids": [tid]})
+    assert billed.status_code == 200 and billed.json()["batches"] == [], billed.text
+    inv = billed.json()["invoices"][0]
+    assert inv["amount"] == 35.0 and inv["number"] == 1001, inv
+    with co["db"].connect() as conn:
+        to = conn.execute(text("SELECT billtoname, billtoaddress, billtophone FROM tripinvoices WHERE recordid = :i"), {"i": inv["invoiceid"]}).mappings().one()
+    assert to["billtoname"] == "PAYS OWN WAY" and "40 BAY ST" in to["billtoaddress"] and to["billtophone"], to
+    pdf = c.get(f"/api/trip-billing/invoices/pdf?ids={inv['invoiceid']}", headers=h)
+    assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF", pdf.text[:200]
+    row_ = next(t for t in c.get("/api/trip-billing?state=submitted", headers=h).json()["items"] if t["recordid"] == tid)
+    assert row_["invoicenumber"] == 1001
+    # A passenger's invoice cannot be denied. Written down: what was paid, the rest given up, with why.
+    assert c.post(f"/api/trip-billing/{tid}/payment", headers=h, json={"denied": True, "note": "NO"}).status_code == 409
+    assert c.post(f"/api/trip-billing/{tid}/payment", headers=h, json={"writedown": "15.00"}).status_code == 400
+    assert c.post(f"/api/trip-billing/{tid}/payment", headers=h, json={"writedown": "99.00", "note": "X"}).status_code == 409
+    assert c.post(f"/api/trip-billing/{tid}/payment", headers=h, json={"amount": "20.00"}).status_code == 200
+    assert c.post(f"/api/trip-billing/{tid}/payment", headers=h, json={"writedown": "15.00", "note": "HARDSHIP"}).status_code == 200
+    done = next(t for t in c.get("/api/trip-billing?state=paid", headers=h).json()["items"] if t["recordid"] == tid)
+    assert done["paid"] == 20.0 and done["writedown"] == 15.0, done
+    with co["db"].connect() as conn:
+        token = conn.execute(text("SELECT paytoken FROM tripinvoices WHERE recordid = :i"), {"i": inv["invoiceid"]}).scalar()
+    assert c.get(f"/api/pay/invoice/{token}").json()["balance"] == 0.0
+    assert c.get(f"/api/trip-billing/invoices/pdf?ids={inv['invoiceid']}", headers=h).content[:4] == b"%PDF"
+
+
+def test_6s_a_passenger_pays_an_invoice_online_with_no_login(make, monkeypatch):
+    """The invoice goes to the billing contact, with a private link. The portal finds it by number and
+    ZIP too. Only the processor's word marks it paid, and being told twice counts once."""
+    from app import gateways, mailer
+    co = make()
+    c, h = co["client"], co["h"]
+    day = date.today() - timedelta(days=1)
+    a, b = "40 BAY ST, JACKSONVILLE, FL 32207", "1 MAIN ST, JACKSONVILLE, FL 32202"
+    with co["db"].begin() as conn:
+        sid = "qsched-" + co["acct"][:20]
+        conn.execute(text("INSERT INTO payerschedules (recordid, accountid, name, effectivefrom, active) VALUES (:s, :a, 'P', '2020-01-01', 1)"), {"s": sid, "a": co["acct"]})
+        conn.execute(text("INSERT INTO payerrates (recordid, accountid, scheduleid, ratetype, unit, amount) VALUES (UUID(), :a, :s, 'base', 'leg', 40)"), {"a": co["acct"], "s": sid})
+        conn.execute(text("INSERT INTO accountpayers (accountid, payerid, scheduleid, updated) VALUES (:a, 'privatepay', :s, UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE scheduleid = :s"), {"a": co["acct"], "s": sid})
+        conn.execute(text("INSERT INTO companycontracts (recordid, accountid, broker, payerid, status, added) VALUES (UUID(), :a, 'PRIVATE PAY', NULL, 'active', UTC_TIMESTAMP())"), {"a": co["acct"]})
+        number = conn.execute(text("SELECT accountnumber FROM accounts WHERE recordid = :a"), {"a": co["acct"]}).scalar()
+    bad = c.post("/api/passengers", headers=h, json={"name": "BAD MAIL", "dob": "1950-01-01", "address": "40 BAY ST", "city": "JACKSONVILLE", "state": "FL", "zip": "32207", "email": "nope"})
+    assert bad.status_code == 400
+    added = c.post("/api/passengers", headers=h, json={"name": "PAYS ONLINE", "dob": "1950-01-01", "address": "40 BAY ST", "city": "JACKSONVILLE", "state": "FL", "zip": "32207",
+                                                       "email": "Rider@Example.COM", "billingname": "the daughter", "billingemail": "Daughter@Example.COM", "billingaddress": "9 oak st, tampa, fl 33601"})
+    assert added.status_code == 200 and added.json()["email"] == "rider@example.com" and added.json()["billingname"] == "THE DAUGHTER", added.text
+    tid = c.post("/api/trips", headers=h, json={"passenger": "PAYS ONLINE", "tripdate": str(day), "legs": [{"pickupat": f"{day}T09:00:00", "pickupplace": a, "dropoffplace": b}]}).json()["recordid"]
+    with co["db"].begin() as conn:
+        leg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": tid}).scalar()
+    assert c.post(f"/api/legs/{leg}/outcome", headers=h, json={"outcome": "driven", "droppedoffat": f"{day}T09:30:00"}).status_code == 200
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE triplegs SET miles = 3, signature = 1 WHERE recordid = :l"), {"l": leg})
+    assert c.post(f"/api/trip-billing/{tid}/clear", headers=h).status_code == 200
+    sent = []
+    monkeypatch.setattr(mailer, "send", lambda to, subject, html, text_, attachments=None: sent.append((to, subject, html, text_, attachments)) or True)
+    got = c.post("/api/trip-billing/bill", headers=h, json={"tripids": [tid]}).json()["invoices"][0]
+    assert got["email"] == "daughter@example.com"
+    assert len(sent) == 1 and sent[0][0] == "daughter@example.com" and not sent[0][4], sent        # no attachment
+    assert "PAYS ONLINE" not in sent[0][2] and "/pay/" in sent[0][3], sent[0][3]                    # the link, not the trip
+    token = sent[0][3].rsplit("/", 1)[-1]
+
+    anon = c.get(f"/api/pay/invoice/{token}")
+    assert anon.status_code == 200 and anon.json()["billto"] == "THE DAUGHTER" and anon.json()["balance"] == 40.0 and anon.json()["canpay"] is False, anon.text
+    assert c.post(f"/api/pay/invoice/{token}/checkout").status_code == 409                         # no merchant account yet
+    assert c.get(f"/api/pay/invoice/{token}/pdf").content[:4] == b"%PDF"
+    assert c.get("/api/pay/invoice/not-a-token").status_code == 404
+    assert c.post(f"/api/pay/account/{number}/find", json={"invoice": got["number"], "zip": "99999"}).status_code == 404
+    found = c.post(f"/api/pay/account/{number}/find", json={"invoice": got["number"], "zip": "33601"})
+    assert found.status_code == 200 and found.json()["token"] == token, found.text
+
+    monkeypatch.setattr(gateways, "can_take_payment", lambda conn, acct: True)
+    asked = {}
+    monkeypatch.setattr(gateways, "stripe_checkout", lambda conn, acct, **kw: asked.update(kw) or "https://checkout.example/abc")
+    assert c.get(f"/api/pay/invoice/{token}").json()["canpay"] is True
+    assert c.post(f"/api/pay/invoice/{token}/checkout").json()["url"] == "https://checkout.example/abc"
+    assert asked["cents"] == 4000 and "PAYS ONLINE" not in asked["label"], asked
+    assert c.get(f"/api/trip-billing/invoices/pdf?ids={got['invoiceid']}", headers=h).content[:4] == b"%PDF"   # with its QR code
+    # No email on file: the portal requires one, and keeps it on the invoice and on the passenger.
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE tripinvoices SET billtoemail = NULL WHERE recordid = :i"), {"i": got["invoiceid"]})
+        conn.execute(text("UPDATE passengers SET email = NULL, billingemail = NULL, billingname = NULL WHERE accountid = :a AND name = 'PAYS ONLINE'"), {"a": co["acct"]})
+    assert c.get(f"/api/pay/invoice/{token}").json()["needsemail"] is True
+    assert c.post(f"/api/pay/invoice/{token}/checkout", json={}).status_code == 400
+    assert c.post(f"/api/pay/invoice/{token}/checkout", json={"email": "nope"}).status_code == 400
+    assert c.post(f"/api/pay/invoice/{token}/checkout", json={"email": "New@Example.com"}).status_code == 200
+    assert asked["email"] == "new@example.com" and c.get(f"/api/pay/invoice/{token}").json()["needsemail"] is False
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT email FROM passengers WHERE accountid = :a AND name = 'PAYS ONLINE'"), {"a": co["acct"]}).scalar() == "new@example.com"
+
+    unpaid = {"id": "cs_1", "paid": False, "reference": token, "cents": 4000}
+    monkeypatch.setattr(gateways, "stripe_session", lambda conn, acct, s: unpaid)
+    assert c.post(f"/api/pay/invoice/{token}/confirm/cs_1").json()["paid"] is False
+    assert c.get(f"/api/pay/invoice/{token}").json()["balance"] == 40.0
+    monkeypatch.setattr(gateways, "stripe_session", lambda conn, acct, s: {**unpaid, "paid": True})
+    assert c.post(f"/api/pay/invoice/{token}/confirm/cs_1").json()["paid"] is True
+    assert c.post(f"/api/pay/invoice/{token}/confirm/cs_1").json()["paid"] is True
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM billpayments WHERE tripid = :t"), {"t": tid}).scalar() == 1
+    assert c.get(f"/api/pay/invoice/{token}").json()["balance"] == 0.0
+    assert next(t for t in c.get("/api/trip-billing?state=paid", headers=h).json()["items"] if t["recordid"] == tid)["paid"] == 40.0
+    assert c.post(f"/api/pay/webhook/{number}", content=b"{}", headers={"stripe-signature": "x"}).status_code == 400
+
+
+def test_6t_the_pretend_processor_exists_only_when_switched_on(make, monkeypatch):
+    """Off, as it is everywhere real money is taken, it refuses, and no invoice can be marked paid
+    with it. On, it stands in for the processor through to Paid."""
+    from app.config import settings
+    co = make()
+    c, h = co["client"], co["h"]
+    day = date.today() - timedelta(days=1)
+    with co["db"].begin() as conn:
+        sid = "ssched-" + co["acct"][:20]
+        conn.execute(text("INSERT INTO payerschedules (recordid, accountid, name, effectivefrom, active) VALUES (:s, :a, 'P', '2020-01-01', 1)"), {"s": sid, "a": co["acct"]})
+        conn.execute(text("INSERT INTO payerrates (recordid, accountid, scheduleid, ratetype, unit, amount) VALUES (UUID(), :a, :s, 'base', 'leg', 25)"), {"a": co["acct"], "s": sid})
+        conn.execute(text("INSERT INTO accountpayers (accountid, payerid, scheduleid, updated) VALUES (:a, 'privatepay', :s, UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE scheduleid = :s"), {"a": co["acct"], "s": sid})
+        conn.execute(text("INSERT INTO companycontracts (recordid, accountid, broker, payerid, status, added) VALUES (UUID(), :a, 'PRIVATE PAY', NULL, 'active', UTC_TIMESTAMP())"), {"a": co["acct"]})
+    tid = c.post("/api/trips", headers=h, json={"passenger": "SIM RIDER", "tripdate": str(day), "legs": [
+        {"pickupat": f"{day}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]}).json()["recordid"]
+    with co["db"].begin() as conn:
+        leg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": tid}).scalar()
+    assert c.post(f"/api/legs/{leg}/outcome", headers=h, json={"outcome": "driven", "droppedoffat": f"{day}T09:30:00"}).status_code == 200
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE triplegs SET miles = 3, signature = 1 WHERE recordid = :l"), {"l": leg})
+    assert c.post(f"/api/trip-billing/{tid}/clear", headers=h).status_code == 200
+    assert c.post("/api/trip-billing/bill", headers=h, json={"tripids": [tid]}).status_code == 200
+    with co["db"].connect() as conn:
+        token = conn.execute(text("SELECT paytoken FROM tripinvoices WHERE tripid = :t"), {"t": tid}).scalar()
+    assert c.post(f"/api/pay/invoice/{token}/simulate").status_code == 404
+    assert c.get(f"/api/pay/invoice/{token}").json()["canpay"] is False
+    monkeypatch.setattr(settings, "pay_simulator", True)
+    assert c.get(f"/api/pay/invoice/{token}").json()["canpay"] is True
+    assert c.post(f"/api/pay/invoice/{token}/checkout", json={"email": "sim@example.com"}).json()["url"].endswith("/simulate")
+    assert c.post(f"/api/pay/invoice/{token}/simulate").status_code == 200
+    assert c.get(f"/api/pay/invoice/{token}").json()["balance"] == 0.0
+    assert c.post(f"/api/pay/invoice/{token}/simulate").status_code == 409
+    with co["db"].connect() as conn:
+        note = conn.execute(text("SELECT note FROM billpayments WHERE tripid = :t"), {"t": tid}).scalar()
+    assert "SIMULATED" in note
+
+
+def test_6u_a_text_goes_through_bandwidth_where_it_is_set(make, monkeypatch):
+    """With Bandwidth set, a text is sent to its address with a login token, and what it said is kept.
+    A refusal is written down as failed, and says why."""
+    import io
+    import urllib.error
+    from app import sms
+    from app.config import settings
+    co = make()
+    with co["db"].begin() as conn:
+        rid = "bw-" + co["acct"][:30]
+        conn.execute(text("INSERT INTO drivertexts (recordid, accountid, driverid, kind, tonumber, body, status, added) "
+                          "VALUES (:r, :a, :d, 'oncall', '+19045550100', 'HELLO', 'queued', UTC_TIMESTAMP())"), {"r": rid, "a": co["acct"], "d": co["driver"]})
+    for k, v in (("bandwidth_client_id", "id"), ("bandwidth_client_secret", "x"), ("bandwidth_account_id", "99"),
+                 ("bandwidth_application_id", "app"), ("bandwidth_from", "+13375550000")):
+        monkeypatch.setattr(settings, k, v)
+    sms._token.update(value=None, until=0)
+    seen = []
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake(req, timeout=None):
+        seen.append(req)
+        if "oauth2" in req.full_url:
+            return Answer(b'{"access_token": "T", "expires_in": 3600}')
+        if refuse:
+            raise urllib.error.HTTPError(req.full_url, 403, "no", {}, io.BytesIO(b'{"description": "Forbidden"}'))
+        return Answer(b'{"id": "bw123"}')
+    monkeypatch.setattr(sms.urllib.request, "urlopen", fake)
+    refuse = False
+    assert sms.can_send()
+    sms._send(rid, "+19045550100", "HELLO")
+    sent = seen[-1]
+    assert sent.full_url.endswith("/v1/build/accounts/99/messages") and sent.headers["Authorization"] == "Bearer T"
+    assert json.loads(sent.data) == {"to": ["+19045550100"], "from": "+13375550000", "text": "HELLO", "applicationId": "app"}
+    with co["db"].connect() as conn:
+        held = conn.execute(text("SELECT status, twiliosid FROM drivertexts WHERE recordid = :r"), {"r": rid}).mappings().one()
+    assert held["status"] == "sent" and held["twiliosid"] == "bw123", held
+    refuse = True
+    sms._send(rid, "+19045550100", "HELLO")
+    with co["db"].connect() as conn:
+        held = conn.execute(text("SELECT status, error FROM drivertexts WHERE recordid = :r"), {"r": rid}).mappings().one()
+    assert held["status"] == "failed" and "Forbidden" in held["error"], held
+
+
+def test_6v_bandwidth_reports_what_became_of_a_text(make, monkeypatch):
+    """Delivered or failed reaches the text log, by Bandwidth's id. The address needs its secret, and
+    a message that is not ours is ignored."""
+    from app.config import settings
+    co = make()
+    c = co["client"]
+    with co["db"].begin() as conn:
+        for rid, sid in (("cb1-" + co["acct"][:30], "BW-1"), ("cb2-" + co["acct"][:30], "BW-2")):
+            conn.execute(text("INSERT INTO drivertexts (recordid, accountid, driverid, kind, tonumber, body, status, twiliosid, added) "
+                              "VALUES (:r, :a, :d, 'oncall', '+19045550100', 'HI', 'sent', :s, UTC_TIMESTAMP())"),
+                         {"r": rid, "a": co["acct"], "d": co["driver"], "s": sid})
+    assert c.post("/api/sms/bandwidth/anything", json=[]).status_code == 404         # no secret set
+    monkeypatch.setattr(settings, "bandwidth_callback_secret", "s3cret")
+    assert c.post("/api/sms/bandwidth/wrong", json=[]).status_code == 404
+    got = c.post("/api/sms/bandwidth/s3cret", json=[
+        {"type": "message-sending", "message": {"id": "BW-1"}},
+        {"type": "message-delivered", "message": {"id": "BW-1"}, "description": "ok"},
+        {"type": "message-failed", "message": {"id": "BW-2"}, "errorCode": 4432, "description": "forbidden to country"},
+        {"type": "message-delivered", "message": {"id": "NOT-OURS"}}])
+    assert got.status_code == 200, got.text
+    with co["db"].connect() as conn:
+        held = dict(conn.execute(text("SELECT twiliosid, status FROM drivertexts WHERE twiliosid IN ('BW-1', 'BW-2')")).all())
+        why = conn.execute(text("SELECT error FROM drivertexts WHERE twiliosid = 'BW-2'")).scalar()
+    assert held == {"BW-1": "delivered", "BW-2": "failed"} and "4432" in why, (held, why)
+
+
+def _billable(co, who, broker=None, day=None, miles=3):
+    """A driven, cleared trip ready to bill, under a $40-a-leg schedule with $2 a mile after 1."""
+    c, h = co["client"], co["h"]
+    day = day or date.today() - timedelta(days=1)
+    with co["db"].begin() as conn:
+        sid = "w" + co["acct"][:30]
+        if not conn.execute(text("SELECT 1 FROM payerschedules WHERE recordid = :s"), {"s": sid}).scalar():
+            conn.execute(text("INSERT INTO payerschedules (recordid, accountid, name, effectivefrom, active) VALUES (:s, :a, 'T', '2020-01-01', 1)"), {"s": sid, "a": co["acct"]})
+            conn.execute(text("INSERT INTO payerrates (recordid, accountid, scheduleid, ratetype, unit, amount) VALUES (UUID(), :a, :s, 'base', 'leg', 40)"), {"a": co["acct"], "s": sid})
+            conn.execute(text("INSERT INTO payerrates (recordid, accountid, scheduleid, ratetype, unit, amount, includedunits, rounding) VALUES (UUID(), :a, :s, 'mileage', 'mile', 2, 1, 'tenth')"), {"a": co["acct"], "s": sid})
+            conn.execute(text("INSERT INTO companycontracts (recordid, accountid, broker, payerid, status, added) VALUES (UUID(), :a, 'PRIVATE PAY', NULL, 'active', UTC_TIMESTAMP())"), {"a": co["acct"]})
+        conn.execute(text("INSERT INTO accountpayers (accountid, payerid, scheduleid, updated) VALUES (:a, :p, :s, UTC_TIMESTAMP()) ON DUPLICATE KEY UPDATE scheduleid = :s"),
+                     {"a": co["acct"], "p": broker or "privatepay", "s": sid})
+    got = c.post("/api/trips", headers=h, json={"passenger": who, "tripdate": str(day), **({"payer": "broker", "brokerid": broker} if broker else {}), "legs": [
+        {"pickupat": f"{day}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+    assert got.status_code == 200, got.text
+    tid = got.json()["recordid"]
+    with co["db"].begin() as conn:
+        leg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": tid}).scalar()
+    assert c.post(f"/api/legs/{leg}/outcome", headers=h, json={"outcome": "driven", "droppedoffat": f"{day}T09:30:00"}).status_code == 200
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE triplegs SET miles = :m, signature = 1 WHERE recordid = :l"), {"m": miles, "l": leg})
+    return tid, leg
+
+
+def test_6w_billing_can_be_put_right(make):
+    """Miles are entered before a trip with none can bill, and the office's figure prices it. A payment
+    entered in error is undone, kept on file; a refund closes it; a batch posts together."""
+    co = make()
+    add_line(co, co["payer"], "FL")
+    c, h = co["client"], co["h"]
+    tid, leg = _billable(co, "NO MILES", miles=None)
+    read = c.get(f"/api/trip-billing/{tid}", headers=h).json()
+    assert any("no miles" in x for x in read["stops"]), read["stops"]
+    assert c.post(f"/api/trip-billing/{tid}/clear", headers=h).status_code == 409
+    assert c.post(f"/api/trip-billing/legs/{leg}/miles", headers=h, json={"miles": "6"}).status_code == 400
+    assert c.post(f"/api/trip-billing/legs/{leg}/miles", headers=h, json={"miles": "6", "reason": "from the odometer"}).status_code == 200
+    read = c.get(f"/api/trip-billing/{tid}", headers=h).json()
+    assert read["legs"][0]["milessource"] == "Office" and read["amount"] == 50.0 and not read["stops"], read       # $40 + 5 x $2
+    assert c.post("/api/trip-billing/bill", headers=h, json={"tripids": [tid]}).status_code == 200
+    assert c.post(f"/api/trip-billing/legs/{leg}/miles", headers=h, json={"miles": "7", "reason": "X"}).status_code == 409   # billed
+
+    assert c.post(f"/api/trip-billing/{tid}/payment", headers=h, json={"amount": "50"}).status_code == 200
+    made = c.get(f"/api/trip-billing/{tid}", headers=h).json()
+    assert made["billingstatus"] == "paid" and made["owing"] == 0
+    pid = made["payments"][0]["recordid"]
+    assert c.post(f"/api/trip-billing/payments/{pid}/undo", headers=h, json={}).status_code == 400
+    assert c.post(f"/api/trip-billing/payments/{pid}/undo", headers=h, json={"note": "wrong trip"}).status_code == 200
+    back = c.get(f"/api/trip-billing/{tid}", headers=h).json()
+    assert back["billingstatus"] == "billed" and back["owing"] == 50.0 and back["payments"][0]["voidedon"], back
+    assert c.post(f"/api/trip-billing/{tid}/payment", headers=h, json={"amount": "50"}).status_code == 200
+    assert c.post(f"/api/trip-billing/{tid}/refund", headers=h, json={"amount": "60", "note": "X"}).status_code == 409
+    assert c.post(f"/api/trip-billing/{tid}/refund", headers=h, json={"amount": "50"}).status_code == 400
+    assert c.post(f"/api/trip-billing/{tid}/refund", headers=h, json={"amount": "50", "note": "complaint"}).status_code == 200
+    done = next(t for t in c.get("/api/trip-billing?state=paid", headers=h).json()["items"] if t["recordid"] == tid)
+    assert done["paid"] == 0 and done["refunded"] == 50.0 and done["owing"] == 0, done
+
+    one, _ = _billable(co, "BATCH ONE", broker=co["payer"])
+    two, _ = _billable(co, "BATCH TWO", broker=co["payer"], day=date.today() - timedelta(days=2))
+    three, _ = _billable(co, "BATCH THREE", broker=co["payer"], day=date.today() - timedelta(days=3))
+    for x in (one, two, three):
+        assert c.post(f"/api/trip-billing/{x}/clear", headers=h).status_code == 200
+    batch = c.post("/api/trip-billing/bill", headers=h, json={"tripids": [one, two, three]}).json()["batches"][0]["batchid"]
+    held = c.get(f"/api/trip-billing/batches/{batch}", headers=h).json()
+    assert [t["owing"] for t in held["trips"]] == [44.0, 44.0, 44.0], held
+    bad = c.post(f"/api/trip-billing/batches/{batch}/payment", headers=h, json={"lines": [
+        {"tripid": one, "amount": "44"}, {"tripid": two, "denied": True}]})
+    assert bad.status_code == 400
+    assert c.get(f"/api/trip-billing/{one}", headers=h).json()["billingstatus"] == "billed"     # none of it
+    assert c.post(f"/api/trip-billing/batches/{batch}/payment", headers=h, json={"lines": [
+        {"tripid": one, "amount": "44"}, {"tripid": two, "amount": "40"}, {"tripid": three, "denied": True, "note": "no auth"}]}).status_code == 200
+    out = c.get("/api/trip-billing?state=outstanding", headers=h).json()
+    assert {t["recordid"]: t["owing"] for t in out["items"]} == {two: 4.0} and out["aging"]["current"] == 4.0, out["items"]
+    assert "DENIED" in next(t for t in c.get("/api/trip-billing?state=exceptions", headers=h).json()["items"] if t["recordid"] == three)["reason"]
+    denied = c.get(f"/api/trip-billing/{three}", headers=h).json()["payments"][0]["recordid"]
+    assert c.post(f"/api/trip-billing/payments/{denied}/undo", headers=h, json={"note": "wrong trip"}).status_code == 200
+    assert c.get(f"/api/trip-billing/{three}", headers=h).json()["billingstatus"] == "billed"
+    assert c.post(f"/api/trip-billing/{three}/payment", headers=h, json={"amount": "44"}).status_code == 200
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE billbatches SET createdon = UTC_TIMESTAMP() - INTERVAL 45 DAY WHERE recordid = :b"), {"b": batch})
+    assert c.get("/api/trip-billing?state=outstanding", headers=h).json()["aging"]["over30"] == 4.0
+
+
+def test_6x_an_unpaid_invoice_is_reminded_at_fourteen_and_thirty_days(make, monkeypatch):
+    """Twice, then it stops. Not once it is paid, and not where the email could not be sent."""
+    from app import mailer
+    from app.routers.tripbilling import send_reminders
+    co = make()
+    c, h = co["client"], co["h"]
+    assert c.post("/api/passengers", headers=h, json={"name": "SLOW PAYER", "dob": "1950-01-01", "address": "40 BAY ST", "city": "JACKSONVILLE",
+                                                      "state": "FL", "zip": "32207", "email": "slow@example.com"}).status_code == 200
+    tid, _ = _billable(co, "SLOW PAYER")
+    assert c.post(f"/api/trip-billing/{tid}/clear", headers=h).status_code == 200
+    sent = []
+    monkeypatch.setattr(mailer, "send", lambda to, subject, html, text_, attachments=None: sent.append(subject) or True)
+    inv = c.post("/api/trip-billing/bill", headers=h, json={"tripids": [tid]}).json()["invoices"][0]["invoiceid"]
+    sent.clear()
+
+    def age(days):
+        with co["db"].begin() as conn:
+            conn.execute(text("UPDATE tripinvoices SET createdon = UTC_TIMESTAMP() - INTERVAL :d DAY WHERE recordid = :i"), {"d": days, "i": inv})
+
+    def run_():
+        with co["db"].begin() as conn:
+            send_reminders(conn)
+    age(5); run_()
+    assert sent == []
+    monkeypatch.setattr(mailer, "send", lambda *a, **k: False)
+    age(15); run_()
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT remindercount FROM tripinvoices WHERE recordid = :i"), {"i": inv}).scalar() == 0
+    monkeypatch.setattr(mailer, "send", lambda to, subject, html, text_, attachments=None: sent.append(subject) or True)
+    run_(); run_()
+    assert len(sent) == 1 and "Reminder" in sent[0], sent
+    age(31); run_(); run_()
+    assert len(sent) == 2
+    age(90); run_()
+    assert len(sent) == 2

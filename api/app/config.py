@@ -83,8 +83,18 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_from: str = ""             # the number texts come from, +1XXXXXXXXXX
+    # Bandwidth, which sends the texts wherever it is set. Twilio stays as the fallback until it goes.
+    bandwidth_account_id: str = ""
+    bandwidth_client_id: str = ""
+    bandwidth_client_secret: str = ""
+    bandwidth_application_id: str = ""
+    bandwidth_from: str = ""          # the number texts come from, +1XXXXXXXXXX
+    bandwidth_callback_secret: str = ""   # the private part of the address Bandwidth reports results to
     # The on-call driver's texts (app/willcall.py), looked for once a minute in the API process.
     oncall_texts: bool = True
+    # A pretend card processor, for trying the payment portal with no merchant account. Never set
+    # where real money is taken: anybody holding an invoice link could mark it paid.
+    pay_simulator: bool = False
     # Where routes are worked out (app/routing.py): an OSRM server. Empty means the public one.
     osrm_url: str = ""
     # Certn, the screening vendor before them. Kept so orders placed through Certn can still be

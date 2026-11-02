@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
-import { AlertTriangle, Building2, CalendarClock, Car, CreditCard, DollarSign, FileCheck2, FileText, FlaskConical, Gauge, Handshake, ListChecks, MapPin, Route as RouteIcon, User, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
+import { AlertTriangle, Building2, CalendarClock, Car, ClipboardCheck, CreditCard, DollarSign, FileCheck2, FileText, FlaskConical, Gauge, Handshake, ListChecks, MapPin, Route as RouteIcon, User, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
 import { api, auth } from './lib/api.js'
 import { keepAlive, signOut } from './lib/session.js'
 import { Modal } from './admin/common.jsx'
@@ -11,6 +11,8 @@ import ResetPassword from './pages/ResetPassword.jsx'
 import Apply from './pages/Apply.jsx'
 import Arrivals from './components/Arrivals.jsx'
 import ToReview from './pages/ToReview.jsx'
+import TripBilling from './pages/TripBilling.jsx'
+import PayPortal, { SimulatedCheckout } from './pages/PayPortal.jsx'
 import AccountUsers from './pages/Users.jsx'
 import DriverApply from './pages/DriverApply.jsx'
 import SignDocument from './pages/SignDocument.jsx'
@@ -49,6 +51,7 @@ function Shell({ user, children }) {
     [null, [
       ['/', Gauge, 'Dashboard'],
       ['/dispatch', CalendarClock, 'Dispatch'],
+      ['/trip-billing', ClipboardCheck, 'Billing'],
     ]],
     // Who and what the work is done with, and for: the people and things dispatch draws on.
     ['Assets', [
@@ -249,6 +252,13 @@ export default function App() {
   if (/^\/road-test\/[^/]+\/?$/.test(window.location.pathname)) {
     return <Routes><Route path="/road-test/:token" element={<RoadTest />} /></Routes>
   }
+  // And a passenger paying an invoice. The company's page, or one invoice from a link: no login.
+  if (/^\/pay\/[^/]+(\/[^/]+(\/simulate)?)?\/?$/.test(window.location.pathname)) {
+    return <Routes>
+      <Route path="/pay/:accountnumber/:token/simulate" element={<SimulatedCheckout />} />
+      <Route path="/pay/:accountnumber/:token?" element={<PayPortal />} />
+    </Routes>
+  }
   if (user === undefined) return null
   if (!user) {
     return (
@@ -282,6 +292,7 @@ export default function App() {
           <Route path="/review" element={<ToReview />} />
           <Route path="/users" element={<AccountUsers />} />
           <Route path="/dispatch" element={<Dispatch />} />
+          <Route path="/trip-billing" element={<TripBilling />} />
           <Route path="/trips" element={<Trips />} />
           <Route path="/trips/:id" element={<TripDetail />} />
           <Route path="/import" element={<Import />} />

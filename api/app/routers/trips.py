@@ -679,6 +679,11 @@ def patch_trip(tripid: str, body: TripPatch, user: dict = Depends(editor), conn:
                AND selfassignedon IS NOT NULL AND afterhoursreviewedon IS NULL""", t=tripid, a=user["accountid"]):
         raise HTTPException(409, "An on-call driver took part of this trip after closing. Review it "
                                  "(Dispatch, Needs Attention) before it is billed.")
+    # Nothing is billed from a record nobody has read.
+    if body.billingstatus in ("billed", "paid") and not row(conn, """
+            SELECT 1 AS x FROM trips WHERE recordid = :t AND accountid = :a AND verifystate = 'verified'""",
+                                                            t=tripid, a=user["accountid"]):
+        raise HTTPException(409, "Bill this trip from the Billing page.")
     r = run(conn, "UPDATE trips SET billingstatus = :s, updated = :now WHERE recordid = :id AND accountid = :a",
             s=body.billingstatus, now=utcnow(), id=tripid, a=user["accountid"])
     if not r.rowcount:
@@ -1068,6 +1073,9 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
         {"changes": tripchanges + [c for v in legchanges.values() for c in v], "reason": reason or None,
          **({"critical": bool(critical)} if criticalchanged else {})},
         ip=client_ip(request))
+    # Verified as it read then: changed, it is read again.
+    run(conn, "UPDATE trips SET verifystate = 'awaitingreview', reviewedon = NULL, reviewedby = NULL "
+              "WHERE recordid = :t AND accountid = :a AND verifystate = 'verified'", t=tripid, a=acct)
     saved(conn)
     return {"ok": True}
 
