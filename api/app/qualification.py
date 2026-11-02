@@ -71,13 +71,17 @@ def _program(key: str, items: list[dict]) -> dict:
             + [f'{i["name"]} - applicability undecided' for i in undecided][:4]}
 
 
-def overview(driver: dict, items: list[dict], facts: dict) -> dict:
+def overview(driver: dict, items: list[dict], facts: dict, barred: dict | None = None) -> dict:
     """The driver's four answers, each kept to its own scope."""
     programs = list(facts.get("company.programs") or [])
     if not programs:
         # No programs recorded on the operating profile: what the company has said about itself
         # still decides which programs there are.
         programs = ["privatepay"] + (["medicaid"] if facts.get("company.medicaid") else [])
+    judged = [_program(p, items) for p in programs]
+    if barred:
+        # A disqualifying driving record stops every trip, so it stops every program.
+        judged = [{**p, "status": "Not Qualified", "reasons": [barred["name"], *p["reasons"]]} for p in judged]
     return {"employment": EMPLOYMENT.get(driver.get("status"), driver.get("status") or "-"),
             "onboarding": _onboarding(items),
-            "programs": [_program(p, items) for p in programs]}
+            "programs": judged}

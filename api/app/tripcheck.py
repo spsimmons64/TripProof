@@ -22,7 +22,7 @@ from datetime import date, datetime
 from sqlalchemy.engine import Connection
 
 from app import facts as factset
-from app import payerlines, rules
+from app import mvr, payerlines, rules
 from app.engine import ENGINE_VERSION
 from app.db import newid, row, rows, run, utcnow
 
@@ -36,6 +36,20 @@ WAITING = ("review", "ordered")
 # nothing for a reviewer to read into it. So they block while their rule is still Draft, the way
 # not hired and no lift always have.
 ALWAYS_ENFORCED = ("DA_PROHIBITION", "DVIR")
+
+
+# A leg not finished that may not run as assigned: the newest check of it, for this driver and
+# vehicle, refused it - no override exists for a refusal - or the driver has a driving record read as
+# disqualifying and not cleared (that one is read live, for trips further out than the daily check).
+# So it goes when the assignment changes or the check next passes.
+STOPPED_LEG = """(l.driverid IS NOT NULL AND t.cancelledon IS NULL AND l.outcomestate IS NULL
+    AND l.executionstate IN ('scheduled', 'enroute', 'arrived', 'onboard')
+    AND (EXISTS (SELECT 1 FROM drivermvrs dq WHERE dq.driverid = l.driverid AND dq.reviewstate = 'reviewed'
+                  AND dq.finding = 'disqualified' AND dq.liftedon IS NULL AND dq.cancelledon IS NULL
+                  AND COALESCE(dq.issuedon, DATE(dq.receivedon)) <= COALESCE(DATE(l.pickupat), t.tripdate))
+         OR (SELECT e.decision FROM tripeligibility e WHERE e.accountid = l.accountid AND e.legid = l.recordid
+              AND e.driverid = l.driverid AND e.vehicleid <=> l.vehicleid
+              ORDER BY e.evaluatedon DESC, e.decision = 'notqualified' DESC LIMIT 1) = 'notqualified'))"""
 
 
 def enforceable(item: dict) -> bool:
@@ -352,6 +366,12 @@ def check(conn: Connection, accountid: str, driverid: str, vehicleid: str | None
         blockers.append({"code": "HIRED", "enforceable": True,
                          "reason": "The driver has not been hired."})
     else:
+        # A driving record the office read as disqualifying stops the driver on every trip in every
+        # vehicle, whether or not any rule asks for a driving record there, until it is cleared.
+        barred = mvr.disqualifying(conn, accountid, driverid, at.date())
+        if barred:
+            blockers.append({"code": barred["code"], "enforceable": True, "status": barred["status"],
+                             "name": barred["name"], "reason": barred["why"]})
         # Held to the rules of every state the trip is in, and to the federal ones if it crosses.
         facts = factset.assemble(conn, accountid, driverid, vehicleid, states=states)["facts"]
         # A Medicaid trip is held to the program of the state its payer line is for, and no other:

@@ -486,14 +486,14 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
         return row(conn, """
             SELECT recordid, issuedon AS effectiveon, NULL AS expireson, 0 AS exempt, documentid,
                    'drivermvrs' AS sourcetable,
-                   CASE WHEN finding = 'disqualified' THEN 'disqualified'
+                   CASE WHEN finding = 'disqualified' AND liftedon IS NULL THEN 'disqualified'
                         WHEN reviewstate = 'reviewed' THEN 'reviewed'
                         ELSE NULL END AS determination
             FROM drivermvrs WHERE accountid = :a AND driverid = :d AND receivedon IS NOT NULL
             -- A record that disqualifies outranks anything filed after it. It is a state the
             -- driver is in from the moment somebody read it, not an observation a later clean
             -- record quietly supersedes.
-            ORDER BY (finding = 'disqualified') DESC, issuedon DESC, receivedon DESC LIMIT 1
+            ORDER BY (finding = 'disqualified' AND liftedon IS NULL) DESC, issuedon DESC, receivedon DESC LIMIT 1
         """, a=accountid, d=driverid)
 
     if kind == "license":

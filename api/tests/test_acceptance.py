@@ -325,6 +325,132 @@ def test_4_a_georgia_driving_record_is_read_as_its_finding(make, finding, note, 
         assert note in got["why"], got
 
 
+def test_4a2_a_disqualifying_record_stops_every_trip_until_the_office_clears_it(make):
+    """Whatever vehicle, and whatever is filed after it. It clears only with a reason, against a newer
+    record read as clean, and the finding stays on the old record."""
+    from app import tripcheck
+    co = make()
+    add_line(co, co["payer"], "GA")
+    c, h = co["client"], co["h"]
+
+    def stopped():
+        with co["db"].connect() as conn:
+            said = tripcheck.check(conn, co["acct"], co["driver"], None, at=datetime.now(), record=False)
+        return [b for b in said["blockers"] if b["code"] == "MVR_DISQUALIFIED"]
+    assert not stopped()
+    bad = driving_record(co, "disqualified", "LICENSE SUSPENDED 2023")
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivermvrs SET issuedon = CURDATE() - INTERVAL 90 DAY WHERE recordid = :m"), {"m": bad})
+        lic = conn.execute(text("SELECT licenseid FROM drivermvrs WHERE recordid = :m"), {"m": bad}).scalar()
+    said = stopped()
+    assert said and said[0]["enforceable"] and "LICENSE SUSPENDED 2023" in said[0]["reason"], said
+    board = c.get(f"/api/drivers/{co['driver']}/requirements", headers=h).json()["overview"]["programs"]
+    assert board and all(p["status"] == "Not Qualified" for p in board), board
+    clear = f"/api/drivers/{co['driver']}/mvrs/{bad}/clear"
+    assert c.post(clear, headers=h, json={"reason": "reinstated"}).status_code == 409       # nothing newer yet
+
+    with co["db"].begin() as conn:
+        conn.execute(text("""INSERT INTO drivermvrs (recordid, accountid, driverid, licenseid, receivedon, issuedon, reviewstate, reviewedon, finding)
+                             VALUES (:m, :a, :d, :l, NOW(), CURDATE(), 'reviewed', NOW(), 'qualified')"""),
+                     {"m": f"m-{uuid.uuid4().hex[:12]}", "a": co["acct"], "d": co["driver"], "l": lic})
+    got = requirement(co, "GA_NET_MVR")
+    assert got["status"] == "failed" and "LICENSE SUSPENDED 2023" in got["why"], got
+    assert stopped()
+    assert c.post(clear, headers=h, json={}).status_code == 400
+    assert c.post(clear, headers=h, json={"reason": "reinstated"}).status_code == 200
+    assert not stopped()
+    assert requirement(co, "GA_NET_MVR")["status"] == "satisfied"
+    board = c.get(f"/api/drivers/{co['driver']}/requirements", headers=h).json()["overview"]["programs"]
+    assert not any("disqualifying" in r for p in board for r in p["reasons"]), board
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT finding FROM drivermvrs WHERE recordid = :m"), {"m": bad}).scalar() == "disqualified"
+    assert c.post(clear, headers=h, json={"reason": "again"}).status_code == 404
+
+
+def test_4a3_trips_already_assigned_are_flagged_when_the_driver_is_disqualified(make):
+    """Assigned first, disqualified after: every upcoming leg shows on the attention board and its
+    saved check fails. Clearing it takes the flag away, and so does putting another driver on."""
+    co = make()
+    add_line(co, co["payer"], "FL")
+    c, h = co["client"], co["h"]
+    day = date.today() + timedelta(days=9)
+    got = c.post("/api/trips", headers=h, json={"passenger": "ALREADY ASSIGNED", "tripdate": str(day), "payer": "private", "legs": [
+        {"pickupat": f"{day}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+    assert got.status_code == 200, got.text
+    tid = got.json()["recordid"]
+    with co["db"].begin() as conn:
+        leg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": tid}).scalar()
+        conn.execute(text("UPDATE triplegs SET driverid = :d WHERE recordid = :l"), {"d": co["driver"], "l": leg})
+
+    def flagged():
+        return next((i for i in c.get("/api/dispatch/board?state=attention&pagesize=200", headers=h).json()["items"]
+                     if i["legid"] == leg and i["attention"] == "compliancestop"), None)
+    assert not flagged()
+    bad = driving_record(co, "disqualified", "LICENSE SUSPENDED 2023")
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivermvrs SET issuedon = CURDATE() - INTERVAL 90 DAY WHERE recordid = :m"), {"m": bad})
+        lic = conn.execute(text("SELECT licenseid FROM drivermvrs WHERE recordid = :m"), {"m": bad}).scalar()
+    item = flagged()
+    assert item and "may not run this trip" in item["detail"] and "disqualifying" in item["detail"], item
+    with co["db"].connect() as conn:
+        failed = conn.execute(text("""SELECT c.rulecode FROM legchecks c JOIN trips t ON t.recordid = c.tripid AND t.lastrunid = c.runid
+                                      WHERE c.tripid = :t AND c.outcome = 'fail'"""), {"t": tid}).scalars().all()
+    assert "MVR_DISQUALIFIED" in failed, failed
+
+    with co["db"].begin() as conn:
+        conn.execute(text("""INSERT INTO drivermvrs (recordid, accountid, driverid, licenseid, receivedon, issuedon, reviewstate, reviewedon, finding)
+                             VALUES (:m, :a, :d, :l, NOW(), CURDATE(), 'reviewed', NOW(), 'qualified')"""),
+                     {"m": f"m-{uuid.uuid4().hex[:12]}", "a": co["acct"], "d": co["driver"], "l": lic})
+    assert c.post(f"/api/drivers/{co['driver']}/mvrs/{bad}/clear", headers=h, json={"reason": "reinstated"}).status_code == 200
+    assert not flagged()
+    with co["db"].connect() as conn:
+        assert not conn.execute(text("""SELECT 1 FROM legchecks c JOIN trips t ON t.recordid = c.tripid AND t.lastrunid = c.runid
+                                        WHERE c.tripid = :t AND c.rulecode = 'MVR_DISQUALIFIED'"""), {"t": tid}).scalar()
+
+
+def test_4a4_any_stop_on_an_assigned_trip_is_flagged_and_texted_once(make):
+    """Whatever the stop, the newest check that refused the leg puts it on the board with the reason,
+    and whoever takes dispatch alerts is texted once if it picks up within a day, without the passenger."""
+    from app import tripcheck, willcall
+    co = make()
+    c, h = co["client"], co["h"]
+    at = datetime.utcnow() + timedelta(hours=10)
+    got = c.post("/api/trips", headers=h, json={"passenger": "SECRET PASSENGER", "tripdate": str(at.date()), "payer": "private", "legs": [
+        {"pickupat": at.strftime("%Y-%m-%dT%H:%M:00"), "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+    assert got.status_code == 200, got.text
+    with co["db"].begin() as conn:
+        leg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": got.json()["recordid"]}).scalar()
+        conn.execute(text("UPDATE triplegs SET driverid = :d WHERE recordid = :l"), {"d": co["driver"], "l": leg})
+        conn.execute(text("UPDATE users SET dispatchalerts = 1, mobile = '(813) 555-0100' WHERE accountid = :a"), {"a": co["acct"]})
+
+    def recheck(status):
+        with co["db"].begin() as conn:
+            conn.execute(text("UPDATE tripeligibility SET evaluatedon = evaluatedon - INTERVAL 1 HOUR WHERE legid = :l"), {"l": leg})
+            conn.execute(text("UPDATE drivers SET status = :s WHERE recordid = :d"), {"s": status, "d": co["driver"]})
+            return tripcheck.check(conn, co["acct"], co["driver"], None, legid=leg, shadow=True)["decision"]
+
+    def flagged():
+        return next((i for i in c.get("/api/dispatch/board?state=attention&pagesize=200", headers=h).json()["items"]
+                     if i["legid"] == leg and i["attention"] == "compliancestop"), None)
+
+    def texts():
+        with co["db"].begin() as conn:
+            willcall.office_alerts(conn)
+            return conn.execute(text("SELECT body FROM drivertexts WHERE legid = :l AND kind = 'alertstop'"), {"l": leg}).scalars().all()
+    assert not flagged() and not texts()
+    assert recheck("inactive") == "notqualified"
+    item = flagged()
+    assert item and "The driver has not been hired" in item["detail"], item
+    sent = texts()
+    assert sent and "may not run" in sent[0] and "SECRET" not in sent[0], sent
+    assert len(texts()) == len(sent)                                       # once each
+    # Another driver on it: the check that refused was about the one before.
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET status = 'hired' WHERE recordid = :d"), {"d": co["driver"]})
+        conn.execute(text("UPDATE tripeligibility SET driverid = 'someone-else' WHERE legid = :l"), {"l": leg})
+    assert not flagged()
+
+
 def test_4b_a_changed_finding_keeps_the_first_one_on_the_record(make):
     co = make()
     add_line(co, co["payer"], "GA")

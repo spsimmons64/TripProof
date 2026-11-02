@@ -15,7 +15,7 @@ from datetime import timedelta
 from sqlalchemy.engine import Connection
 
 from app import facts as factset
-from app import qualification, rules, tripcheck
+from app import mvr, qualification, rules, tripcheck
 from app.db import newid, rows, run, utcnow
 
 AHEAD = timedelta(days=7)
@@ -31,7 +31,7 @@ def snapshot(conn: Connection) -> int:
     """):
         facts = factset.assemble(conn, d["accountid"], d["recordid"])["facts"]
         items = rules.for_driver(conn, d["accountid"], d["recordid"], facts, today=today)
-        for p in qualification.overview(d, items, facts)["programs"]:
+        for p in qualification.overview(d, items, facts, mvr.disqualifying(conn, d["accountid"], d["recordid"], today))["programs"]:
             run(conn, """
                 INSERT INTO programqualificationsnapshots (recordid, accountid, driverid, program,
                                                            status, reasons, takenon, takenat)

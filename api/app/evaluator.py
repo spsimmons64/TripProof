@@ -33,6 +33,7 @@ STRUCTURAL = {
     "SECUREMENT": "Wheelchair securement training",
     "LIFT": "A lift-equipped vehicle",
     "ELIGIBLE": "Every requirement met",
+    "MVR_DISQUALIFIED": "A driving record that does not disqualify",
 }
 
 

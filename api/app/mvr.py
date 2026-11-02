@@ -34,7 +34,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.engine import Connection
 
-from app.db import rows
+from app.db import row, rows
 from app.recurrence import renewed
 
 # 391.23(a)(1): the three years before the driver was taken on.
@@ -46,6 +46,24 @@ ANNUAL_LOOKBACK = timedelta(days=365)
 # lookup - states do not agree on the letters, and Florida's Class E is ordinary while its Class C
 # is commercial. It is the default until somebody says otherwise on the license itself.
 CDL_CLASSES = ("A", "B", "C")
+
+
+def disqualifying(conn: Connection, accountid: str, driverid: str, on: date | None = None) -> dict | None:
+    """The driving record read as disqualifying that has not been cleared, if there is one, with the
+    sentence for it. It stops the driver on every trip in every vehicle, whether or not any rule asks
+    for a driving record there, so a program cannot read as qualified while it stands."""
+    bad = row(conn, """
+        SELECT m.recordid, m.issuedon, m.note, l.state FROM drivermvrs m LEFT JOIN driverlicenses l ON l.recordid = m.licenseid
+        WHERE m.accountid = :a AND m.driverid = :d AND m.reviewstate = 'reviewed' AND m.finding = 'disqualified'
+          AND m.liftedon IS NULL AND m.cancelledon IS NULL AND COALESCE(m.issuedon, DATE(m.receivedon)) <= :on
+        ORDER BY m.issuedon DESC LIMIT 1
+    """, a=accountid, d=driverid, on=on or date.today())
+    if not bad:
+        return None
+    issued = f" dated {bad['issuedon']:%m/%d/%Y}" if bad["issuedon"] else ""
+    return {"code": "MVR_DISQUALIFIED", "name": "Driving record read as disqualifying", "status": "failed",
+            "why": f"The {bad['state'] or ''} driving record{issued} was read as disqualifying"
+                   + (f": {bad['note']}" if bad["note"] else "") + "."}
 
 
 def standing(cov: dict, today: date) -> tuple[str, str] | None:
@@ -74,7 +92,7 @@ def standing(cov: dict, today: date) -> tuple[str, str] | None:
     # by a reader calling it a restriction.
     def read_as(finding):
         return [e for e in required if e.get("record") and e["record"].get("reviewstate") == "reviewed"
-                and e["record"].get("finding") == finding]
+                and e["record"].get("finding") == finding and not e["record"].get("liftedon")]
     barred = read_as("disqualified")
     if barred:
         notes = "; ".join(e["record"]["note"] for e in barred if e["record"].get("note"))
@@ -172,7 +190,7 @@ def coverage(conn: Connection, accountid: str, driverid: str, *, window: timedel
     for got in rows(conn, """
         SELECT l.state, m.licenseid, m.recordid, m.issuedon, m.receivedon, m.orderedon, m.norecord,
                m.documentid,
-               m.reviewstate, m.finding, m.note,
+               m.reviewstate, m.finding, m.note, m.liftedon,
                -- What a CDLIS record says about medical qualification, carried so the panel that
                -- reads the record can show what is already recorded rather than an empty form.
                m.selfcert, m.medcertstatus, m.medcertexpires, m.medvariancetype, m.medvariance
@@ -182,7 +200,10 @@ def coverage(conn: Connection, accountid: str, driverid: str, *, window: timedel
         ORDER BY COALESCE(m.issuedon, m.receivedon) DESC, m.receivedon DESC, m.createdon DESC
     """, a=accountid, d=driverid):
         card = cards.get(got["licenseid"])
+        stops = got["reviewstate"] == "reviewed" and got["finding"] == "disqualified" and not got["liftedon"]
         if card is not None:
+            if stops:
+                card.setdefault("barred", got)
             if got["receivedon"] or got["norecord"]:
                 card.setdefault("record", got)
             elif got["orderedon"]:
@@ -195,7 +216,10 @@ def coverage(conn: Connection, accountid: str, driverid: str, *, window: timedel
             # answer the question is kept rather than skipped: dropping it made a state with an
             # out-of-date record on file read identically to a state nobody had ever asked, and it
             # is the difference between work that has lapsed and work never started.
-            if not entry.get("record"):
+            # The exception is a record read as disqualifying: that is a state the driver is in, and
+            # a clean record filed after it does not quietly supersede it (standing() fails on it).
+            if not entry.get("record") or (stops and (entry["record"].get("finding") != "disqualified"
+                                                      or entry["record"].get("liftedon"))):
                 entry["record"] = got
         elif got["orderedon"] and not entry.get("ordered"):
             entry["ordered"] = got

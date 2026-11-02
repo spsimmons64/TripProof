@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.engine import Connection
 
-from app import dispatch, sms
+from app import dispatch, sms, tripcheck
 from app import shifts as plan
 from app.config import settings
 from app.db import engine, localnow, rows, run, saved, utcnow
@@ -79,6 +79,7 @@ def tick(conn: Connection) -> int:
 # ------------------------------------------------------------------------------------------------
 # Dispatch alerts: the office texted when a flag on the board has stood unanswered
 # ------------------------------------------------------------------------------------------------
+STOP_WITHIN = timedelta(hours=24)         # how far ahead a trip that may not run is texted to the office
 CALL_LATE = timedelta(minutes=30)          # past Ready About with no call recorded (Call Overdue)
 NO_DRIVER = timedelta(minutes=30)          # before pickup with nobody on it
 COVER_BY = timedelta(minutes=60)           # before closing with no coverage recorded
@@ -143,6 +144,14 @@ def office_alerts(conn: Connection) -> int:
             said.append(("alertclosing", l["recordid"], l["tripid"],
                          f"Will-call {l['externalid']} is still waiting and its pickup place closes at "
                          f"{plan.as_time(l['closesat']):%-I:%M %p}."))
+        # A trip in the next day that may not run as assigned, whatever the hour. The reason stays in
+        # the app; once per driver on it, so a second driver stopped on the same trip is said too.
+        for l in rows(conn, f"""
+            SELECT l.recordid, l.tripid, l.driverid, l.pickupat, t.externalid FROM triplegs l JOIN trips t ON t.recordid = l.tripid
+            WHERE l.accountid = :a AND t.deleted IS NULL AND l.pickupat BETWEEN :here AND :until AND {tripcheck.STOPPED_LEG}
+        """, a=acct, here=here.replace(tzinfo=None), until=here.replace(tzinfo=None) + STOP_WITHIN):
+            said.append((f"alertstop:{l['driverid']}", l["recordid"], l["tripid"],
+                         f"Trip {l['externalid']}, pickup {sms.when(l['pickupat'])}, may not run as assigned. Check Dispatch."))
         if not said:
             continue
         for u in rows(conn, "SELECT recordid FROM users WHERE accountid = :a AND dispatchalerts = 1 "
@@ -150,7 +159,7 @@ def office_alerts(conn: Connection) -> int:
             for kind, legid, tripid, body in said:
                 # Written down once per person and trip (oncalltexts holds the user in driverid).
                 if _once(conn, f"{kind}:{legid}:{u['recordid']}", acct, u["recordid"], legid):
-                    sms.tell_user(conn, acct, u["recordid"], kind, body, tripid, legid)
+                    sms.tell_user(conn, acct, u["recordid"], kind.split(":")[0], body, tripid, legid)
                     sent += 1
     return sent
 

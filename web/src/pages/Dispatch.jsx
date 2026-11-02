@@ -46,7 +46,7 @@ const OUTCOME = { cancelled: 'Canceled', noshow: 'No-show', aborted: 'Aborted', 
 // nobody pressed anything, so the board asks rather than guesses.
 const WHATNOW = { missed: 'Missed', late: 'Running late' }
 const ATTENTION = { nodriver: 'No Driver', reassign: 'Needs Reassigning', coverage: 'Coverage Needed',
-                    nevercalled: 'Never Called', calloverdue: 'Call Overdue', facilityclosing: 'Facility Closing' }
+                    nevercalled: 'Never Called', calloverdue: 'Call Overdue', facilityclosing: 'Facility Closing', compliancestop: 'Compliance Stop' }
 
 // The same problems the driver's app offers, in a word. The sentence belongs in the dialog.
 const SHORT = {
@@ -60,6 +60,7 @@ const tone = (l) => (l.unseen ? (l.executionstate === 'onboard' ? 'rowbad' : 'ro
   : l.outcomestate === 'disputed' ? 'rowwarn'
   : l.issueid && l.executionstate !== 'completed' ? 'rowbad'
   : l.outcomestate ? null
+  : l.attention === 'compliancestop' ? 'rowbad'
   : l.late === 'missed' ? 'rowbad' : l.late || l.attention ? 'rowwarn'
   : l.executionstate === 'completed' ? 'rowgood'
   : ['enroute', 'arrived', 'onboard'].includes(l.executionstate) ? 'rowmoving' : null)
@@ -157,6 +158,7 @@ export default function Dispatch() {
     : l.brokerstate === 'returnpending' ? 'Request For Broker Return'
     : l.brokerstate === 'returned' ? `Returned To Broker${full && l.brokerref ? ` - Confirmation #: ${l.brokerref}` : ''}`
     : l.cancelled ? 'Canceled'
+    : l.attention === 'compliancestop' ? <span className="st-expired">{ATTENTION.compliancestop}</span>
     : l.late
       ? <span className={l.late === 'missed' ? 'st-expired' : 'st-ordered'}>{WHATNOW[l.late]}</span>
       : l.attention ? ATTENTION[l.attention]
@@ -196,6 +198,8 @@ export default function Dispatch() {
           </button>
         ) : l.outcomestate === 'disputed' ? (
           <button type="button" className="linkbtn" onClick={go(() => setClosing(l))}>Settle Dispute</button>
+        ) : open && l.attention === 'compliancestop' ? (
+          <button type="button" className="linkbtn edit" onClick={go(() => setAssigning(l))}>{short ? 'Change' : 'Change Driver'}</button>
         ) : open && !l.pickupat && l.attention === 'nevercalled' ? (
           // A will-call from an earlier day nobody took: closed out, not called in.
           <button type="button" className="linkbtn" onClick={go(() => setClosing(l))}>What Happened</button>
@@ -245,7 +249,7 @@ export default function Dispatch() {
   const today = ymd(new Date())
   // A problem a driver reported comes first, whatever its day: somebody is waiting on an answer.
   const attention = (data?.attention || []).filter((l) => l.issueid || (l.pickupat && l.pickupat.slice(0, 10) < today)
-    || l.outcomestate === 'disputed' || l.attention === 'coverage' || l.attention === 'nevercalled' || l.attention === 'calloverdue' || l.attention === 'facilityclosing' || l.afterhours).sort((a, b) => Boolean(b.issueid) - Boolean(a.issueid))
+    || l.outcomestate === 'disputed' || l.attention === 'coverage' || l.attention === 'nevercalled' || l.attention === 'calloverdue' || l.attention === 'facilityclosing' || l.attention === 'compliancestop' || l.afterhours).sort((a, b) => Boolean(b.issueid) - Boolean(a.issueid))
   const problemOpen = attention.some((l) => l.issueid)
   // Will-calls called in and not collected yet; and returns whose coverage or ride home is unsettled.
   const readyNow = (data?.items || []).filter((l) => l.activatedon && l.pickupat && open(l)

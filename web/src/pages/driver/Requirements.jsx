@@ -27,7 +27,7 @@ import { ProhibitionPanel } from './Testing.jsx'
 import { CrashDialog } from './Accidents.jsx'
 
 import { BLANK_EXAM } from './requirement/common.jsx'
-import { MvrDialog, MvrOrderDialog, MvrUploadDialog } from './requirement/Mvr.jsx'
+import { MvrClearDialog, MvrDialog, MvrOrderDialog, MvrUploadDialog } from './requirement/Mvr.jsx'
 import { EmployerHistoryDialog } from './requirement/EmployerHistory.jsx'
 import { DrugScreenDialog, DrugTestingDialog } from './requirement/Testing.jsx'
 import { TransitMedicalDialog } from './requirement/TransitMedical.jsx'
@@ -757,6 +757,11 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
     await api.post(`/drivers/${id}/mvrs/${mvrid}/cancel`, {})
   })
 
+  const clearMvr = () => act(async () => {
+    await api.post(`/drivers/${id}/mvrs/${form.mvrid}/clear`, { reason: form.note })
+    setFiling(false)
+  })
+
   const orderMvr = () => act(async () => {
     await api.post(`/drivers/${id}/mvrs/order`, { licenseid: form.licenseid })
     setFiling(false)
@@ -907,6 +912,9 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
 
   // Ordering asks for nothing at all: the license came with the row that was clicked, and TripProof
   // does not pull the record, the office does. So it is a question, not a form.
+  if (filing === 'mvr-clear') {
+    return <MvrClearDialog {...{ busy, clearMvr, err, form, setFiling, setForm }} />
+  }
   if (filing === 'mvr-order') {
     return <MvrOrderDialog {...{ busy, err, form, orderMvr, setFiling }} />
   }

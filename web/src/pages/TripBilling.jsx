@@ -258,7 +258,7 @@ function TripDialog({ tripid, onClose, onDone }) {
           {t.invoicenumber && <><dt>Invoice</dt><dd>{t.invoicenumber}</dd></>}
           {t.invoicenumber && <><dt>Emailed</dt><dd>{t.emailedon ? `${tzDateTime(t.emailedon)} to ${t.billtoemail}` : t.emailerror || (t.billtoemail ? 'Sending' : 'No Email On File')}</dd></>}
         </div>
-        <div className="billscroll">
+        <div className="billscroll billpanel">
         <table className="residencetable recordtable reviewtable">
           <thead><tr><th>Leg</th><th>Driver</th><th>Aboard</th><th>Dropped Off</th><th>Miles</th><th>Waiting</th><th>Signature</th><th>Status</th></tr></thead>
           <tbody>{t.legs.map((l) => (

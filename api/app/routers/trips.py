@@ -1778,12 +1778,13 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
         # The same legs the count on the button counts: a leg closed out - cancelled, a no-show,
         # not done - is finished business, whatever its pickup time says.
         # Or taken by the on-call driver after closing and not yet looked at, whatever came of it.
-        where.append("""((l.selfassignedon IS NOT NULL AND l.afterhoursreviewedon IS NULL) OR (
+        where.append(f"""((l.selfassignedon IS NOT NULL AND l.afterhoursreviewedon IS NULL) OR (
             (l.outcomestate IS NULL OR l.outcomestate = 'disputed') AND (
             (l.driverid IS NULL AND l.pickupat IS NOT NULL
                  AND l.pickupat < :here + INTERVAL 2 HOUR
                  AND COALESCE(l.brokerstate, t.brokerstate) NOT IN ('offered', 'returnpending', 'returned'))
             OR t.dispatchstate = 'needsreassign'
+            OR {tripcheck.STOPPED_LEG}
             OR (l.executionstate = 'scheduled' AND l.pickupat IS NOT NULL
                  AND l.pickupat < :here - INTERVAL :grace MINUTE)
             OR EXISTS (SELECT 1 FROM tripissues i3
@@ -1833,6 +1834,9 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
                 AND e.state = 'onboard') AS onboardat,
                l.pickuplat, l.pickuplng, l.dropofflat, l.dropofflng, l.pickupplace,
                l.dropoffplace, l.executionstate, l.outcomestate, l.driverid, l.vehicleid,
+               {tripcheck.STOPPED_LEG} AS compliancestop,
+               (SELECT e.blockers FROM tripeligibility e WHERE e.accountid = l.accountid AND e.legid = l.recordid
+                ORDER BY e.evaluatedon DESC, e.decision = 'notqualified' DESC LIMIT 1) AS stopblockers,
                l.readyabout, l.returnplan, l.brokerstate IS NOT NULL AS legreturn, t.tripdate,
                l.selfassignedon, l.afterhoursreviewedon, l.responsibility, l.responsibilitynote,
                l.activationsource, l.activatedon, l.brokerreadyat, t.brokerid,
@@ -1879,7 +1883,7 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     # How much is on the attention board right now, whichever board is being looked at. Without
     # this a dispatcher watching "Needs a driver" has no way of learning that a driver has just
     # broken down, short of changing filter on the off-chance.
-    attention = (row(conn, """
+    attention = (row(conn, f"""
         SELECT COUNT(*) AS n FROM triplegs l JOIN trips t ON t.recordid = l.tripid
         WHERE t.accountid = :a AND t.deleted IS NULL AND (l.outcomestate = 'disputed' OR (
             l.outcomestate IS NULL AND (
@@ -1887,6 +1891,7 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
                  AND l.pickupat < :here + INTERVAL 2 HOUR
                  AND COALESCE(l.brokerstate, t.brokerstate) NOT IN ('offered', 'returnpending', 'returned'))
             OR t.dispatchstate = 'needsreassign'
+            OR {tripcheck.STOPPED_LEG}
             OR (l.executionstate = 'scheduled' AND l.pickupat IS NOT NULL
                  AND l.pickupat < :here - INTERVAL :grace MINUTE)
             OR EXISTS (SELECT 1 FROM tripissues i3
@@ -1997,6 +2002,11 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
                 i["attention"] = "calloverdue"
             elif not i["pickupat"] and i["brokerstate"] not in HANDED_BACK and not i["cancelled"] and i["tripdate"] < here.date():
                 i["attention"] = "nevercalled"
+        # On a trip that may not run as assigned: ahead of everything else said about it.
+        said = json.loads(i.pop("stopblockers") or "[]")
+        i["stopwhy"] = next((b.get("reason") or b.get("name") for b in said if b.get("enforceable")), None)
+        if i["compliancestop"] and not i["outcomestate"]:
+            i["attention"] = "compliancestop"
         # Taken by the on-call driver after closing: the office's to look at in the morning.
         i["afterhours"] = bool(i["selfassignedon"] and not i["afterhoursreviewedon"])
         if i["coverage"]:
@@ -2089,6 +2099,9 @@ def _what_went_wrong(leg: dict, here: datetime) -> str | None:
         return f"{who or 'The driver'} reported: {said}{note}.{seen}"
     if leg["outcomestate"]:
         return None
+    if leg["attention"] == "compliancestop":
+        why = leg.get("stopwhy") or "A driving record was read as disqualifying."
+        return f"{who or 'The driver'} may not run this trip: {why} Change the driver or vehicle."
     if leg["late"]:
         minutes = int((here - leg["pickupat"]).total_seconds() // 60)
         gone = f"{minutes} minutes ago" if minutes < 120 else f"{minutes // 60} hours ago"

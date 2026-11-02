@@ -54,9 +54,9 @@ export function MvrDialog({ busy, cancelMvr, coverage, data, err, form, mvrHisto
                 { label: 'Expires', tone: expiry(s.expireson),
                   value: s.expireson ? date(s.expireson) : '-' },
                 { label: 'Review',
-                  tone: unread(s) ? 'st-ordered' : rec?.finding === 'disqualified' ? 'st-expired'
+                  tone: s.barred ? 'st-expired' : unread(s) ? 'st-ordered' : rec?.finding === 'disqualified' ? 'st-expired'
                     : rec?.finding ? 'st-active' : undefined,
-                  value: !rec || rec.norecord ? '-' : unread(s) ? 'Not reviewed'
+                  value: s.barred ? MVR_FINDING.disqualified : !rec || rec.norecord ? '-' : unread(s) ? 'Not reviewed'
                     : MVR_FINDING[rec.finding] || 'Reviewed' },
                 { label: 'Order', tone: s.ordered ? 'st-ordered' : undefined,
                   value: s.ordered ? `Ordered ${date(s.ordered.orderedon)}` : 'None outstanding' },
@@ -99,6 +99,12 @@ export function MvrDialog({ busy, cancelMvr, coverage, data, err, form, mvrHisto
                             <FileUp size={13} /> Upload
                           </button>
                         </>
+                      )}
+                      {s.barred && (
+                        <button type="button"
+                          onClick={() => { setForm({ ...form, mvrid: s.barred.recordid, note: '', licenselabel: label }); setFiling('mvr-clear') }}>
+                          Clear Disqualification
+                        </button>
                       )}
                       <button type="button"
                         disabled={!records.some((x) => x.licenseid === s.licenseid)}
@@ -187,6 +193,28 @@ export function MvrDialog({ busy, cancelMvr, coverage, data, err, form, mvrHisto
       </>
     )
   
+}
+
+// RequirementDetail, when filing === 'mvr-clear'.
+export function MvrClearDialog({ busy, clearMvr, err, form, setFiling, setForm }) {
+    return (
+      <Modal title="Clear Disqualification" onClose={() => setFiling(false)} width={560}
+        footer={<>
+          <button type="button" className="primary" disabled={busy || !form.note.trim()} onClick={clearMvr}>
+            {busy ? <Loader2 size={15} className="spin" /> : 'Save'}
+          </button>
+          <button type="button" onClick={() => setFiling(false)}>Cancel</button>
+        </>}>
+        <div className="stack">
+          {err && <div className="notice bad">{err}</div>}
+          <div className="muted small">{form.licenselabel}</div>
+          <label className="field">Reason *
+            <textarea rows={3} className="upper" value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value.toUpperCase() })} />
+          </label>
+        </div>
+      </Modal>
+    )
 }
 
 // RequirementDetail, when filing === 'mvr-order'.

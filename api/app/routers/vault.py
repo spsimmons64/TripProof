@@ -1138,6 +1138,44 @@ def mark_mvr_reviewed(driverid: str, mvrid: str, body: MvrReviewIn, request: Req
         mv=(body.medvariance or "").strip()[:160] or None)
     log(conn, user, "reviewed", "drivermvr", driverid, {"mvrid": mvrid, "finding": finding},
         ip=client_ip(request))
+    _reevaluate_subject(conn, user, "driver", driverid)
+    saved(conn)
+    return {"ok": True}
+
+
+class MvrLiftIn(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/drivers/{driverid}/mvrs/{mvrid}/clear")
+def clear_mvr_disqualification(driverid: str, mvrid: str, body: MvrLiftIn, request: Request,
+                               user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    """A disqualification that has ended: a newer record for the same state reads clean, and somebody
+    says why it no longer stands. What the old record was read as stays on it."""
+    acct = user["accountid"]
+    _applicant(conn, acct, driverid)
+    reason = " ".join((body.reason or "").split()).upper()[:600]
+    bad = row(conn, """
+        SELECT m.recordid, COALESCE(m.issuedon, DATE(m.receivedon)) AS dated, l.state FROM drivermvrs m
+        JOIN driverlicenses l ON l.recordid = m.licenseid
+        WHERE m.recordid = :m AND m.accountid = :a AND m.driverid = :d AND m.finding = 'disqualified' AND m.liftedon IS NULL
+    """, m=mvrid, a=acct, d=driverid)
+    if not bad:
+        raise HTTPException(404, "No such disqualifying record")
+    if not reason:
+        raise HTTPException(400, "Say why the disqualification has ended")
+    newer = row(conn, """
+        SELECT m.recordid FROM drivermvrs m JOIN driverlicenses l ON l.recordid = m.licenseid
+        WHERE m.accountid = :a AND m.driverid = :d AND l.state = :s AND m.receivedon IS NOT NULL AND m.cancelledon IS NULL
+          AND m.reviewstate = 'reviewed' AND m.finding = 'qualified' AND COALESCE(m.issuedon, DATE(m.receivedon)) > :on
+        LIMIT 1
+    """, a=acct, d=driverid, s=bad["state"], on=bad["dated"])
+    if not newer:
+        raise HTTPException(409, f"File and review a {bad['state']} driving record dated after {bad['dated']:%m/%d/%Y} that reads Qualified first.")
+    run(conn, "UPDATE drivermvrs SET liftedon = :now, liftedby = :u, liftreason = :r WHERE recordid = :m",
+        now=utcnow(), u=user["recordid"], r=reason, m=mvrid)
+    log(conn, user, "disqualification-cleared", "drivermvr", driverid, {"mvrid": mvrid, "reason": reason}, ip=client_ip(request))
+    _reevaluate_subject(conn, user, "driver", driverid)
     saved(conn)
     return {"ok": True}
 
@@ -4121,7 +4159,7 @@ def driver_requirements(driverid: str, user: dict = Depends(current_user),
     # making one. Once hired, the whole file is theirs to keep - nothing is filtered away.
     hired = bool(driver.get("hiredon")) or driver["status"] in ("hired", "inactive")
     # Read off the whole file, before anything is held back for a driver not yet hired.
-    overview = qualification.overview(driver, items, gathered["facts"])
+    overview = qualification.overview(driver, items, gathered["facts"], mvrs.disqualifying(conn, acct, driverid))
     later = 0
     if not hired:
         keep = [i for i in items if i["duestage"] in ("prehire", "predrive", None)]
@@ -4294,6 +4332,9 @@ def _gate(conn: Connection, accountid: str, driverid: str, items: list[dict],
     general = [g for g in (rules.for_program(i, None) for i in items) if g]
     stops = [{"code": i["code"], "name": i["name"], "status": i["status"], "why": i["why"]}
              for i in general if i.get("gate") == "hardstop" and _stops(i) and _owed_now(i, hired)]
+    barred = mvrs.disqualifying(conn, accountid, driverid)
+    if barred:
+        stops.insert(0, barred)
     if da["status"] in ("prohibited", "rtdinprogress"):
         stops.insert(0, {"code": "DA_STATUS", "name": "Drug and alcohol status",
                          "status": da["status"], "why": da["why"]})
