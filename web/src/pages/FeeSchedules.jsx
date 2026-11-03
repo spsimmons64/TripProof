@@ -46,7 +46,7 @@ const BLANK = {
 }
 const BLANKRATE = {
   ratetype: 'base', name: '', servicelevel: '', unit: 'trip', amount: '', includedunits: '',
-  minimumunits: '', rounding: '', proceduracode: '', modifier: '', authrequired: false,
+  minimumunits: '', cancelwithinhours: '', rounding: '', proceduracode: '', modifier: '', authrequired: false,
   loadedonly: true,
 }
 
@@ -63,7 +63,8 @@ const plain = (v) => (v === '' || v === null || v === undefined ? '' : String(Nu
 function says(l, data) {
   const unit = data.units[l.unit] || l.unit
   const miles = l.ratetype === 'mileage' && l.loadedonly
-  return `${money(l.amount || 0)} ${miles ? unit.replace('per ', 'per loaded ') : unit}`
+  const late = l.ratetype === 'latecancel' && l.cancelwithinhours ? `, within ${Number(l.cancelwithinhours)} hours` : ''
+  return `${money(l.amount || 0)} ${miles ? unit.replace('per ', 'per loaded ') : unit}${late}`
 }
 
 // One grid, but not in whatever order the lines were typed: the per-service rates first in
@@ -236,7 +237,7 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
       proceduracode: r.proceduracode || '', modifier: r.modifier || '',
       loadedonly: r.loadedonly === null || r.loadedonly === undefined
         ? true : Boolean(r.loadedonly),
-      amount: r.amount ?? '', includedunits: r.includedunits ?? '',
+      amount: r.amount ?? '', includedunits: r.includedunits ?? '', cancelwithinhours: r.cancelwithinhours ?? '',
       minimumunits: r.minimumunits ?? '',
       authrequired: Boolean(r.authrequired),
     })),
@@ -294,6 +295,7 @@ function ScheduleEditor({ data, held, onClose, onSaved }) {
           amount: Number(l.amount),
           includedunits: l.includedunits === '' ? null : Number(l.includedunits),
           minimumunits: l.minimumunits === '' ? null : Number(l.minimumunits),
+          cancelwithinhours: l.cancelwithinhours === '' ? null : Number(l.cancelwithinhours),
           rounding: l.rounding || null,
           proceduracode: l.proceduracode.trim() || null,
           modifier: l.modifier.trim() || null, authrequired: l.authrequired,
@@ -436,7 +438,7 @@ function RateDialog({ data, line, isnew, onClose, onKeep }) {
   // A line needs a name and a figure. The name because the type alone does not identify a
   // charge - a schedule carries several surcharges, and "Surcharge $30" on an invoice tells
   // a passenger nothing. The figure because a rate with no amount is not a rate.
-  const ok = r.name.trim() !== ''
+  const ok = (r.ratetype !== 'latecancel' || Number(r.cancelwithinhours) > 0) && r.name.trim() !== ''
     && String(r.amount).trim() !== '' && !Number.isNaN(Number(r.amount))
   return (
     <Modal title={isnew ? 'Add A Rate' : 'Edit This Rate'} onClose={onClose} width={720}
@@ -491,6 +493,11 @@ function RateDialog({ data, line, isnew, onClose, onKeep }) {
         </label>
         {/* Only mileage has an opinion about which miles. On any other charge the question
             does not arise, so it is not asked. */}
+        {r.ratetype === 'latecancel' && (
+          <label className="field span-2">Hours Before Pickup *
+            <input type="number" step="0.5" min="0" value={r.cancelwithinhours} onChange={set('cancelwithinhours')} />
+          </label>
+        )}
         {r.ratetype === 'mileage' && (
           <label className="field check sharerow beside">
             <input type="checkbox" checked={r.loadedonly}

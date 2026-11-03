@@ -181,12 +181,29 @@ function BatchPayment({ batchid, onClose, onDone }) {
   )
 }
 
+// The passenger's signature, as it was taken on the driver's phone at the drop-off.
+function SignatureView({ leg, onClose }) {
+  const [got, error] = useLoad(() => api.get(`/trip-billing/legs/${leg.legid}/signature`), [leg.legid])
+  return (
+    <Modal title={`Passenger Signature - Leg ${leg.legnumber}`} width={560} onClose={onClose}
+      footer={<button type="button" onClick={onClose}>Close</button>}>
+      {!got ? <Loading error={error} /> : (
+        <div className="stack">
+          <img className="signatureimg" src={got.image} alt={`Signature for leg ${leg.legnumber}`} />
+          <div className="muted">Signed {tzDateTime(got.signedon)}</div>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 function TripDialog({ tripid, onClose, onDone }) {
   const navigate = useNavigate()
   const [t, error] = useLoad(() => api.get(`/trip-billing/${tripid}`), [tripid])
   const [form, setForm] = useState(null)     // 'hold' | 'denied' | 'writedown' | 'refund' | 'undo' | 'miles'
   const [how, setHow] = useState('')         // the amount or miles that form is asking for
   const [target, setTarget] = useState(null) // the payment being undone, or the leg being corrected
+  const [signing, setSigning] = useState(null) // the leg whose signature is being looked at
   const [note, setNote] = useState('')
   const [paid, setPaid] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -197,6 +214,7 @@ function TripDialog({ tripid, onClose, onDone }) {
   }
   const act2 = async (path, body = {}) => { setBusy(true); setErr(null); try { await api.post(path, body); onDone() } catch (e) { setErr(e.message); setBusy(false) } }
   if (!t) return <Modal title="Trip" onClose={onClose}><Loading error={error} /></Modal>
+  if (signing) return <SignatureView leg={signing} onClose={() => setSigning(null)} />
   if (form) {
     const FORMS = {
       hold: ['Hold Trip', 'Reason', null], denied: ['Payment Denied', 'Note', null], undo: ['Undo Entry', 'Reason', null],
@@ -270,7 +288,8 @@ function TripDialog({ tripid, onClose, onDone }) {
               <td title={l.milesreason || undefined}>{l.miles === null ? '-' : `${(Math.round(l.miles * 10 + 1e-6) / 10).toFixed(1)} (${l.milessource})`}
                 {unbilled && <button type="button" className="milesbtn" onClick={() => open_('miles', l.miles === null ? '' : String(l.miles), l.legid)}>Correct Miles</button>}</td>
               <td>{l.waitminutes ? `${l.waitminutes} min` : '-'}</td>
-              <td>{l.signature ? 'Yes' : 'No'}</td>
+              <td>{l.signature ? 'Yes' : 'No'}
+                {l.signedhere && <button type="button" className="milesbtn" onClick={() => setSigning(l)}>View</button>}</td>
               <td>{l.state}</td>
             </tr>
           ))}</tbody>

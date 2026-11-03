@@ -1432,9 +1432,12 @@ def someone_is_out(body: OutIn, request: Request, user: dict = Depends(editor),
         WHERE l.accountid = :a AND l.{column} = :who
           AND l.executionstate <> 'completed' AND l.outcomestate IS NULL
           AND l.pickupat IS NOT NULL AND l.pickupat >= :day AND l.pickupat < :u
+          -- From when they are out; before that, only what is already overdue. A trip later this
+          -- morning, while they are still working, stays theirs.
+          AND (l.pickupat >= :f OR l.pickupat < :here OR l.executionstate = 'onboard')
         ORDER BY l.pickupat
-    """, a=acct, who=body.recordid, u=body.untilat,
-        day=datetime.combine(body.fromat.date(), datetime.min.time()))
+    """, a=acct, who=body.recordid, u=body.untilat, f=body.fromat,
+        here=localnow(dispatch.zone(conn, acct)), day=datetime.combine(body.fromat.date(), datetime.min.time()))
     legs = [l for l in held if l["executionstate"] != "onboard"]
     aboard = [l for l in held if l["executionstate"] == "onboard"]
 
@@ -2774,6 +2777,7 @@ class OutcomeIn(BaseModel):
     note: str | None = None
     pickedupat: datetime | None = None
     droppedoffat: datetime | None = None
+    miles: float | None = None        # driven: how far it ran, as the office knows it
 
 
 @router.post("/legs/{legid}/outcome")
@@ -2841,6 +2845,10 @@ def record_what_happened(legid: str, body: OutcomeIn, request: Request,
         # reported from wherever it was. The wall clock the office typed has to become one.
         """, id=newid(), a=acct, l=legid, on=_as_instant(body.droppedoffat, zone), now=now,
              by=user["recordid"])
+        if body.miles is not None:
+            dispatch.plausible_miles(body.miles)
+            run(conn, """UPDATE triplegs SET officemiles = :m, officemilesreason = 'ENTERED WHEN THE OFFICE CLOSED OUT THE LEG',
+                         officemilesby = :by, officemileson = :now WHERE recordid = :l""", m=body.miles, by=user["recordid"], now=now, l=legid)
         _settle_verify_from_office(conn, acct, leg["tripid"])
     else:
         run(conn, "UPDATE triplegs SET outcomestate = :o WHERE recordid = :l AND accountid = :a",

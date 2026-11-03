@@ -847,7 +847,7 @@ function Trip({ me, leg, reporting, onBack, onDone, onCheck }) {
 
       {leg.nextsaid && (
         <button className={`dvgo${leg.checkfirst ? ' quiet' : ''}`} disabled={busy}
-          onClick={() => step(leg.next[0])}>
+          onClick={() => (leg.next[0] === 'completed' ? setAsking('sign') : step(leg.next[0]))}>
           {busy ? 'Sending…' : leg.nextsaid}
         </button>
       )}
@@ -883,6 +883,14 @@ function Trip({ me, leg, reporting, onBack, onDone, onCheck }) {
             setAsking(null)
           })} />
       )}
+      {asking === 'sign' && (
+        <SignatureSheet passenger={leg.passenger} reasons={me.unsigned || {}} busy={busy}
+          onClose={() => setAsking(null)}
+          onFinish={(said) => act(async () => {
+            await call(`/legs/${leg.legid}/state`, { ...(await moment()), state: 'completed', ...said })
+            setAsking(null)
+          })} />
+      )}
       {asking === 'wait' && (
         <Picker title="What are you waiting on?" options={me.waitreasons}
           onClose={() => setAsking(null)}
@@ -892,6 +900,63 @@ function Trip({ me, leg, reporting, onBack, onDone, onCheck }) {
           })} />
       )}
     </Shell>
+  )
+}
+
+// The passenger signs with a finger at the drop-off, before the trip is finished. Where they cannot,
+// the driver says why - which goes with the trip to the office instead.
+function SignatureSheet({ passenger, reasons, busy, onFinish, onClose }) {
+  const pad = useRef(null)
+  const [drawn, setDrawn] = useState(false)
+  const [cannot, setCannot] = useState(false)
+  const [note, setNote] = useState('')
+  const last = useRef(null)
+  const at = (e) => {
+    const r = pad.current.getBoundingClientRect()
+    return [(e.clientX - r.left) * (pad.current.width / r.width), (e.clientY - r.top) * (pad.current.height / r.height)]
+  }
+  const down = (e) => { pad.current.setPointerCapture(e.pointerId); last.current = at(e) }
+  const move = (e) => {
+    if (!last.current) return
+    const g = pad.current.getContext('2d'), p = at(e)
+    g.lineWidth = 3; g.lineCap = 'round'; g.strokeStyle = '#13272b'
+    g.beginPath(); g.moveTo(...last.current); g.lineTo(...p); g.stroke()
+    last.current = p; setDrawn(true)
+  }
+  const up = () => { last.current = null }
+  const clear = () => { pad.current.getContext('2d').clearRect(0, 0, pad.current.width, pad.current.height); setDrawn(false) }
+  if (cannot) {
+    return (
+      <div className="dvsheet" role="dialog" aria-label="Why No Signature">
+        <div className="dvsheetbody">
+          <h2>Why can {passenger} not sign?</h2>
+          {Object.entries(reasons).map(([k, label]) => (
+            <button key={k} className="dvoption" disabled={busy || (k === 'other' && !note.trim())}
+              onClick={() => onFinish({ unsigned: k, unsignednote: note.trim() || null })}>{label}</button>
+          ))}
+          <label className="dvfield">Anything to add
+            <input value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          <button className="dvsecond" onClick={() => setCannot(false)}>Back To Signing</button>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="dvsheet" role="dialog" aria-label="Passenger Signature">
+      <div className="dvsheetbody">
+        <h2>{passenger}, please sign</h2>
+        <canvas ref={pad} className="dvsignpad" width={900} height={360}
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />
+        <button className="dvgo" disabled={busy || !drawn}
+          onClick={() => onFinish({ signature: pad.current.toDataURL('image/png') })}>
+          {busy ? 'Sending…' : 'Save And Finish The Trip'}
+        </button>
+        <button className="dvsecond" disabled={!drawn} onClick={clear}>Clear</button>
+        <button className="dvsecond" onClick={() => setCannot(true)}>Passenger Cannot Sign</button>
+        <button className="dvsecond" onClick={onClose}>Cancel</button>
+      </div>
+    </div>
   )
 }
 

@@ -188,6 +188,11 @@ def change_account_user(userid: str, body: AccountUserPatch, request: Request,
     """, n=(body.name or "").strip() or None, r=body.role,
         dis=None if body.disabled is None else (1 if body.disabled else 0),
         now=utcnow(), u=userid, a=user["accountid"])
+    # Gone from the company, gone from its appointments: a DER nobody can reach is no DER, and the
+    # requirement has to say so. The rows keep the date. Reopening the login does not restore them.
+    if body.disabled:
+        run(conn, "UPDATE companyroles SET until = :on WHERE accountid = :a AND userid = :u AND until IS NULL",
+            on=localnow(user["timezone"]).date(), a=user["accountid"], u=userid)
     _alerts(conn, user["accountid"], userid, body.mobile, body.dispatchalerts)
     log(conn, user, "account-change-user", "user", userid, body.model_dump(exclude_none=True),
         ip=client_ip(request))

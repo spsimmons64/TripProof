@@ -57,6 +57,7 @@ class RateIn(BaseModel):
     amount: float = 0
     includedunits: float | None = None
     minimumunits: float | None = None
+    cancelwithinhours: float | None = None    # late cancellation only: hours before the pickup
     rounding: str | None = None
     proceduracode: str | None = None
     modifier: str | None = None

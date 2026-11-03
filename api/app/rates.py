@@ -15,6 +15,7 @@ from datetime import date
 
 from decimal import Decimal
 
+from fastapi import HTTPException
 from sqlalchemy.engine import Connection
 
 from app import payerlines
@@ -52,6 +53,7 @@ RATE_TYPES = {
     "flat": "Flat trip rate",
     "surcharge": "Surcharge",
     "noshow": "No-show",
+    "latecancel": "Late cancellation",
 }
 
 UNITS = {
@@ -316,12 +318,14 @@ def save_rates(conn: Connection, accountid: str, scheduleid: str, lines: list[di
     for order, line in enumerate(lines):
         if line.get("ratetype") not in RATE_TYPES:
             continue
+        if line["ratetype"] == "latecancel" and not (line.get("cancelwithinhours") or 0) > 0:
+            raise HTTPException(400, "Say how many hours before the pickup a cancellation counts as late")
         run(conn, """
             INSERT INTO payerrates (recordid, accountid, scheduleid, ratetype, name,
-                                    servicelevel, unit, amount, includedunits, minimumunits,
+                                    servicelevel, unit, amount, includedunits, minimumunits, cancelwithinhours,
                                     rounding, proceduracode, modifier, authrequired, note,
                                     loadedonly, sortorder)
-            VALUES (:i, :a, :s, :t, :nm, :svc, :u, :amt, :inc, :min, :rnd, :code, :mod, :auth,
+            VALUES (:i, :a, :s, :t, :nm, :svc, :u, :amt, :inc, :min, :late, :rnd, :code, :mod, :auth,
                     :note, :loaded, :o)
         """, i=newid(), a=accountid, s=scheduleid, t=line["ratetype"],
             nm=(line.get("name") or "").strip()[:80] or None,
@@ -331,7 +335,7 @@ def save_rates(conn: Connection, accountid: str, scheduleid: str, lines: list[di
             loaded=(1 if line.get("loadedonly") else 0)
                    if line["ratetype"] == "mileage" else None,
             amt=line.get("amount") or 0, inc=line.get("includedunits"),
-            min=line.get("minimumunits"), rnd=line.get("rounding") or None,
+            min=line.get("minimumunits"), late=line.get("cancelwithinhours") if line["ratetype"] == "latecancel" else None, rnd=line.get("rounding") or None,
             code=(line.get("proceduracode") or "").strip()[:16] or None,
             mod=(line.get("modifier") or "").strip()[:8] or None,
             auth=1 if line.get("authrequired") else 0,

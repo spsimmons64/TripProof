@@ -913,6 +913,7 @@ function WhatHappenedDialog({ leg, options, settling, onCancel, onClose, onDone 
   const [note, setNote] = useState('')
   const [pickedupat, setPicked] = useState('')
   const [droppedoffat, setDropped] = useState('')
+  const [miles, setMiles] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const driven = outcome === 'driven'
@@ -925,6 +926,7 @@ function WhatHappenedDialog({ leg, options, settling, onCancel, onClose, onDone 
         outcome, note,
         pickedupat: driven && pickedupat ? pickedupat : null,
         droppedoffat: driven && droppedoffat ? droppedoffat : null,
+        miles: driven && miles !== '' ? Number(miles) : null,
       })
       onDone()
     } catch (e) { setErr(e.message); setBusy(false) }
@@ -980,6 +982,9 @@ function WhatHappenedDialog({ leg, options, settling, onCancel, onClose, onDone 
             <label className="field span-3">Dropped Off At *
               <input type="datetime-local" value={droppedoffat}
                 onChange={(e) => setDropped(e.target.value)} /></label>
+            <label className="field span-3">Miles
+              <input type="number" min="0" step="0.1" value={miles}
+                onChange={(e) => setMiles(e.target.value)} /></label>
           </>}
           <label className="field span-6">
             {settling ? 'On What Basis It Was Settled *' : outcome === 'disputed' ? 'What Is In Dispute *' : 'Note'}

@@ -204,7 +204,7 @@ def who_am_i(driver: dict = Depends(current_driver)):
     return {"driverid": driver["recordid"],
             "name": f'{driver["firstname"]} {driver["lastname"]}'.strip(),
             "company": driver["accountname"], "timezone": driver["timezone"],
-            "issues": ISSUES, "waitreasons": WAIT_REASONS}
+            "issues": ISSUES, "waitreasons": WAIT_REASONS, "unsigned": NO_SIGNATURE}
 
 
 # -------------------------------------------------------------------------------------------
@@ -426,6 +426,14 @@ class Moment(BaseModel):
 class StateIn(Moment):
     state: str
     miles: float | None = None        # how far the leg ran - a distance, never an odometer reading
+    signature: str | None = None      # completed: the passenger's signature, a PNG data URL
+    unsigned: str | None = None       # completed: or why there is none (NO_SIGNATURE)
+    unsignednote: str | None = None
+
+
+# Why a passenger did not sign at the drop-off, as the driver says it.
+NO_SIGNATURE = {"unable": "Physically unable to sign", "refused": "Refused to sign",
+                "other": "Something else"}
 
 
 class WaitIn(Moment):
@@ -557,6 +565,19 @@ def move_leg(legid: str, body: StateIn, request: Request,
             dispatch.plausible_miles(body.miles)
             run(conn, "UPDATE triplegs SET miles = :m, milessource = 'app' WHERE recordid = :l",
                 m=body.miles, l=legid)
+        # The passenger's signature, or why there is none. Proof the trip was given, kept with it.
+        if body.signature or body.unsigned:
+            if body.signature and not (body.signature.startswith("data:image/png;base64,") and len(body.signature) <= 400_000):
+                raise HTTPException(400, "That signature could not be read. Ask the passenger to sign again.")
+            if not body.signature and body.unsigned not in NO_SIGNATURE:
+                raise HTTPException(400, "Say why the passenger did not sign")
+            run(conn, """
+                REPLACE INTO legsignatures (legid, accountid, driverid, image, nosignature, note, signedon)
+                VALUES (:l, :a, :d, :img, :why, :n, :now)
+            """, l=legid, a=driver["accountid"], d=driver["recordid"], img=body.signature,
+                why=None if body.signature else body.unsigned,
+                n=None if body.signature else " ".join((body.unsignednote or "").split()).upper()[:400] or None, now=now)
+            run(conn, "UPDATE triplegs SET signature = :s WHERE recordid = :l", s=1 if body.signature else 0, l=legid)
         _settle_verify(conn, driver["accountid"], leg["tripid"])
 
     _place(conn, driver, body, legid)

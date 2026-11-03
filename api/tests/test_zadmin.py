@@ -177,7 +177,9 @@ def test_account_statuses(client, admin, db):
 
 def test_customer_grid_filters_and_sort(client, admin):
     h = admin["h"]
-    get = lambda **kw: client.get("/api/admin/accounts", params={"pagesize": 100, **kw}, headers=h).json()
+    # Every customer on one page: the acceptance tests make a company each, and a page cut short
+    # makes the first page of a descending sort something other than the ascending one reversed.
+    get = lambda **kw: client.get("/api/admin/accounts", params={"pagesize": 1000, **kw}, headers=h).json()
     all_ = get()
     names = [a["name"] for a in get(sort="name")["items"]]
     assert names == sorted(names, key=str.lower)

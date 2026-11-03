@@ -268,6 +268,22 @@ def availability(conn: Connection, accountid: str, legid: str) -> list[str]:
         WHERE s.accountid = :a AND s.workday = :w
     """, a=accountid, w=day)
     if not shifts:
+        # Picked up inside the company's hours, or with somebody on call then.
+        from app.routers.shifts import company_hours
+        h = company_hours(conn, accountid, day)
+        if h:
+            opens, closes = plan.span(day, h["open"], h["close"]) if not h.get("closed") else (None, None)
+            if not (opens and opens <= leg["pickupat"] < closes):
+                covered = any(a <= leg["pickupat"] < b for a, b in
+                              (plan.span(day, o["startsat"], o["endsat"]) for o in plan.on_call(conn, accountid, day)))
+                if not covered:
+                    if opens is None:
+                        return [f"You are closed on {day:%A}s and nobody is on call that day. Put somebody on the "
+                                f"On Call List for {day:%m/%d}, or book it for another day."]
+                    if leg["pickupat"] < opens:
+                        return [f"The {at} pickup is before you open at {opens:%-I:%M %p}."]
+                    return [f"The {at} pickup is after your {closes:%-I:%M %p} closing and nobody is on call that "
+                            f"evening. Put somebody on the On Call List for {day:%m/%d}, or book it for another time."]
         # Nobody put in a vehicle yet: every hired driver not out then, and the fleet in service.
         # Out is only a warning on an assignment (the dispatcher may know better on the day), but it
         # is not capacity to book against.
@@ -280,7 +296,7 @@ def availability(conn: Connection, accountid: str, legid: str) -> list[str]:
         vehicles = [v for v in said.get("vehicles", []) if not v["blocked"]]
         if drivers and vehicles:
             return _crowded(conn, accountid, leg, _ends(leg), {d["driverid"] for d in drivers},
-                                    fleet=len(vehicles))
+                                    fleet={v["vehicleid"] for v in vehicles})
         if not drivers:
             return [f"No driver can take the {at} pickup."] + [
                 f"{d['name'].title()}: {d['blocked'][0]}" for d in said.get("drivers", [])[:4]]
@@ -318,7 +334,7 @@ def availability(conn: Connection, accountid: str, legid: str) -> list[str]:
 
 
 def _crowded(conn: Connection, accountid: str, leg: dict, end: datetime, clear: set[str],
-             vehicle_of: dict | None = None, fleet: int | None = None) -> list[str]:
+             vehicle_of: dict | None = None, fleet: set[str] | None = None) -> list[str]:
     """Whether the drivers who can take this leg are already spoken for by trips booked at the same
     time and still waiting for a driver. At each moment of this trip, it and every waiting trip
     running then need a driver of their own, each from the drivers who could take it (a wheelchair
@@ -354,6 +370,9 @@ def _crowded(conn: Connection, accountid: str, leg: dict, end: datetime, clear: 
         fits = {v["vehicleid"] for v in said.get("vehicles", []) if not v["blocked"]}
         w["can"] = {d["driverid"] for d in said.get("drivers", []) if not d["blocked"]
                     and (not vehicle_of or vehicle_of.get(d["driverid"]) in fits)}
+        # And, with nobody in a vehicle yet, the vehicles that could carry it: an ambulatory trip
+        # does not need the lift a wheelchair trip does, so it does not use one up.
+        w["fits"] = fits
 
     def covered(need: list[set[str]]) -> bool:
         """Whether each of these can have a driver of its own from its set (augmenting paths)."""
@@ -371,8 +390,17 @@ def _crowded(conn: Connection, accountid: str, leg: dict, end: datetime, clear: 
 
     for t in [leg["pickupat"]] + [w["from"] for w in waiting if leg["pickupat"] < w["from"] < end]:
         now = [w for w in waiting if w["from"] <= t < w["end"]]
-        if covered([clear] + [w["can"] for w in now]) and (fleet is None or len(now) < fleet):
+        drivers_ok = covered([clear] + [w["can"] for w in now])
+        if drivers_ok and (fleet is None or covered([fleet] + [w["fits"] for w in now])):
             continue
+        if drivers_ok:
+            # Drivers enough; what runs out is the vehicles that can carry it.
+            rivals = [w for w in now if w["fits"] & fleet] or now
+            refs = ", ".join(w["externalid"] for w in rivals[:4]) + (" and more" if len(rivals) > 4 else "")
+            many, n = len(fleet), len(rivals)
+            return [f"{many} vehicle{'s' if many != 1 else ''} can carry the {leg['pickupat']:%-I:%M %p} pickup, "
+                    f"and {n} trip{'s' if n != 1 else ''} already booked then {'needs' if n == 1 else 'need'} "
+                    f"{'it' if many == 1 else 'them'}: {refs}. Assign those first, or book this for another time."]
         # Named: the waiting trips that can only have the drivers this one needs - not one another
         # driver could take as well.
         rivals = ([w for w in now if w["can"] and w["can"] <= clear]

@@ -34,12 +34,15 @@ router = APIRouter(prefix="/api/trip-billing", tags=["tripbilling"])
 
 # Finished: no leg is still to happen, and there is something that may be owed for.
 FINISHED = """
-    t.deleted IS NULL AND t.cancelledon IS NULL AND t.brokerstate <> 'returned'
+    t.deleted IS NULL AND t.brokerstate <> 'returned'
     AND NOT EXISTS (SELECT 1 FROM triplegs o WHERE o.tripid = t.recordid AND o.executionstate <> 'completed'
                      AND o.outcomestate IS NULL AND COALESCE(o.brokerstate, '') <> 'returned')
     AND EXISTS (SELECT 1 FROM triplegs o WHERE o.tripid = t.recordid
-                 AND (o.executionstate = 'completed' OR o.outcomestate IN ('noshow', 'disputed')))
+                 AND (o.executionstate = 'completed' OR o.outcomestate IN ('noshow', 'disputed', 'cancelled')))
 """
+# Who called it off decides whether a late cancellation can be charged at all. Booked twice, or a
+# trip this company could not cover, is never the payer's to pay for.
+CHARGED_CANCELS = ("passenger", "facility", "broker", "nolongerneeded")
 CENT = Decimal("0.01")
 
 
@@ -83,6 +86,7 @@ def price(conn: Connection, acct: str, trip: dict, legs: list[dict]) -> dict:
             if (r["servicelevel"] or "") in ("", trip["servicelevel"])]
     pick = lambda kind: next((r for r in mine if r["ratetype"] == kind), None)  # noqa: E731
     lines = []
+    charged = {"noshow": Decimal("0"), "late": Decimal("0"), "hours": None}
 
     def add(leg, label, r, units):
         lines.append({"legid": leg and leg["legid"], "label": label, "code": _code(r), "units": units, "rate": _money(r["amount"]),
@@ -95,6 +99,7 @@ def price(conn: Connection, acct: str, trip: dict, legs: list[dict]) -> dict:
         if l["outcome"] == "noshow":
             if noshow:
                 add(l, f"{name} no-show", noshow, Decimal(1))
+                charged["noshow"] += lines[-1]["amount"]
             continue
         if not l["driven"]:
             continue
@@ -118,10 +123,23 @@ def price(conn: Connection, acct: str, trip: dict, legs: list[dict]) -> dict:
             units = _waited(l["waitminutes"], wait)
             if units > 0:
                 add(l, f"{name} waiting {l['waitminutes']} minutes", wait, units)
+    # Called off inside the rate's window, by somebody whose cancellation can be charged. A will-call
+    # has no pickup time for a cancellation to be late against.
+    late = pick("latecancel")
+    if late and late["cancelwithinhours"] and trip.get("cancelledon") and trip.get("cancelreason") in CHARGED_CANCELS:
+        zone = dispatch.zone(conn, acct)
+        ahead = {l["legid"]: (_as_instant(l["pickupat"], zone) - trip["cancelledon"]).total_seconds() / 3600
+                 for l in legs if l["outcome"] == "cancelled" and l["pickupat"]}
+        hit = [l for l in legs if l["legid"] in ahead and ahead[l["legid"]] <= float(late["cancelwithinhours"])]
+        for l in hit if late["unit"] == "leg" else hit[:1]:
+            add(l, f"Leg {l['legnumber']} late cancellation" if late["unit"] == "leg" else "Late cancellation", late, Decimal(1))
+            charged["late"] += lines[-1]["amount"]
+        if hit:
+            charged["hours"] = max(0.0, ahead[hit[0]["legid"]])
     for s in (r for r in mine if r["ratetype"] == "surcharge"):
         if driven:
             add(None, s["name"] or "Surcharge", s, Decimal(1 if s["unit"] != "leg" else len(driven)))
-    return {"lines": lines, "amount": sum((x["amount"] for x in lines), Decimal("0")), "scheduleid": card["recordid"], "usesmiles": bool(mileage and not flat),
+    return {"lines": lines, "amount": sum((x["amount"] for x in lines), Decimal("0")), "scheduleid": card["recordid"], "usesmiles": bool(mileage and not flat), **charged,
             "why": None if lines else "The fee schedule prices nothing for this service."}
 
 
@@ -130,9 +148,11 @@ def _legs(conn: Connection, acct: str, tripid: str) -> list[dict]:
     out = []
     for l in rows(conn, """
         SELECT l.recordid, l.legnumber, l.pickupat, l.pickupplace, l.dropoffplace, l.executionstate, l.outcomestate, l.brokerstate,
-               l.driverid, l.miles, l.officemiles, l.officemilesreason, l.signature, l.selfassignedon, l.afterhoursreviewedon,
+               l.driverid, l.miles, l.officemiles, l.officemilesreason, l.signature, ls.nosignature AS `unsigned`, ls.note AS unsignednote,
+               ls.image IS NOT NULL AS signedhere, l.selfassignedon, l.afterhoursreviewedon,
                TRIM(CONCAT(d.firstname, ' ', d.lastname)) AS drivername, v.externalid AS vehiclename
         FROM triplegs l LEFT JOIN drivers d ON d.recordid = l.driverid LEFT JOIN vehicles v ON v.recordid = l.vehicleid
+        LEFT JOIN legsignatures ls ON ls.legid = l.recordid
         WHERE l.tripid = :t AND l.accountid = :a ORDER BY l.legnumber
     """, t=tripid, a=acct):
         said = {e["state"]: e["at"] for e in rows(conn, "SELECT state, MIN(happenedon) AS at FROM tripevents WHERE legid = :l GROUP BY state", l=l["recordid"])}
@@ -149,9 +169,10 @@ def _legs(conn: Connection, acct: str, tripid: str) -> list[dict]:
             miles, source = float(l["officemiles"]), "Office"
         waits = rows(conn, "SELECT endedon, TIMESTAMPDIFF(MINUTE, startedon, COALESCE(endedon, startedon)) AS minutes FROM tripwaits WHERE legid = :l", l=l["recordid"])
         out.append({"legid": l["recordid"], "legnumber": l["legnumber"], "pickupplace": l["pickupplace"], "dropoffplace": l["dropoffplace"],
-                    "drivername": l["drivername"], "vehiclename": l["vehiclename"], "aboardat": said.get("onboard"), "droppedat": said.get("completed"),
+                    "pickupat": l["pickupat"], "drivername": l["drivername"], "vehiclename": l["vehiclename"], "aboardat": said.get("onboard"), "droppedat": said.get("completed"),
                     "miles": miles, "milessource": source, "milesreason": l["officemilesreason"], "waitminutes": sum(w["minutes"] or 0 for w in waits),
                     "openwait": any(w["endedon"] is None for w in waits), "signature": bool(l["signature"]), "driven": driven,
+                    "signedhere": bool(l["signedhere"]), "unsigned": l["unsigned"], "unsignednote": l["unsignednote"],
                     "outcome": l["outcomestate"], "afterhours": bool(l["selfassignedon"] and not l["afterhoursreviewedon"]),
                     "state": {"cancelled": "Canceled", "noshow": "No-Show", "aborted": "Not Done By Us", "disputed": "In Dispute"}.get(l["outcomestate"])
                     or ("Returned To Broker" if l["brokerstate"] == "returned" else "Driven" if driven else "Not Driven")})
@@ -170,12 +191,15 @@ def _read(conn: Connection, acct: str, trip: dict) -> dict:
         if l["driven"]:
             if l["milessource"] == "Driver":
                 reasons.append(f"{name} has no GPS trail; {l['miles']:.1f} miles is the driver's figure.")
-            if not l["signature"]:
+            if not l["signature"] and l["unsigned"]:
+                from app.routers.driverapp import NO_SIGNATURE
+                said = NO_SIGNATURE.get(l["unsigned"], l["unsigned"]).lower() if l["unsigned"] != "other" else None
+                reasons.append(f"{name} has no signature: " + " - ".join(x for x in (said, l["unsignednote"]) if x)
+                               + ("." if said or l["unsignednote"] else "the driver gave no reason."))
+            elif not l["signature"]:
                 reasons.append(f"{name} has no signature.")
         if l["openwait"]:
             reasons.append(f"{name} has a wait that was never ended.")
-        if l["outcome"] == "noshow":
-            reasons.append(f"{name} was a no-show: bill it only if the contract pays one.")
     for i in rows(conn, "SELECT note, kind FROM tripissues WHERE tripid = :t AND resolvedon IS NULL", t=trip["recordid"]):
         stops.append(f"A problem the driver reported is still open: {i['note'] or i['kind']}.")
     for d in rows(conn, "SELECT reason FROM tripdisputes WHERE tripid = :t AND settledon IS NULL", t=trip["recordid"]):
@@ -185,12 +209,18 @@ def _read(conn: Connection, acct: str, trip: dict) -> dict:
                       t=trip["recordid"], r=trip["lastrunid"]):
             stops.append(f"Failed requirement: {c['rulename'] or 'a requirement'}{' - ' + c['reason'] if c['reason'] else ''}.")
     priced = price(conn, acct, trip, legs)
+    if priced.get("noshow"):
+        reasons.append(f"A no-show comes to ${priced['noshow']:,.2f} under the fee schedule. Clear it to bill it, or Hold it.")
+    if priced.get("late"):
+        reasons.append(f"Canceled {priced['hours']:.1f} hours before the pickup: a late cancellation of ${priced['late']:,.2f} "
+                       f"under the fee schedule. Clear it to bill it, or Hold it.")
     if priced["why"]:
         stops.append(priced["why"])
     # Billed with no miles, the mileage charge is simply lost: they are entered first.
     if priced["usesmiles"]:
         stops += [f"Leg {l['legnumber']} has no miles. Enter them with Correct Miles." for l in legs if l["driven"] and l["miles"] is None]
-    held = trip["verifystate"] == "needscorrection" or trip["billingstatus"] == "held"
+    # Canceling a trip parks it as held with no reason given: that is not somebody holding it.
+    held = trip["verifystate"] == "needscorrection" or (trip["billingstatus"] == "held" and bool(trip["holdreason"] or not trip["cancelledon"]))
     if trip["verifystate"] == "verified" and not held:
         reasons = []                               # a person has looked, and cleared them
     if held:
@@ -200,7 +230,7 @@ def _read(conn: Connection, acct: str, trip: dict) -> dict:
 
 TRIP = """
     SELECT t.recordid, t.externalid, t.tripdate, t.passenger, t.servicelevel, t.brokerid, t.verifystate, t.billingstatus,
-           t.holdreason, t.lastrunid, t.billedamount, t.billbatchid, COALESCE(b.name, 'Private Pay') AS payer,
+           t.holdreason, t.cancelledon, t.cancelreason, t.lastrunid, t.billedamount, t.billbatchid, COALESCE(b.name, 'Private Pay') AS payer,
            bb.number AS batchnumber, bb.createdon AS batchedon, t.billinvoiceid, inv.number AS invoicenumber,
            inv.billtoemail, inv.emailedon, inv.emailerror,
            COALESCE(bb.createdon, inv.createdon) AS billedon, inv.remindercount, inv.lastremindedon,
@@ -217,7 +247,10 @@ def _unbilled(conn: Connection, acct: str) -> list[dict]:
     out = rows(conn, f"{TRIP} WHERE t.accountid = :a AND t.billingstatus IN ('unbilled', 'held') AND {FINISHED} ORDER BY t.tripdate, t.externalid", a=acct)
     for t in out:
         t.update(_read(conn, acct, t))
-    return out
+    # Nothing driven and nothing the schedule charges for it: nothing is owed, so nobody has to look.
+    # It comes back by itself if the rate is added, because a trip is priced live until it is billed.
+    return [t for t in out if t["priced"]["lines"] or any(l["driven"] for l in t["legs"])
+            or (t["priced"]["scheduleid"] is None and not t["cancelledon"])]
 
 
 def _row(t: dict) -> dict:
@@ -660,6 +693,18 @@ def correct_miles(legid: str, body: MilesIn, request: Request, user: dict = Depe
     log(conn, user, "leg-miles-corrected", "trip", leg["tripid"], {"leg": legid, "miles": str(body.miles), "reason": reason}, ip=client_ip(request))
     saved(conn)
     return {"ok": True}
+
+
+@router.get("/legs/{legid}/signature")
+def leg_signature(legid: str, request: Request, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """The passenger's signature taken on the driver's phone at the drop-off."""
+    got = row(conn, "SELECT image, signedon FROM legsignatures WHERE legid = :l AND accountid = :a AND image IS NOT NULL",
+              l=legid, a=user["accountid"])
+    if not got:
+        raise HTTPException(404, "No signature was taken on this leg")
+    log(conn, user, "signature-viewed", "leg", legid, {}, phi=True, ip=client_ip(request))
+    saved(conn)
+    return got
 
 
 @router.get("/batches/{batchid}")
