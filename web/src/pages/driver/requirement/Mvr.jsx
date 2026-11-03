@@ -102,7 +102,7 @@ export function MvrDialog({ busy, cancelMvr, coverage, data, err, form, mvrHisto
                       )}
                       {s.barred && (
                         <button type="button"
-                          onClick={() => { setForm({ ...form, mvrid: s.barred.recordid, note: '', licenselabel: label }); setFiling('mvr-clear') }}>
+                          onClick={() => { setForm({ ...form, mvrid: s.barred.recordid, note: '', how: '', result: 'qualified', licenselabel: label }); setFiling('mvr-clear') }}>
                           Clear Disqualification
                         </button>
                       )}
@@ -200,7 +200,7 @@ export function MvrClearDialog({ busy, clearMvr, err, form, setFiling, setForm }
     return (
       <Modal title="Clear Disqualification" onClose={() => setFiling(false)} width={560}
         footer={<>
-          <button type="button" className="primary" disabled={busy || !form.note.trim()} onClick={clearMvr}>
+          <button type="button" className="primary" disabled={busy || !form.how || !form.note.trim()} onClick={clearMvr}>
             {busy ? <Loader2 size={15} className="spin" /> : 'Save'}
           </button>
           <button type="button" onClick={() => setFiling(false)}>Cancel</button>
@@ -208,6 +208,23 @@ export function MvrClearDialog({ busy, clearMvr, err, form, setFiling, setForm }
         <div className="stack">
           {err && <div className="notice bad">{err}</div>}
           <div className="muted small">{form.licenselabel}</div>
+          <div>
+            {[['ended', 'The Disqualification Has Ended', 'A newer record for this state, read as Qualified, has to be on file.'],
+              ['misread', 'It Was Read Wrong', 'The record never disqualified the driver. It is read again as what it says.']].map(([v, l, means]) => (
+              <label key={v} className={`tierpick${form.how === v ? ' on' : ''}`}>
+                <input type="radio" name="clearhow" checked={form.how === v} onChange={() => setForm({ ...form, how: v })} />
+                <span className="tierbody"><span className="tiername">{l}</span><span className="tiercovers">{means}</span></span>
+              </label>
+            ))}
+          </div>
+          {form.how === 'misread' && (
+            <label className="field">What The Record Says *
+              <select value={form.result} onChange={(e) => setForm({ ...form, result: e.target.value })}>
+                <option value="qualified">Qualified</option>
+                <option value="restricted">Restricted</option>
+              </select>
+            </label>
+          )}
           <label className="field">Reason *
             <textarea rows={3} className="upper" value={form.note}
               onChange={(e) => setForm({ ...form, note: e.target.value.toUpperCase() })} />

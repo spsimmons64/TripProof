@@ -14,6 +14,7 @@ Miles are the GPS trail with the passenger aboard; the driver's figure only wher
 import csv
 import io
 import secrets
+from datetime import timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -76,8 +77,14 @@ def _waited(minutes: int, r: dict) -> Decimal:
     return max(Decimal(0), units - free)
 
 
+def _terms(conn: Connection, acct: str, brokerid: str | None) -> dict:
+    """What the company's contract with this broker says (Payers, Broker Rules). Nothing for private pay."""
+    return (row(conn, "SELECT * FROM accountpayers WHERE accountid = :a AND payerid = :p", a=acct, p=brokerid) or {}) if brokerid else {}
+
+
 def price(conn: Connection, acct: str, trip: dict, legs: list[dict]) -> dict:
     """The trip's charge lines under the schedule in force on its date, or why there are none."""
+    terms = _terms(conn, acct, trip["brokerid"])
     start = next((l["pickupplace"] for l in legs if l["pickupplace"]), None)
     card = rates.in_force(conn, acct, payerid=trip["brokerid"], on=trip["tripdate"], state=tripcheck.pickup_state(start))
     if not card:
@@ -114,15 +121,18 @@ def price(conn: Connection, acct: str, trip: dict, legs: list[dict]) -> dict:
             once["base"] = True
         if mileage and l["miles"] is not None:
             miles = _rounded(Decimal(str(l["miles"])), mileage["rounding"])
+            if terms.get("milecap") is not None:
+                miles = min(miles, Decimal(str(terms["milecap"])))      # the most the broker pays for
             over = max(Decimal(0), miles - Decimal(str(mileage["includedunits"] or 0)))
             if mileage["minimumunits"] is not None:
                 over = max(over, Decimal(str(mileage["minimumunits"])))
             if over > 0:
                 add(l, f"{name} loaded miles", mileage, over)
         if wait and l["waitminutes"]:
-            units = _waited(l["waitminutes"], wait)
+            waited = min(l["waitminutes"], terms["waitcapminutes"]) if terms.get("waitcapminutes") else l["waitminutes"]
+            units = _waited(waited, wait)
             if units > 0:
-                add(l, f"{name} waiting {l['waitminutes']} minutes", wait, units)
+                add(l, f"{name} waiting {l['waitminutes']} minutes" + (f", {waited} paid" if waited < l["waitminutes"] else ""), wait, units)
     # Called off inside the rate's window, by somebody whose cancellation can be charged. A will-call
     # has no pickup time for a cancellation to be late against.
     late = pick("latecancel")
@@ -184,6 +194,9 @@ def _read(conn: Connection, acct: str, trip: dict) -> dict:
     `reasons` a person can clear."""
     legs = _legs(conn, acct, trip["recordid"])
     stops, reasons = [], []
+    terms = _terms(conn, acct, trip["brokerid"])
+    # Where the broker requires a signature on every leg, one missing is not for a person to wave through.
+    unsigned = stops if terms.get("signaturerequired") else reasons
     for l in legs:
         name = f"Leg {l['legnumber']}"
         if l["afterhours"]:
@@ -194,10 +207,10 @@ def _read(conn: Connection, acct: str, trip: dict) -> dict:
             if not l["signature"] and l["unsigned"]:
                 from app.routers.driverapp import NO_SIGNATURE
                 said = NO_SIGNATURE.get(l["unsigned"], l["unsigned"]).lower() if l["unsigned"] != "other" else None
-                reasons.append(f"{name} has no signature: " + " - ".join(x for x in (said, l["unsignednote"]) if x)
+                unsigned.append(f"{name} has no signature: " + " - ".join(x for x in (said, l["unsignednote"]) if x)
                                + ("." if said or l["unsignednote"] else "the driver gave no reason."))
             elif not l["signature"]:
-                reasons.append(f"{name} has no signature.")
+                unsigned.append(f"{name} has no signature.")
         if l["openwait"]:
             reasons.append(f"{name} has a wait that was never ended.")
     for i in rows(conn, "SELECT note, kind FROM tripissues WHERE tripid = :t AND resolvedon IS NULL", t=trip["recordid"]):
@@ -209,6 +222,11 @@ def _read(conn: Connection, acct: str, trip: dict) -> dict:
                       t=trip["recordid"], r=trip["lastrunid"]):
             stops.append(f"Failed requirement: {c['rulename'] or 'a requirement'}{' - ' + c['reason'] if c['reason'] else ''}.")
     priced = price(conn, acct, trip, legs)
+    billby = trip["tripdate"] + timedelta(days=terms["billdays"]) if terms.get("billdays") else None
+    if billby and trip["billingstatus"] in ("unbilled", "held") and localnow(dispatch.zone(conn, acct)).date() > billby:
+        stops.append(f"{trip['payer']} pays only for trips billed within {terms['billdays']} days. This one had to be billed by {billby:%m/%d/%Y}.")
+    if terms.get("tripnumberrequired") and not trip.get("brokertripno"):
+        stops.append(f"{trip['payer']} needs its own trip number on every claim. Enter it with Edit Trip.")
     if priced.get("noshow"):
         reasons.append(f"A no-show comes to ${priced['noshow']:,.2f} under the fee schedule. Clear it to bill it, or Hold it.")
     if priced.get("late"):
@@ -225,12 +243,12 @@ def _read(conn: Connection, acct: str, trip: dict) -> dict:
         reasons = []                               # a person has looked, and cleared them
     if held:
         reasons.insert(0, trip["holdreason"] or "On hold.")
-    return {"legs": legs, "stops": stops, "reasons": reasons, "priced": priced}
+    return {"legs": legs, "stops": stops, "reasons": reasons, "priced": priced, "billby": billby}
 
 
 TRIP = """
     SELECT t.recordid, t.externalid, t.tripdate, t.passenger, t.servicelevel, t.brokerid, t.verifystate, t.billingstatus,
-           t.holdreason, t.cancelledon, t.cancelreason, t.lastrunid, t.billedamount, t.billbatchid, COALESCE(b.name, 'Private Pay') AS payer,
+           t.holdreason, t.cancelledon, t.cancelreason, t.brokertripno, t.lastrunid, t.billedamount, t.billbatchid, COALESCE(b.name, 'Private Pay') AS payer,
            bb.number AS batchnumber, bb.createdon AS batchedon, t.billinvoiceid, inv.number AS invoicenumber,
            inv.billtoemail, inv.emailedon, inv.emailerror,
            COALESCE(bb.createdon, inv.createdon) AS billedon, inv.remindercount, inv.lastremindedon,
@@ -260,7 +278,7 @@ def _row(t: dict) -> dict:
             "paid": float(t["paid"] or 0), "writedown": float(t["writedown"] or 0) - float(t["refunded"] or 0), "refunded": float(t["refunded"] or 0),
             "owing": float(_owing(t)) if not t.get("priced") else None, "billedon": t["billedon"],
             "age": (utcnow() - t["billedon"]).days if t["billedon"] else None, "miles": round(sum(l["miles"] or 0 for l in t["legs"]), 1) if t.get("legs") else None,
-            "note": None, "reason": said[0] if said else None, "more": max(0, len(said) - 1)}
+            "note": None, "reason": said[0] if said else None, "more": max(0, len(said) - 1), "billby": t.get("billby")}
 
 
 SORTS = {"tripdate": "tripdate", "externalid": "externalid", "passenger": "passenger", "payer": "payer", "amount": "amount",
@@ -303,6 +321,7 @@ def queue(state: str = "ready", payer: str | None = None, q: str | None = None, 
                    reverse=str(dir).lower() == "desc")
     pagesize = max(1, min(pagesize, 200))
     return {"items": items[(max(1, page) - 1) * pagesize:max(1, page) * pagesize], "total": len(items), "page": page, "pagesize": pagesize, "payers": payers, "aging": aging, "batches": batches,
+            "toprint": row(conn, f"SELECT COUNT(*) AS n {TO_PRINT}", **_due(acct))["n"],
             "tiles": {"ready": {"count": len(ready), "amount": sum(t["amount"] for t in ready)},
                       "submitted": {"count": len(submitted), "amount": sum(t["amount"] for t in submitted)},
                       "exceptions": {"count": len(excepted)}, "paid": {"count": len(paid), "amount": float(received)},
@@ -461,6 +480,48 @@ def invoice_pdf(conn: Connection, acct: str, wanted: list[str]) -> bytes:
     return view.to_pdf({"css": view.STYLE, "html": "".join(sheets), "title": title})
 
 
+# Unpaid invoices with nowhere to email them: what has to go by post. The invoice itself until it is
+# printed; after that a reminder, on the same days an emailed invoice gets one (REMINDERS, below).
+TO_PRINT = """
+    FROM tripinvoices i JOIN trips t ON t.recordid = i.tripid AND t.billinvoiceid = i.recordid
+     AND t.billingstatus = 'billed' AND t.deleted IS NULL
+    WHERE i.accountid = :a AND i.billtoemail IS NULL
+      AND (i.printedon IS NULL OR (i.remindercount < 2 AND DATEDIFF(UTC_TIMESTAMP(), i.createdon)
+           >= CASE i.remindercount WHEN 0 THEN :r0 ELSE :r1 END))
+"""
+
+
+def _due(acct: str) -> dict:
+    return {"a": acct, "r0": REMINDERS[0], "r1": REMINDERS[1]}
+
+
+@router.get("/invoices/to-print")
+def to_print(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    return {"items": rows(conn, f"""SELECT i.recordid AS invoiceid, i.number, i.billtoname, i.amount, i.createdon AS issuedon,
+                                          CASE WHEN i.printedon IS NULL THEN 'Invoice' ELSE CONCAT('Reminder ', i.remindercount + 1) END AS what
+                                   {TO_PRINT} ORDER BY i.number""", **_due(user["accountid"]))}
+
+
+class PrintedIn(BaseModel):
+    ids: list[str]
+
+
+@router.post("/invoices/printed")
+def printed(body: PrintedIn, request: Request, user: dict = Depends(editor), conn: Connection = Depends(get_conn)):
+    acct = user["accountid"]
+    due = {r["recordid"] for r in rows(conn, f"SELECT i.recordid {TO_PRINT} AND i.recordid IN :i", i=tuple(body.ids) or ("",), **_due(acct))}
+    done = 0
+    for i in due:
+        done += run(conn, """UPDATE tripinvoices SET printedby = :by,
+                                    remindercount = remindercount + (printedon IS NOT NULL),
+                                    lastremindedon = IF(printedon IS NOT NULL, :now, lastremindedon),
+                                    printedon = COALESCE(printedon, :now)
+                             WHERE recordid = :i""", now=utcnow(), by=user["recordid"], i=i).rowcount
+    log(conn, user, "invoices-printed", "account", acct, {"invoices": body.ids}, ip=client_ip(request))
+    saved(conn)
+    return {"printed": done}
+
+
 @router.get("/invoices/pdf")
 def invoices_pdf(ids: str, request: Request, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
     acct = user["accountid"]
@@ -513,15 +574,15 @@ def export(batchid: str, request: Request, user: dict = Depends(current_user), c
         raise HTTPException(404, "No such batch")
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["Batch", "Payer", "Trip", "Trip Date", "Passenger", "Member ID", "Service", "Leg", "Charge", "Code", "Units", "Rate", "Amount"])
+    w.writerow(["Batch", "Payer", "Trip", "Broker Trip Number", "Trip Date", "Passenger", "Member ID", "Service", "Leg", "Charge", "Code", "Units", "Rate", "Amount"])
     members: dict[str, dict] = {}
     for x in rows(conn, """
-        SELECT c.tripid, c.label, c.code, c.units, c.rate, c.amount, t.externalid, t.tripdate, t.passenger, t.servicelevel, l.legnumber
+        SELECT c.tripid, c.label, c.code, c.units, c.rate, c.amount, t.externalid, t.brokertripno, t.tripdate, t.passenger, t.servicelevel, l.legnumber
         FROM tripcharges c JOIN trips t ON t.recordid = c.tripid LEFT JOIN triplegs l ON l.recordid = c.legid
         WHERE c.batchid = :b AND c.accountid = :a AND c.voidedon IS NULL ORDER BY t.tripdate, t.externalid, l.legnumber, c.label LIKE '%base fare%' DESC, c.label
     """, b=batchid, a=acct):
         member = members.setdefault(x["tripid"], phi.get(conn, acct, "trip", x["tripid"]) or {})
-        w.writerow([batch["number"], batch["payer"], x["externalid"], x["tripdate"], x["passenger"], member.get("memberid") or "", x["servicelevel"],
+        w.writerow([batch["number"], batch["payer"], x["externalid"], x["brokertripno"] or "", x["tripdate"], x["passenger"], member.get("memberid") or "", x["servicelevel"],
                     x["legnumber"] or "", x["label"], x["code"] or "", x["units"], x["rate"], x["amount"]])
     log(conn, user, "bill-batch-export", "account", acct, {"batch": batch["number"]}, phi=True, ip=client_ip(request))
     saved(conn)

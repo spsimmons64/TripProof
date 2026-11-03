@@ -176,6 +176,7 @@ class Booking(BaseModel):
     servicelevel: str = "ambulatory"
     payer: str = "private"
     brokerid: str | None = None
+    brokertripno: str | None = None       # the broker's own number for the trip
     note: str | None = None
     critical: bool = False                # cannot be missed: placed first by Auto Assign
     legs: list[Leg]
@@ -379,10 +380,11 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
     external = f"TP-{body.tripdate:%Y%m%d}-{tripid[:6].upper()}"
     run(conn, """
         INSERT INTO trips (recordid, accountid, externalid, tripdate, servicelevel, critical,
-                           billedamount, billingstatus, scheduleid, brokerid, passenger,
+                           billedamount, billingstatus, scheduleid, brokerid, brokertripno, passenger,
                            passengerphone, payer, note, bookedby, added)
-        VALUES (:id, :a, :x, :on, :svc, :crit, :amt, 'unbilled', :sched, :b, :p, :ph, :pay, :n, :by, :now)
+        VALUES (:id, :a, :x, :on, :svc, :crit, :amt, 'unbilled', :sched, :b, :btn, :p, :ph, :pay, :n, :by, :now)
     """, id=tripid, a=acct, x=external, on=body.tripdate, svc=body.servicelevel, crit=int(body.critical),
+        btn=((body.brokertripno or "").strip().upper()[:40] or None) if body.brokerid else None,
         amt=priced["amount"] or 0, sched=priced["scheduleid"], b=body.brokerid, p=body.passenger.strip()[:160],
         ph=(body.passengerphone or "").strip()[:32] or None, pay=body.payer[:16],
         n=(body.note or "").strip()[:512] or None, by=user["recordid"], now=utcnow())
@@ -761,6 +763,7 @@ class TripEdit(BaseModel):
     servicelevel: str
     payer: str = "private"
     brokerid: str | None = None
+    brokertripno: str | None = None
     note: str | None = None
     reason: str | None = None
     critical: bool | None = None          # the office's own flag: no driver is told, no reason asked
@@ -981,10 +984,11 @@ def edit_trip(tripid: str, body: TripEdit, request: Request, user: dict = Depend
         if not tripcheck.contract_for(conn, acct, body.brokerid, tripdate, origin):
             raise HTTPException(400, tripcheck.no_line(conn, acct, body.brokerid, origin))
     run(conn, """
-        UPDATE trips SET passenger = :p, passengerphone = :ph, servicelevel = :svc, brokerid = :b,
+        UPDATE trips SET passenger = :p, passengerphone = :ph, servicelevel = :svc, brokerid = :b, brokertripno = :btn,
                          payer = :pay, note = :n, tripdate = :on, critical = :crit, updated = :now
         WHERE recordid = :t AND accountid = :a
     """, p=passenger, ph=phone, svc=body.servicelevel, b=body.brokerid or None, crit=critical,
+        btn=((body.brokertripno or "").strip().upper()[:40] or None) if body.brokerid else None,
         pay=(body.payer or "private")[:16], n=note, on=tripdate, now=now, t=tripid, a=acct)
     # A trip booked here was priced here; if what it is priced on has changed, it is priced again.
     # One that came from a broker arrived with the broker's figure and keeps it.
@@ -1789,7 +1793,8 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
             OR t.dispatchstate = 'needsreassign'
             OR {tripcheck.STOPPED_LEG}
             OR (l.executionstate = 'scheduled' AND l.pickupat IS NOT NULL
-                 AND l.pickupat < :here - INTERVAL :grace MINUTE)
+                 AND l.pickupat < :here - INTERVAL COALESCE((SELECT ap.ontimeminutes FROM accountpayers ap
+                      WHERE ap.accountid = t.accountid AND ap.payerid = t.brokerid), :grace) MINUTE)
             OR EXISTS (SELECT 1 FROM tripissues i3
                         WHERE i3.legid = l.recordid AND i3.resolvedon IS NULL)
             OR l.outcomestate = 'disputed'
@@ -1896,7 +1901,8 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
             OR t.dispatchstate = 'needsreassign'
             OR {tripcheck.STOPPED_LEG}
             OR (l.executionstate = 'scheduled' AND l.pickupat IS NOT NULL
-                 AND l.pickupat < :here - INTERVAL :grace MINUTE)
+                 AND l.pickupat < :here - INTERVAL COALESCE((SELECT ap.ontimeminutes FROM accountpayers ap
+                      WHERE ap.accountid = t.accountid AND ap.payerid = t.brokerid), :grace) MINUTE)
             OR EXISTS (SELECT 1 FROM tripissues i3
                         WHERE i3.legid = l.recordid AND i3.resolvedon IS NULL)))
             OR EXISTS (SELECT 1 FROM tripchanges c WHERE c.legid = l.recordid
@@ -1939,8 +1945,8 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
     # The app's moments are instants (UTC); the board reads wall clock in the company's zone.
     shift_to_local = timedelta(minutes=round((here - utcnow()).total_seconds() / 60))
     # Each broker's will-call terms with this company (Payers, Will-Call Rules), for the deadlines.
-    terms = {r["payerid"]: r for r in rows(conn, "SELECT payerid, pickuplimit, clockstarts FROM accountpayers "
-                                                  "WHERE accountid = :a AND pickuplimit IS NOT NULL", a=acct)}
+    terms = {r["payerid"]: r for r in rows(conn, "SELECT payerid, pickuplimit, clockstarts, ontimeminutes FROM accountpayers "
+                                                  "WHERE accountid = :a", a=acct)}
     seen = dispatch._last_seen(conn, acct) if any(
         i["executionstate"] in ("enroute", "arrived", "onboard") for i in items) else {}
     for i in items:
@@ -1973,7 +1979,8 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
             over = (here - i["pickupat"]).total_seconds() / 60
             if over > MISSED_AFTER:
                 i["late"] = "missed"
-            elif over > LATE_AFTER:
+            # Late by the broker's own on-time window where it sets one.
+            elif over > ((terms.get(i["brokerid"]) or {}).get("ontimeminutes") or LATE_AFTER):
                 i["late"] = "late"
         i["needsdriver"] = i["driverid"] is None and not i["outcomestate"]
         # Why it is on Needs Attention when nothing above has said so, in the same terms the
@@ -2412,6 +2419,17 @@ def accept_trip(tripid: str, request: Request, user: dict = Depends(editor),
     return {"ok": True}
 
 
+def _within_notice(conn: Connection, acct: str, brokerid: str, pickups: list, note: str | None) -> None:
+    """Inside the notice a broker asks for to take a trip back, it goes back only with who there agreed."""
+    notice = row(conn, "SELECT ap.returnnoticehours AS h, p.name FROM payers p LEFT JOIN accountpayers ap "
+                       "ON ap.payerid = p.recordid AND ap.accountid = :a WHERE p.recordid = :b", a=acct, b=brokerid) or {}
+    first = min((p for p in pickups if p), default=None)
+    if notice.get("h") and first and first - localnow(dispatch.zone(conn, acct)) < timedelta(hours=notice["h"]) \
+            and not (note or "").strip():
+        raise HTTPException(400, f"{notice['name']} asks for {notice['h']} hours' notice to take a trip back, and this one "
+                                 f"picks up at {first:%-I:%M %p} on {first:%m/%d}. Say who at {notice['name']} agreed to take it.")
+
+
 @router.post("/trips/{tripid}/return")
 def return_trip(tripid: str, body: ReturnIn, request: Request, user: dict = Depends(editor),
                 conn: Connection = Depends(get_conn)):
@@ -2440,6 +2458,7 @@ def return_trip(tripid: str, body: ReturnIn, request: Request, user: dict = Depe
                                  "be returned to the broker.")
     if body.reason not in RETURN_REASONS:
         raise HTTPException(400, "Say why it is going back")
+    _within_notice(conn, acct, held["brokerid"], [l["pickupat"] for l in legs], body.note)
     # Nobody drives a trip that is going back: whoever was on it comes off, and is told.
     for l in legs:
         if not l["driverid"]:
@@ -2515,6 +2534,7 @@ def return_leg(legid: str, body: ReturnIn, request: Request, user: dict = Depend
         raise HTTPException(409, "This leg has already started or been closed, so it can no longer be returned.")
     if body.reason not in RETURN_REASONS:
         raise HTTPException(400, "Say why it is going back")
+    _within_notice(conn, acct, trip["brokerid"], [leg["pickupat"]], body.note)
     _hand_back_leg(conn, acct, user, trip, leg, body.reason, body.note)
     log(conn, user, "leg-returned", "trip", trip["recordid"],
         {"leg": legid, "reason": body.reason, "note": body.note}, ip=client_ip(request))

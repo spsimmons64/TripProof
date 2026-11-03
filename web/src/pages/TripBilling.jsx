@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Download, Loader2, Search } from 'lucide-react'
+import { Printer, Download, Loader2, Search } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { date, money, tzDateTime } from '../lib/format.js'
 import { Loading, useLoad } from '../components/ui.jsx'
@@ -23,6 +23,7 @@ export default function TripBilling() {
   const [err, setErr] = useState(null)
   const [billed, setBilled] = useState(null)
   const [posting, setPosting] = useState(null)      // the batch whose payment is being posted
+  const [printing, setPrinting] = useState(false)   // the invoices waiting to go by post
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (data) g.fitPage(data.total) }, [data])
   const items = data?.items || []
@@ -37,7 +38,8 @@ export default function TripBilling() {
   const columns = {
     ready: [{ id: 'tick', label: '', srLabel: 'Choose', width: 50, sortable: false }, { id: 'tripdate', label: 'Date', width: 120 }, { id: 'externalid', label: 'Trip', width: 210 },
             { id: 'passenger', label: 'Passenger' }, { id: 'payer', label: 'Payer', width: 170 }, { id: 'miles', label: 'Miles', width: 90, numeric: true },
-            { id: 'amount', label: 'Amount', width: 120, numeric: true }, { id: 'sends', label: 'Sends As', width: 170, sortable: false }],
+            { id: 'amount', label: 'Amount', width: 120, numeric: true }, { id: 'billby', label: 'Bill By', width: 120, sortable: false },
+            { id: 'sends', label: 'Sends As', width: 170, sortable: false }],
     submitted: [{ id: 'tripdate', label: 'Date', width: 120 }, { id: 'externalid', label: 'Trip', width: 210 }, { id: 'passenger', label: 'Passenger' },
                 { id: 'payer', label: 'Payer', width: 170 }, { id: 'amount', label: 'Amount', width: 120, numeric: true }, { id: 'batchnumber', label: 'Batch / Invoice', width: 150 }],
     exceptions: [{ id: 'tripdate', label: 'Date', width: 120 }, { id: 'externalid', label: 'Trip', width: 210 }, { id: 'passenger', label: 'Passenger', width: 220 },
@@ -52,6 +54,8 @@ export default function TripBilling() {
     if (state === 'ready') {
       return [<input type="checkbox" checked={ticked.has(x.recordid)} aria-label={`Choose ${x.externalid}`}
         onClick={(e) => e.stopPropagation()} onChange={() => flip(x.recordid)} />, ...base, x.miles?.toFixed(1), money(x.amount),
+        // The broker's billing deadline: red inside the last week.
+        x.billby ? <span className={(new Date(x.billby) - new Date()) / 864e5 < 7 ? 'st-expired' : undefined}>{date(x.billby)}</span> : '-',
         x.brokerid ? `${x.payer} Batch` : 'Invoice']
     }
     if (state === 'submitted') return [...base, money(x.amount), x.batchnumber || `Invoice ${x.invoicenumber}`]
@@ -71,6 +75,7 @@ export default function TripBilling() {
             <option value="">All Payers</option>
             {(data?.payers || []).map((p) => <option key={p}>{p}</option>)}
           </select>
+          {data?.toprint > 0 && <button type="button" onClick={() => setPrinting(true)}><Printer size={14} /> To Print ({data.toprint})</button>}
           {state === 'submitted' && (data?.batches || []).length > 0 && (
             <select aria-label="Post Batch Payment" value="" onChange={(e) => setPosting(e.target.value)}>
               <option value="">Post Batch Payment</option>
@@ -104,6 +109,7 @@ export default function TripBilling() {
       <DataGrid rows={data?.items} rowKey={(x) => x.recordid} error={error} columns={columns} sort={g.sort} dir={g.dir} onSort={g.onSort}
         onRowClick={(x) => setOpen(x.recordid)} pager={data && g.pager(data.total, 'trip')} empty={NONE[state]} cells={cells} />
       {open && <TripDialog tripid={open} onClose={() => setOpen(null)} onDone={() => { setOpen(null); reload() }} />}
+      {printing && <ToPrint onClose={() => setPrinting(false)} onDone={() => { setPrinting(false); reload() }} />}
       {posting && <BatchPayment batchid={posting} onClose={() => setPosting(null)} onDone={() => { setPosting(null); reload() }} />}
       {billed && (
         <Modal title="Billed" width={600} onClose={() => setBilled(null)}
@@ -126,6 +132,47 @@ export default function TripBilling() {
         </Modal>
       )}
     </div>
+  )
+}
+
+// Unpaid invoices with no email address on file: they go by post. Downloaded as one PDF, then marked
+// printed, so the list holds only the ones still waiting.
+function ToPrint({ onClose, onDone }) {
+  const [got, error] = useLoad(() => api.get('/trip-billing/invoices/to-print'), [])
+  const [off, setOff] = useState(new Set())        // unticked
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  if (!got) return <Modal title="Invoices To Print" onClose={onClose}><Loading error={error} /></Modal>
+  const chosen = got.items.filter((i) => !off.has(i.invoiceid)).map((i) => i.invoiceid)
+  const flip = (id) => { const n = new Set(off); n.has(id) ? n.delete(id) : n.add(id); setOff(n) }
+  const mark = async () => {
+    setBusy(true); setErr(null)
+    try { await api.post('/trip-billing/invoices/printed', { ids: chosen }); onDone() } catch (e) { setErr(e.message); setBusy(false) }
+  }
+  return (
+    <Modal title="Invoices To Print" width={760} onClose={onClose}
+      footer={<>
+        <div className="footactions">
+          <button type="button" disabled={!chosen.length}
+            onClick={() => api.download(`/trip-billing/invoices/pdf?ids=${chosen.join(',')}`, 'invoices.pdf')}><Download size={13} /> Download</button>
+        </div>
+        <button type="button" onClick={onClose}>Close</button>
+        <button type="button" className="primary" disabled={busy || !chosen.length} onClick={mark}>
+          {busy ? <Loader2 size={15} className="spin" /> : 'Mark Printed'}</button>
+      </>}>
+      <div className="stack">
+        {err && <div className="notice bad">{err}</div>}
+        <table className="residencetable recordtable reviewtable printtable">
+          <thead><tr><th /><th>Invoice</th><th>What</th><th>Bill To</th><th>Issued</th><th>Amount</th></tr></thead>
+          <tbody>{got.items.map((i) => (
+            <tr key={i.invoiceid}>
+              <td><input type="checkbox" aria-label={`Invoice ${i.number}`} checked={!off.has(i.invoiceid)} onChange={() => flip(i.invoiceid)} /></td>
+              <td>{i.number}</td><td>{i.what}</td><td>{i.billtoname}</td><td>{date(i.issuedon)}</td><td>{money(Number(i.amount))}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </Modal>
   )
 }
 

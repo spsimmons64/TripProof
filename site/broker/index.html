@@ -6,277 +6,370 @@
 <title>TripProof Online - Proof of Service for NEMT Brokers</title>
 <meta name="description" content="TripProof checks every NEMT driver and vehicle against the rules in force before a trip is assigned, and records what happened on the road, so brokers get proof of service with every trip.">
 <link rel="icon" href="/favicon.png">
-<style>html{color-scheme:light dark}body{margin:0}img{max-width:100%}[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap">
 <style>
-/* Layout: one strong left-aligned column of argument, with a sample trip record as the evidence beside it; the sections follow a trip from before to after. */
+/* Layout: the page is a carbonless NEMT trip ticket - numbered form fields, typed entries, a rubber
+   stamp - set in steel blue and safety orange. Each section is a copy of the form, labelled as one. */
 :root {
-  --ink: #0f3a43;          /* TripProof deep teal - headings, rules */
-  --teal: #1c6979;         /* brand teal - links, marks */
-  --orange: #f29a1f;       /* brand orange - the one accent */
-  --ground: #f6f2ee;       /* warm sand page */
-  --panel: #ffffff;
-  --line: #e2dbd4;
-  --text: #1d2c30;
-  --muted: #5a6b6f;
-  --pass: #1d7a4c;
-  --tint: #e6f2f4;
-  --display: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ink: #e6f1f3; --teal: #6cc3d3; --orange: #ffb24a; --ground: #0e1f23; --panel: #142a2f;
-    --line: #26414a; --text: #dbe6e8; --muted: #93a8ad; --pass: #5fd09a; --tint: #173840; color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --ink: #e6f1f3; --teal: #6cc3d3; --orange: #ffb24a; --ground: #0e1f23; --panel: #142a2f;
-  --line: #26414a; --text: #dbe6e8; --muted: #93a8ad; --pass: #5fd09a; --tint: #173840; color-scheme: dark;
+  --page: #c8d0d7;        /* the desk the forms lie on */
+  --copy-white: #eceff2;  /* office copy */
+  --copy-2: #e6e6df;      /* driver copy */
+  --copy-3: #dfe5ea;      /* broker copy */
+  --copy-4: #d6d3c9;      /* billing copy */
+  --steel: #2e4a63;       /* preprinted header, buttons */
+  --orange: #e3641c;      /* safety orange: the one accent */
+  --ink: #1f3346;         /* printed and typed text */
+  --ink-2: #53636f;
+  --stamp: #b8322a;
+  --check: #1f7a4a;
+  --head: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+  --typed: 'Courier Prime', 'Courier New', monospace;
+  color-scheme: light;
 }
 * { box-sizing: border-box; }
-body { background: var(--ground); color: var(--text); font: 16px/1.6 var(--body); }
-.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-h1, h2, h3 { font-family: var(--display); font-weight: 600; color: var(--ink); text-wrap: balance; margin: 0; }
-p { margin: 0; }
-a { color: var(--teal); }
-a:focus-visible, button:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; border-radius: 6px; }
-.eyebrow { font: 600 12px/1 var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--teal); }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 17px/1.55 var(--head);
+       background-image: repeating-linear-gradient(0deg, transparent 0 31px, rgb(31 51 70 / 6%) 31px 32px); }
+.in { max-width: 1160px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3, p { margin: 0; }
+a { color: var(--steel); }
+:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
 
-/* Top bar */
-.top { padding-block: 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.brand { display: flex; align-items: center; gap: 10px; font: 700 21px/1 var(--display); color: var(--ink); text-decoration: none; }
-.brand svg { flex: none; }
-.nav { display: flex; gap: 22px; flex-wrap: wrap; font-size: 14px; font-weight: 500; }
-.nav a { color: var(--muted); text-decoration: none; }
-.nav a:hover { color: var(--ink); }
+/* Coming soon banner */
+.banner { background: var(--orange); color: #1b0c02; }
+.banner .in { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; padding-block: 11px; text-align: center; }
+.banner p { font: 700 15px/1.3 var(--head); letter-spacing: .02em; }
+.banner p b { font-weight: 700; text-transform: uppercase; letter-spacing: .12em; margin-right: 8px; }
+.banner a { display: inline-block; background: #1b0c02; color: #fff; padding: 9px 14px 8px; font: 700 13px/1 var(--head); letter-spacing: .1em;
+            text-transform: uppercase; text-decoration: none; }
 
-/* Hero */
-.hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 48px; align-items: center; padding-block: 40px 72px; }
-.hero h1 { font-size: clamp(29px, 4.4vw, 52px); line-height: 1.1; font-weight: 600; letter-spacing: -.01em; margin-top: 14px; }
-.hero h1 em { white-space: nowrap; font-style: italic; color: var(--teal); box-shadow: inset 0 -.12em 0 color-mix(in srgb, var(--orange) 40%, transparent); }
-.subhead { font: 600 clamp(20px, 2.2vw, 24px)/1.3 var(--display); color: var(--ink); margin-top: 20px; text-wrap: balance; }
-.lede { font-size: 18.5px; color: var(--muted); max-width: 34em; margin-top: 12px; }
-.ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 999px; font: 600 15px/1 var(--body); text-decoration: none; }
-.btn.primary { background: var(--ink); color: var(--ground); }
-.btn.ghost { border: 1.5px solid var(--line); color: var(--ink); }
+/* Preprinted header */
+.top { background: var(--steel); color: #fff; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; }
+.top .in { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 14px; }
+.mark { color: #fff; text-decoration: none; font: 700 22px/1 var(--head); letter-spacing: .02em; text-transform: uppercase; }
+.mark small { display: block; font: 400 11px/1.4 var(--typed); letter-spacing: .03em; text-transform: none; color: rgb(255 255 255 / 75%); margin-top: 3px; }
+.top nav { display: flex; align-items: center; gap: 24px; }
+.top nav a { color: #fff; text-decoration: none; font: 700 13px/1 var(--head); letter-spacing: .09em; text-transform: uppercase; }
+.top nav a.cta { background: var(--orange); color: #1b0c02; padding: 11px 14px 10px; }
 
-/* The sample trip record */
-.record { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 60px -30px rgb(15 58 67 / 45%); overflow: hidden; min-width: 0; }
-.rec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.rec-id { font: 500 14px/1 var(--mono); color: var(--ink); }
-.rec-tag { font: 600 11px/1 var(--body); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.rec-body { padding: 18px 20px; display: grid; gap: 16px; }
-.rec-sec { font: 600 11px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
-.checks li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 13.5px; }
-.checks .ok { color: var(--pass); font-weight: 700; }
-.checks .cite { font: 400 11.5px/1.3 var(--mono); color: var(--muted); white-space: nowrap; }
-.map { border-radius: 10px; background: var(--tint); overflow: hidden; }
-.map svg { display: block; width: 100%; height: auto; }
-.times { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
-.times li { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; }
-.times b { font: 500 13px/1.5 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
-.rec-note { font-size: 12px; color: var(--muted); padding: 0 20px 16px; }
+/* Form parts */
+.lbl { display: block; font: 700 10.5px/1 var(--head); letter-spacing: .13em; text-transform: uppercase; color: var(--steel); margin-bottom: 9px; }
+.typed { font: 400 15.5px/1.4 var(--typed); }
+.copytag { position: absolute; right: -2px; top: -28px; background: var(--ink); color: #fff; font: 700 10.5px/1 var(--head); letter-spacing: .14em;
+           text-transform: uppercase; padding: 7px 10px 6px; }
+.form-sheet { position: relative; border: 2px solid var(--ink); }
+.perf::before, .perf::after { content: ""; position: absolute; left: -2px; right: -2px; height: 10px;
+           background: radial-gradient(circle at 6px 5px, var(--page) 3.5px, transparent 4px) 0 0 / 14px 10px repeat-x; }
+.perf::before { top: -11px; } .perf::after { bottom: -11px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 22px; border: 2px solid var(--steel); background: var(--steel);
+       color: #fff; font: 700 14px/1 var(--head); letter-spacing: .1em; text-transform: uppercase; text-decoration: none; cursor: pointer; }
+.btn.out { background: transparent; color: var(--ink); border-color: var(--ink); }
+.btn.go { background: var(--orange); border-color: var(--orange); color: #1b0c02; }
+.btn:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .6; cursor: default; }
+
+/* The ticket */
+.hero { padding-block: 70px 64px; }
+.ticket { background: var(--copy-2); }
+.row { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); border-bottom: 1px solid var(--ink); }
+.row:last-child { border-bottom: 0; }
+.cell { padding: 14px 18px 16px; border-right: 1px solid var(--ink); min-width: 0; }
+.cell:last-child { border-right: 0; }
+.s8 { grid-column: span 8; } .s4 { grid-column: span 4; } .s3 { grid-column: span 3; }
+.ticket h1 { font: 700 clamp(50px, 8.6vw, 116px)/.88 var(--head); letter-spacing: -.02em; text-transform: uppercase; }
+.ticket h1 span { display: block; width: fit-content; margin-top: .04em; padding: 0 .06em;
+                  background: linear-gradient(transparent 52%, color-mix(in srgb, var(--orange) 55%, transparent) 52% 92%, transparent 92%); }
+.lede { font-size: 19px; max-width: 36em; margin-top: 18px; }
+.btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+.checks { display: grid; gap: 7px; }
+.checks div { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; font: 400 14.5px/1.35 var(--typed); align-items: baseline; }
+.checks .tk { color: var(--check); font-weight: 700; }
+.checks em { font-style: normal; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+.stamp { position: absolute; right: 4%; bottom: 14px; border: 5px solid var(--stamp); color: var(--stamp); padding: 12px 18px 8px; transform: rotate(-11deg);
+         font: 700 46px/1 var(--head); letter-spacing: .08em; opacity: .86; mix-blend-mode: multiply; pointer-events: none;
+         mask-image: radial-gradient(circle at 30% 40%, #000 55%, rgb(0 0 0 / 55%) 80%); }
+.stamp small { display: block; font: 700 12px/1.3 var(--typed); letter-spacing: 0; margin-top: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .stamp { animation: slam .5s cubic-bezier(.2, 1.7, .5, 1) .7s both; }
+  @keyframes slam { from { transform: rotate(-11deg) scale(2.2); opacity: 0; } }
+}
 
 /* Sections */
-section { padding-block: 64px; border-top: 1px solid var(--line); }
-.sec-head { display: grid; gap: 12px; max-width: 46em; margin-bottom: 36px; }
-.sec-head h2 { font-size: clamp(28px, 3.5vw, 40px); line-height: 1.15; font-weight: 600; letter-spacing: -.005em; }
-.sec-head p { color: var(--muted); font-size: 17px; }
+section { padding-block: 40px 76px; }
+.sh { display: grid; gap: 12px; max-width: 46rem; margin-bottom: 40px; }
+.sh .no { font: 700 13px/1 var(--typed); color: var(--orange); }
+.sh h2 { font: 700 clamp(34px, 5vw, 62px)/.95 var(--head); text-transform: uppercase; letter-spacing: -.01em; }
+.sh h2 em { font-style: normal; color: var(--steel); }
+.sh p { font-size: 18.5px; color: var(--ink-2); }
 
-.risk { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
-.risk h3 { font-size: 20px; margin-bottom: 8px; }
-.risk p { color: var(--muted); font-size: 15.5px; }
+/* Four jobs, four copies */
+.jobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.job { position: relative; border: 2px solid var(--ink); padding: 40px 20px 22px; display: grid; gap: 10px; align-content: start; }
+.job::before { content: attr(data-copy); position: absolute; left: 0; right: 0; top: 0; background: var(--ink); color: #fff; font: 700 10.5px/1 var(--head);
+               letter-spacing: .14em; text-transform: uppercase; padding: 7px 20px 6px; }
+.job:nth-child(1) { background: var(--copy-white); } .job:nth-child(2) { background: var(--copy-2); }
+.job:nth-child(3) { background: var(--copy-3); } .job:nth-child(4) { background: var(--copy-4); }
+.job b { font: 700 13px/1 var(--typed); color: var(--orange); }
+.job h3 { font: 700 26px/1 var(--head); text-transform: uppercase; }
+.job p { font-size: 15.5px; color: var(--ink-2); }
+.job ul { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; font: 400 14px/1.35 var(--typed); }
+.job li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
+.job li::before { content: "■"; color: var(--orange); font-size: 10px; line-height: 1.9; }
 
-/* Before / during / after - a real sequence, so it is numbered by stage */
-.stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); overflow: hidden; }
-.stage { padding: 26px 26px 28px; display: grid; gap: 12px; align-content: start; min-width: 0; }
-.stage + .stage { border-left: 1px solid var(--line); }
-.stage .when { font: 600 12px/1 var(--body); letter-spacing: .12em; text-transform: uppercase; color: var(--orange); }
-.stage h3 { font-size: 21px; line-height: 1.25; }
-.stage ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; color: var(--text); font-size: 15px; }
-.stage .rule { font: 400 12px/1.5 var(--mono); color: var(--muted); }
+/* Notice of stop */
+.stopwrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+.points { display: grid; gap: 20px; }
+.points h3 { font: 700 20px/1.15 var(--head); text-transform: uppercase; margin-bottom: 6px; }
+.points p { color: var(--ink-2); font-size: 16px; }
+.notice { background: var(--copy-white); }
+.notice .bar { background: var(--stamp); color: #fff; padding: 10px 18px 9px; font: 700 13px/1 var(--head); letter-spacing: .16em; text-transform: uppercase;
+               display: flex; justify-content: space-between; gap: 12px; }
+.notice .cell { border-right: 0; }
+.notice .cell + .cell { border-top: 1px solid var(--ink); }
+.leg { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 12px; padding: 9px 0; border-bottom: 1px dotted var(--ink); font: 400 14.5px/1.3 var(--typed); align-items: baseline; }
+.leg:last-child { border-bottom: 0; }
+.leg .x { color: var(--stamp); font-weight: 700; letter-spacing: .06em; }
 
-/* Integration flow */
-.flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 14px; align-items: stretch; }
-.node { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: grid; gap: 8px; align-content: start; min-width: 0; }
-.node h3 { font-size: 18px; }
-.node p { font-size: 14.5px; color: var(--muted); }
-.node.you { background: var(--ink); border-color: var(--ink); }
-.node.you h3, .node.you p { color: var(--ground); }
-.arrow { align-self: center; color: var(--orange); font: 500 30px/1 var(--display); }
-.flow-note { margin-top: 18px; color: var(--muted); font-size: 15px; max-width: 52em; }
+/* Before, during, after - a real sequence, so the parts are lettered */
+.parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--copy-white); }
+.part { padding: 22px 22px 24px; border-right: 1px solid var(--ink); display: grid; gap: 10px; align-content: start; min-width: 0; }
+.part:last-child { border-right: 0; }
+.part h3 { font: 700 23px/1.1 var(--head); text-transform: uppercase; }
+.part ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; color: var(--ink-2); font-size: 15.5px; }
 
-.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 40px; }
-.fact { padding-block: 16px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; }
-.fact b { color: var(--ink); font-weight: 600; }
-.fact span { color: var(--muted); font-size: 15px; }
+/* Beta tester form */
+.apply { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 48px; align-items: start; }
+.deal { display: grid; gap: 24px; }
+.deal h3 { font: 700 14px/1 var(--head); letter-spacing: .14em; text-transform: uppercase; color: var(--steel); margin-bottom: 10px; }
+.deal ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; font: 400 15px/1.4 var(--typed); }
+.deal li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
+.deal li::before { content: "✓"; color: var(--check); font-weight: 700; }
+form { background: var(--copy-3); display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 28px; }
+form label { padding: 11px 14px 13px; border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); display: grid; gap: 6px; min-width: 0;
+             font: 700 10.5px/1 var(--head); letter-spacing: .12em; text-transform: uppercase; color: var(--steel); }
+form label.end { border-right: 0; }
+form input, form select, form textarea { width: 100%; border: 0; border-bottom: 1px dotted var(--ink); background: transparent; color: var(--ink);
+             font: 400 17px/1.4 var(--typed); padding: 4px 0; min-height: 36px; border-radius: 0; }
+form textarea { min-height: 70px; resize: vertical; }
+form input:focus, form select:focus, form textarea:focus { outline: none; background: rgb(255 255 255 / 45%); }
+.f3 { grid-column: span 3; } .f2 { grid-column: span 2; } .f6 { grid-column: span 6; }
+.trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.sendrow { grid-column: span 6; display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 14px; flex-wrap: wrap; }
+.sendrow span { font: 400 13px/1.35 var(--typed); color: var(--ink-2); max-width: 26em; }
+.said { grid-column: span 6; padding: 12px 14px; border-bottom: 1px solid var(--ink); background: color-mix(in srgb, var(--stamp) 14%, transparent);
+        font: 700 15px/1.35 var(--head); }
+.done { grid-column: span 6; padding: 28px 22px; display: grid; gap: 10px; position: relative; min-height: 180px; }
+.done b { font: 700 34px/1 var(--head); text-transform: uppercase; }
+.done p { font: 400 15.5px/1.45 var(--typed); max-width: 30em; }
+.done .stamp { bottom: 22px; font-size: 34px; }
 
-.contact { background: var(--ink); color: var(--ground); border-radius: 20px; padding: 44px; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 32px; align-items: center; }
-.contact h2 { color: var(--ground); font-size: clamp(26px, 3.2vw, 36px); font-weight: 600; }
-.contact p { color: color-mix(in srgb, var(--ground) 80%, transparent); margin-top: 12px; }
-.reach { display: grid; gap: 10px; }
-.reach .line { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--ground) 25%, transparent); border-radius: 12px; flex-wrap: wrap; }
-.reach .line span { color: color-mix(in srgb, var(--ground) 70%, transparent); font-size: 13px; }
-.reach .line b { font-weight: 600; user-select: all; }
-.reach .line a { color: var(--ground); text-decoration-color: var(--orange); text-underline-offset: 3px; }
-.reach .todo { color: var(--orange); }
-footer { padding-block: 32px 48px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
-@media (max-width: 860px) {
-  .hero, .contact { grid-template-columns: minmax(0, 1fr); }
-  .risk, .facts { grid-template-columns: minmax(0, 1fr); }
-  .stages { grid-template-columns: minmax(0, 1fr); }
-  .stage + .stage { border-left: 0; border-top: 1px solid var(--line); }
-  .flow { grid-template-columns: minmax(0, 1fr); }
-  .arrow { justify-self: center; transform: rotate(90deg); }
-  .contact { padding: 28px; }
+/* Exhibits: real screens from the app, stapled to the form they illustrate. */
+.exhibits { display: grid; gap: 18px; margin-top: 34px; }
+.ex-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .5fr); gap: 18px; align-items: start; }
+.exhibit { position: relative; margin: 0; background: #fff; border: 2px solid var(--ink); padding: 8px; box-shadow: 6px 6px 0 rgb(31 51 70 / 14%); }
+.exhibit a { display: block; }
+.exhibit img { display: block; width: 100%; height: auto; border: 1px solid rgb(31 51 70 / 20%); }
+.exhibit .tab { position: absolute; left: -2px; top: -26px; background: var(--steel); color: #fff; font: 700 10.5px/1 var(--head); letter-spacing: .14em;
+                text-transform: uppercase; padding: 7px 10px 6px; }
+.exhibit figcaption { font: 400 12.5px/1.35 var(--typed); color: var(--ink-2); padding: 8px 2px 0; }
+.exhibit.phone { max-width: 300px; justify-self: center; }
+
+
+/* Each box beside the screen that shows it, alternating sides. */
+.pairs { display: grid; gap: 56px; }
+.pair { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.5fr); gap: 32px; align-items: center; }
+.pair.flip { grid-template-columns: minmax(0, 1.5fr) minmax(0, .8fr); }
+.pair.flip > :first-child { order: 2; }
+.pair.phone { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); justify-content: center; }
+.pair.phone .job { max-width: 420px; justify-self: end; }
+.job.c1 { background: var(--copy-white); } .job.c2 { background: var(--copy-2); } .job.c3 { background: var(--copy-3); } .job.c4 { background: var(--copy-4); }
+.stoptop { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: end; margin-bottom: 40px; }
+.proofpair { grid-template-columns: minmax(0, .8fr) minmax(0, 1.5fr); align-items: start; }
+.proofpair .parts { grid-template-columns: minmax(0, 1fr); }
+.proofpair .part { border-right: 0; border-bottom: 1px solid var(--ink); padding: 16px 18px 18px; }
+.proofpair .part:last-child { border-bottom: 0; }
+.proofpair .part h3 { font-size: 19px; }
+.proofpair .part ul { font-size: 14.5px; }
+
+/* Each box the same size as the screen beside it. */
+.pair, .pair.flip, .proofpair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; }
+.pair.phone { grid-template-columns: 340px 340px; justify-content: center; }
+.pair.phone .job { max-width: none; justify-self: stretch; }
+.pair > .job, .pair > .form-sheet { height: 100%; }
+.pair > .exhibit { display: flex; flex-direction: column; }
+.pair > .exhibit figcaption { margin-top: auto; }
+.pair .job { align-content: start; }
+
+/* The driver app: the box full width, its screens in a row beneath it. */
+.appstrip { display: grid; gap: 44px; }
+.appstrip .job { padding-bottom: 20px; }
+.appstrip .job ul { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.phones { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
+.phones .exhibit.phone { max-width: none; display: flex; flex-direction: column; }
+.phones .exhibit figcaption { margin-top: auto; }
+
+footer { background: var(--steel); color: #fff; }
+footer .in { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding-block: 26px 30px; font: 400 14px/1.4 var(--typed); }
+footer b { font-weight: 700; user-select: all; }
+
+@media (max-width: 960px) {
+  .top nav a:not(.cta) { display: none; }
+  .row { grid-template-columns: minmax(0, 1fr); }
+  .row .cell { grid-column: auto; border-right: 0; border-bottom: 1px solid var(--ink); }
+  .row .cell:last-child { border-bottom: 0; }
+  .jobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stopwrap, .apply { grid-template-columns: minmax(0, 1fr); }
+  .parts { grid-template-columns: minmax(0, 1fr); }
+  .ex-row, .pair, .pair.flip, .pair.phone, .proofpair, .stoptop { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .pair > .job, .pair > .form-sheet { height: auto; }
+  .phones { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 14px; }
+  .appstrip .job ul { grid-template-columns: minmax(0, 1fr); }
+  .pair.flip > :first-child { order: 0; }
+  .pair.phone .job { max-width: none; justify-self: stretch; }
+  .part { border-right: 0; border-bottom: 1px solid var(--ink); }
+  .part:last-child { border-bottom: 0; }
+  .stamp { font-size: 30px; }
 }
-@media (prefers-reduced-motion: no-preference) {
-  .route { stroke-dasharray: 600; stroke-dashoffset: 600; animation: draw 2.4s .4s ease-out forwards; }
-  @keyframes draw { to { stroke-dashoffset: 0; } }
+@media (max-width: 560px) {
+  .jobs { grid-template-columns: minmax(0, 1fr); }
+  .f3, .f2 { grid-column: span 6; }
+  form label { border-right: 0; }
+  .leg { grid-template-columns: minmax(0, 1fr) auto; } .leg .t { grid-column: 1 / -1; }
+  .hero { padding-block: 48px 52px; }
+}
+
+/* Broker page */
+.risk { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--copy-white); }
+.risk > div { padding: 20px 22px 22px; border-right: 1px solid var(--ink); }
+.risk > div:last-child { border-right: 0; }
+.risk h3 { font: 700 21px/1.15 var(--head); text-transform: uppercase; margin-bottom: 8px; }
+.risk p { color: var(--ink-2); font-size: 15.5px; }
+.flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.node { background: var(--copy-white); border: 2px solid var(--ink); padding: 18px 20px; display: grid; gap: 8px; align-content: start; }
+.node.you { background: var(--steel); color: #fff; border-color: var(--steel); }
+.node.you p { color: rgb(255 255 255 / 85%); }
+.node h3 { font: 700 19px/1.15 var(--head); text-transform: uppercase; }
+.node p { font-size: 15px; color: var(--ink-2); }
+.arrow { align-self: center; color: var(--orange); font: 700 30px/1 var(--head); }
+.flow-note { margin-top: 18px; font: 400 14.5px/1.45 var(--typed); color: var(--ink-2); max-width: 60em; }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: var(--copy-white); }
+.fact { padding: 16px 20px 18px; border-bottom: 1px solid var(--ink); display: grid; gap: 4px; }
+.fact:nth-child(odd) { border-right: 1px solid var(--ink); }
+.fact:nth-last-child(-n+2) { border-bottom: 0; }
+.fact b { font: 700 16px/1.2 var(--head); text-transform: uppercase; }
+.fact span { color: var(--ink-2); font-size: 15px; }
+.contact { background: var(--copy-2); }
+.contact .row .cell { padding: 22px; }
+.contact h2 { font: 700 clamp(28px, 3.6vw, 44px)/1 var(--head); text-transform: uppercase; }
+.contact p { margin-top: 12px; color: var(--ink-2); font-size: 17px; }
+.reach { display: grid; gap: 10px; }
+.reach div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--ink); padding-bottom: 8px; flex-wrap: wrap; }
+.reach b { font: 400 16px/1.3 var(--typed); user-select: all; }
+@media (max-width: 960px) {
+  .risk, .facts { grid-template-columns: minmax(0, 1fr); }
+  .risk > div { border-right: 0; border-bottom: 1px solid var(--ink); } .risk > div:last-child { border-bottom: 0; }
+  .fact:nth-child(odd) { border-right: 0; } .fact:nth-last-child(2) { border-bottom: 1px solid var(--ink); }
+  .flow { grid-template-columns: minmax(0, 1fr); } .arrow { justify-self: center; transform: rotate(90deg); }
 }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <a class="brand" href="#top" aria-label="TripProof Online">
-      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--teal)"/><path d="M16 7l8 3v6c0 5.2-3.4 8.6-8 10-4.6-1.4-8-4.8-8-10v-6z" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 16.2l2.8 2.8 5.4-5.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      TripProof Online
-    </a>
-    <nav class="nav" aria-label="Page sections">
-      <a href="#how">How it works</a>
+
+<div class="banner">
+  <div class="in">
+    <p><b>Coming Soon</b>Click "Become A Tester" to sign up for beta testing our product.</p>
+    <a href="/#apply">Become A Tester</a>
+  </div>
+</div>
+
+<header class="top">
+  <div class="in">
+    <a class="mark" href="/">TripProof Online<small>Form TP-1 · Proof of Service · NEMT</small></a>
+    <nav aria-label="Sections">
+      <a href="#how">How A Trip Is Proven</a>
       <a href="#integration">Integration</a>
       <a href="#security">Security</a>
-      <a href="#contact">Contact</a>
+      <a class="cta" href="#contact">Request A Broker Demo</a>
     </nav>
-  </header>
+  </div>
+</header>
 
-  <div class="hero" id="top">
-    <div>
-      <span class="eyebrow">Platform Information For NEMT Brokers</span>
-      <h1>Every trip.<br>The right driver.<br>The right vehicle.<br><em>The proof to back it up.</em></h1>
-      <p class="subhead">A trip is only as defensible as the record behind it.</p>
-      <p class="lede">TripProof checks driver and vehicle eligibility against applicable requirements before a trip is assigned, then preserves the trip records and supporting evidence needed to demonstrate what happened.</p>
-      <div class="ctas">
-        <a class="btn primary" href="#contact">Request a broker demo</a>
-        <a class="btn ghost" href="#how">See how a trip is proven</a>
+<main id="top">
+<div class="hero">
+  <div class="in">
+    <div class="form-sheet perf ticket">
+      <div class="row">
+        <div class="cell s8"><span class="lbl">Platform Information For NEMT Brokers</span>
+          <h1>Every trip.<span>Proven.</span></h1>
+          <p class="lede"><b>A trip is only as defensible as the record behind it.</b> TripProof checks driver and vehicle eligibility against applicable requirements before a trip is assigned, then preserves the trip records and supporting evidence needed to demonstrate what happened.</p>
+          <div class="btns"><a class="btn go" href="#contact">Request A Broker Demo</a><a class="btn out" href="#how">See How A Trip Is Proven</a></div>
+        </div>
+        <div class="cell s4"><span class="lbl">Checked Before Assignment</span>
+          <div class="checks">
+            <div><span class="tk">✓</span><span>Valid driver's license, class and restrictions</span><em>49 CFR 391.11</em></div>
+            <div><span class="tk">✓</span><span>Not excluded from federal health programs</span><em>42 CFR 1001.1901</em></div>
+            <div><span class="tk">✓</span><span>Not removed from safety-sensitive work</span><em>49 CFR 382.501</em></div>
+            <div><span class="tk">✓</span><span>Wheelchair securement training on file</span><em>Payer contract</em></div>
+            <div><span class="tk">✓</span><span>Vehicle inspected today, no open defect</span><em>49 CFR 396.11</em></div>
+          </div>
+        </div>
       </div>
+      <div class="row">
+        <div class="cell s3"><span class="lbl">Pre-Trip Check</span><p class="typed">9:31 AM · NO DEFECTS</p></div>
+        <div class="cell s3"><span class="lbl">Arrived At Pickup</span><p class="typed">9:48 AM · GPS</p></div>
+        <div class="cell s3"><span class="lbl">Passenger Aboard</span><p class="typed">9:53 AM · GPS</p></div>
+        <div class="cell s3"><span class="lbl">At Destination</span><p class="typed">10:12 AM · 6.8 MI</p></div>
+      </div>
+      <div class="stamp" aria-hidden="true">PROVEN<small>10:12 AM · 6.8 MI</small></div>
     </div>
-
-    <figure class="record" aria-label="Sample trip record" style="margin:0">
-      <div class="rec-head">
-        <span class="rec-id">TP-20261114-4C19E2 · Leg 1</span>
-        <span class="rec-tag">Sample record</span>
-      </div>
-      <div class="rec-body">
-        <div>
-          <div class="rec-sec">Checked before assignment</div>
-          <ul class="checks">
-            <li><span class="ok">✓</span><span>Valid driver's license, class and restrictions</span><span class="cite">49 CFR 391.11</span></li>
-            <li><span class="ok">✓</span><span>Not excluded from federal health programs</span><span class="cite">42 CFR 1001.1901</span></li>
-            <li><span class="ok">✓</span><span>Not removed from safety-sensitive work</span><span class="cite">49 CFR 382.501</span></li>
-            <li><span class="ok">✓</span><span>Wheelchair securement training on file</span><span class="cite">Payer contract</span></li>
-            <li><span class="ok">✓</span><span>Vehicle inspected today, no open defect</span><span class="cite">49 CFR 396.11</span></li>
-          </ul>
-        </div>
-        <div class="map" aria-hidden="true">
-          <svg viewBox="0 0 400 150">
-            <rect width="400" height="150" fill="var(--tint)"/>
-            <g stroke="var(--line)" stroke-width="6" fill="none" stroke-linecap="round">
-              <path d="M0 112 H400"/><path d="M96 0 V150"/><path d="M0 46 C120 40 220 62 400 36"/><path d="M262 0 L300 150"/>
-            </g>
-            <path class="route" d="M40 128 L96 112 L96 70 L150 64 L232 54 L268 44 L330 30" fill="none" stroke="var(--teal)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="40" cy="128" r="7" fill="var(--panel)" stroke="var(--teal)" stroke-width="3"/>
-            <circle cx="150" cy="64" r="8" fill="var(--pass)"/>
-            <circle cx="330" cy="30" r="8" fill="#c2412d"/>
-          </svg>
-        </div>
-        <div>
-          <div class="rec-sec">Reported from the driver's app, with GPS</div>
-          <ul class="times">
-            <li><b>9:31 AM</b><span>Pre-trip vehicle check filed, no defects</span></li>
-            <li><b>9:34 AM</b><span>On the way</span></li>
-            <li><b>9:48 AM</b><span>Arrived at pickup</span></li>
-            <li><b>9:53 AM</b><span>Passenger aboard</span></li>
-            <li><b>10:12 AM</b><span>Arrived at destination · 6.8 mi</span></li>
-          </ul>
-        </div>
-      </div>
-      <figcaption class="rec-note">Illustration with sample data. A real record also lists the rule version each check passed under, every assignment and change with who made it and why, and any waiting time or problem the driver reported.</figcaption>
-    </figure>
   </div>
 </div>
 
 <section id="why">
-  <div class="wrap">
-    <div class="sec-head">
-      <span class="eyebrow">The exposure you carry</span>
-      <h2>When an auditor asks, the answer should already be on file.</h2>
+  <div class="in">
+    <div class="sh">
+      <span class="no">The Exposure You Carry</span>
+      <h2>When an auditor asks, <em>the answer should already be on file.</em></h2>
       <p>When an auditor asks who drove a trip, whether they were qualified that day, and whether the trip happened at all, the answer usually lives in a provider's paperwork. TripProof makes that answer part of every trip.</p>
     </div>
-    <div class="risk">
-      <div><h3>Unqualified drivers</h3><p>An expired license, a lapsed screening or missing training is easy to miss on a spreadsheet. In TripProof it stops the assignment, with the reason stated.</p></div>
-      <div><h3>Trips you cannot verify</h3><p>Pickup and drop-off times come from the driver's phone at the moment they happen, with a GPS trace of the route, not from a form filled in at the end of the day.</p></div>
-      <div><h3>Records that change quietly</h3><p>Every assignment, edit and cancellation is kept with who made it, when, and why. History is added to, never overwritten.</p></div>
+    <div class="form-sheet risk">
+      <div><span class="lbl">Risk 1</span><h3>Unqualified drivers</h3><p>An expired license, a lapsed screening or missing training is easy to miss on a spreadsheet. In TripProof it stops the assignment, with the reason stated.</p></div>
+      <div><span class="lbl">Risk 2</span><h3>Trips you cannot verify</h3><p>Pickup and drop-off times come from the driver's phone at the moment they happen, with a GPS trace of the route, not from a form filled in at the end of the day.</p></div>
+      <div><span class="lbl">Risk 3</span><h3>Records that change quietly</h3><p>Every assignment, edit and cancellation is kept with who made it, when, and why. History is added to, never overwritten.</p></div>
+    </div>
+    <div class="exhibits">
+      <figure class="exhibit"><span class="tab">Exhibit A</span><a href="/img/compliance-stop.jpg" target="_blank" rel="noopener"><img src="/img/compliance-stop.jpg" alt="A compliance stop on the TripProof dispatch board" loading="lazy"></a><figcaption>A DRIVER WHO MAY NOT DRIVE: THE TRIP IS STOPPED AND THE REASON NAMED · ACTUAL SCREEN, TEST DATA</figcaption></figure>
     </div>
   </div>
 </section>
 
 <section id="how">
-  <div class="wrap">
-    <div class="sec-head">
-      <span class="eyebrow">How a trip is proven</span>
-      <h2>Checked before it is assigned. Recorded while it runs. Packaged when it is done.</h2>
+  <div class="in">
+    <div class="sh">
+      <span class="no">How A Trip Is Proven</span>
+      <h2>Checked before. Recorded during. <em>Packaged after.</em></h2>
     </div>
-    <div class="stages">
-      <div class="stage">
-        <span class="when">Before the trip</span>
-        <h3>Only qualified drivers and vehicles can be assigned</h3>
-        <ul>
-          <li>Licenses, driving records, exclusion screening, drug and alcohol status and training, checked against the rules in force that day.</li>
-          <li>Vehicles checked for registration, insurance, inspection and open defects, and matched to the service level.</li>
-          <li>Your contract can add requirements of its own, applied to your trips only.</li>
-          <li>A failed check refuses the assignment. It is not a warning that can be clicked past.</li>
-        </ul>
-        <span class="rule">Federal rules (FMCSA, OIG) and state NEMT programs, starting with Florida and Georgia</span>
-      </div>
-      <div class="stage">
-        <span class="when">During the trip</span>
-        <h3>The driver's app records what happens, as it happens</h3>
-        <ul>
-          <li>On the way, arrived, passenger aboard and arrived at destination, each stamped with time and position.</li>
-          <li>A pre-trip vehicle check is required before setting off where the rules call for one.</li>
-          <li>Waiting time and problems on the road are reported to the office in the moment.</li>
-          <li>Will-call returns stay unassigned until the passenger actually calls.</li>
-        </ul>
-        <span class="rule">Times are the device's own, never later than the server's clock</span>
-      </div>
-      <div class="stage">
-        <span class="when">After the trip</span>
-        <h3>One record that answers an audit</h3>
-        <ul>
-          <li>The route driven on a map, from GPS positions reported during the leg.</li>
-          <li>The full timeline: assignments, changes, events, waits and problems, each with its source.</li>
-          <li>Which requirements were checked, under which rule version, and what evidence was on file.</li>
-          <li>Audit packets can be exported for a date range or a set of trips.</li>
-        </ul>
-        <span class="rule">Trips with a failed requirement can be held from billing</span>
-      </div>
+    <div class="form-sheet parts">
+      <div class="part"><span class="lbl">A. Before The Trip</span><h3>Only qualified drivers and vehicles can be assigned</h3>
+        <ul><li>Licenses, driving records, exclusion screening, drug and alcohol status and training, checked against the rules in force that day.</li><li>Vehicles checked for registration, insurance, inspection and open defects, and matched to the service level.</li><li>Your contract can add requirements of its own, applied to your trips only.</li><li>A failed check refuses the assignment. It is not a warning that can be clicked past.</li></ul></div>
+      <div class="part"><span class="lbl">B. During The Trip</span><h3>The driver's app records what happens, as it happens</h3>
+        <ul><li>On the way, arrived, passenger aboard and arrived at destination, each stamped with time and position.</li><li>A pre-trip vehicle check is required before setting off where the rules call for one.</li><li>Waiting time and problems on the road are reported to the office in the moment.</li><li>The passenger signs at the drop-off, or the driver records why not.</li></ul></div>
+      <div class="part"><span class="lbl">C. After The Trip</span><h3>One record that answers an audit</h3>
+        <ul><li>The route driven on a map, from GPS positions reported during the leg.</li><li>The full timeline: assignments, changes, events, waits and problems, each with its source.</li><li>Which requirements were checked, under which rule version, and what evidence was on file.</li><li>Trips with a failed requirement can be held from billing.</li></ul></div>
+    </div>
+    <div class="exhibits">
+      <figure class="exhibit"><span class="tab">Exhibit B</span><a href="/img/trip-record.jpg" target="_blank" rel="noopener"><img src="/img/trip-record.jpg" alt="A trip record in TripProof with the GPS route and timeline" loading="lazy"></a><figcaption>THE TRIP RECORD: THE ROUTE DRIVEN AND EVERY STEP, WITH WHO REPORTED IT AND WHEN · ACTUAL SCREEN, TEST DATA</figcaption></figure>
     </div>
   </div>
 </section>
 
 <section id="integration">
-  <div class="wrap">
-    <div class="sec-head">
-      <span class="eyebrow">Integration</span>
-      <h2>Built to work with your trip feed, not around it.</h2>
+  <div class="in">
+    <div class="sh">
+      <span class="no">Integration</span>
+      <h2>Built to work with your trip feed, <em>not around it.</em></h2>
       <p>TripProof is designed to take trips from a broker and send back what happened. We connect to your interface and specification rather than asking you to adopt ours.</p>
     </div>
     <div class="flow">
@@ -291,12 +384,12 @@ footer { padding-block: 32px 48px; color: var(--muted); font-size: 13px; display
 </section>
 
 <section id="security">
-  <div class="wrap">
-    <div class="sec-head">
-      <span class="eyebrow">Security and privacy</span>
-      <h2>Member information is handled as protected health information.</h2>
+  <div class="in">
+    <div class="sh">
+      <span class="no">Security And Privacy</span>
+      <h2>Member information is handled as <em>protected health information.</em></h2>
     </div>
-    <div class="facts">
+    <div class="form-sheet facts">
       <div class="fact"><b>Encrypted at rest</b><span>Member identity, addresses from broker files and Social Security numbers are stored encrypted.</span></div>
       <div class="fact"><b>Every read of member details is logged</b><span>Viewing protected details writes an entry to the access log, under the person who viewed them.</span></div>
       <div class="fact"><b>An activity log that cannot be edited</b><span>The log is append-only: entries can be added, never changed or deleted.</span></div>
@@ -307,28 +400,28 @@ footer { padding-block: 32px 48px; color: var(--muted); font-size: 13px; display
   </div>
 </section>
 
-<section id="contact" style="border-top:0">
-  <div class="wrap">
-    <div class="contact">
-      <div>
-        <h2>See a trip proven, start to finish.</h2>
-        <p>We will walk your team through a live trip in the sandbox: the checks before assignment, the driver's app on the road, and the record it leaves behind.</p>
-      </div>
-      <div class="reach">
-        <div class="line"><span>Email</span><a href="mailto:brokers@tripproofonline.com"><b>brokers@tripproofonline.com</b></a></div>
-        <div class="line"><span>Phone</span><b>(727) 207-5512</b></div>
-        <div class="line"><span>Web</span><b>https://www.tripproofonline.com</b></div>
+<section id="contact">
+  <div class="in">
+    <div class="form-sheet contact">
+      <div class="row">
+        <div class="cell s8"><span class="lbl">Request A Broker Demo</span><h2>See a trip proven, start to finish.</h2>
+          <p>We will walk your team through a live trip in the sandbox: the checks before assignment, the driver's app on the road, and the record it leaves behind.</p></div>
+        <div class="cell s4"><div class="reach">
+          <div><span class="lbl">Email</span><b>brokers@tripproofonline.com</b></div>
+          <div><span class="lbl">Phone</span><b>(727) 207-5512</b></div>
+          <div><span class="lbl">Web</span><b>www.tripproofonline.com</b></div>
+        </div></div>
       </div>
     </div>
   </div>
 </section>
+</main>
 
-<div class="wrap">
-  <footer>
-    <span>TripProof Online</span>
-    <span>Trip-by-trip credential proof for NEMT</span>
-  </footer>
-</div>
-
+<footer>
+  <div class="in">
+    <span><b>TripProof Online</b> · Every trip. Proven.</span>
+    <span>Email <b>brokers@tripproofonline.com</b> · Phone <b>(727) 207-5512</b></span>
+  </div>
+</footer>
 </body>
 </html>

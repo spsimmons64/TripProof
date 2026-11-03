@@ -1,5 +1,5 @@
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
-import { ReceiptText, Building2, CreditCard, FileBadge, Gauge, Handshake, Landmark, Scale, Users } from 'lucide-react'
+import { ReceiptText, Building2, CreditCard, FileBadge, FlaskConical, Gauge, Handshake, Landmark, Scale, Users } from 'lucide-react'
 import TopBar from '../components/TopBar.jsx'
 import Overview from './Overview.jsx'
 import Customers from './Customers.jsx'
@@ -7,6 +7,7 @@ import CustomerDetail from './CustomerDetail.jsx'
 import UsersPage from './Users.jsx'
 import CredentialTypes from './CredentialTypes.jsx'
 import Brokers from './Brokers.jsx'
+import Testers from './Testers.jsx'
 import Plans from './Plans.jsx'
 import Gateways from './Gateways.jsx'
 import FeeSchedule from './FeeSchedule.jsx'
@@ -15,7 +16,7 @@ import RuleReview from './RuleReview.jsx'
 export default function AdminApp({ user }) {
   const nav = [
     ['Operations', [['/admin', Gauge, 'Overview'], ['/admin/customers', Building2, 'Customers'],
-      ['/admin/brokers', Handshake, 'Brokers']]],
+      ['/admin/brokers', Handshake, 'Brokers'], ['/admin/testers', FlaskConical, 'Testers']]],
     ['Compliance', [['/admin/credentialtypes', FileBadge, 'Document types'],
       ['/admin/rules', Scale, 'Rule review']]],
     ['Reports', []],
@@ -45,6 +46,7 @@ export default function AdminApp({ user }) {
           <Route path="/admin/users" element={<UsersPage />} />
           <Route path="/admin/credentialtypes" element={<CredentialTypes />} />
           <Route path="/admin/brokers" element={<Brokers />} />
+          <Route path="/admin/testers" element={<Testers />} />
           <Route path="/admin/plans" element={<Plans />} />
           <Route path="/admin/gateways" element={<Gateways />} />
           <Route path="/admin/fees" element={<FeeSchedule />} />

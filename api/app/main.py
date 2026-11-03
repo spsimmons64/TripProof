@@ -7,7 +7,7 @@ from app.config import settings
 from app.routers import (admin, apply, audits, auth, billing, dashboard, driverapp,
                          driverapply, gps,
                          employerreply, live, notifications, operating, roadtestreply, rules,
-                         signing, pay, smscallback, tripbilling, trips,
+                         signing, pay, smscallback, testers, tripbilling, trips,
                          uploading,
                          vault)
 # Moved out of vault.py, which had grown too large to work in safely. Registered right after it, so
@@ -32,7 +32,7 @@ app.add_middleware(
 for r in (auth, vault, companyusers, drugalcohol, employerinquiries, roadtest, hoursofservice,
           backgroundscreening, exposure, payers, vehicles, trips, dashboard, audits, rules, admin, notifications, apply, billing,
           driverapply, driverapp, signing, uploading, employerreply, roadtestreply,
-          live, gps, operating, places, shifts, tripbilling, pay, smscallback):
+          live, gps, operating, places, shifts, tripbilling, pay, smscallback, testers):
     app.include_router(r.router)
 
 

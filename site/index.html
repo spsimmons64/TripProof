@@ -3,53 +3,469 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>TripProof Online - Coming Soon</title>
-<meta name="description" content="TripProof Online: trip-by-trip credential proof for non-emergency medical transportation. Coming soon.">
+<title>TripProof Online</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="TripProof Online: dispatch, compliance, a driver app and billing for non-emergency medical transportation, with proof of every trip. Coming soon - sign up to beta test.">
 <link rel="icon" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap">
 <style>
-/* One screen: the mark, the name, what it is, and how to reach us - centred in a teal field. */
+/* Layout: the page is a carbonless NEMT trip ticket - numbered form fields, typed entries, a rubber
+   stamp - set in steel blue and safety orange. Each section is a copy of the form, labelled as one. */
 :root {
-  --ink: #0f3a43; --teal: #1c6979; --orange: #f29a1f; --ground: #f6f2ee; --text: #1d2c30; --muted: #5a6b6f; --line: #e2dbd4;
-  --display: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --page: #c8d0d7;        /* the desk the forms lie on */
+  --copy-white: #eceff2;  /* office copy */
+  --copy-2: #e6e6df;      /* driver copy */
+  --copy-3: #dfe5ea;      /* broker copy */
+  --copy-4: #d6d3c9;      /* billing copy */
+  --steel: #2e4a63;       /* preprinted header, buttons */
+  --orange: #e3641c;      /* safety orange: the one accent */
+  --ink: #1f3346;         /* printed and typed text */
+  --ink-2: #53636f;
+  --stamp: #b8322a;
+  --check: #1f7a4a;
+  --head: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+  --typed: 'Courier Prime', 'Courier New', monospace;
   color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --ink: #e6f1f3; --teal: #6cc3d3; --orange: #ffb24a; --ground: #0e1f23; --text: #dbe6e8; --muted: #93a8ad; --line: #26414a; color-scheme: dark; }
-}
 * { box-sizing: border-box; }
-html, body { height: 100%; }
-body { margin: 0; background: var(--ground); color: var(--text); font: 16px/1.6 var(--body);
-       display: grid; place-items: center;
-       padding: max(24px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
-main { max-width: 34rem; display: grid; gap: 22px; justify-items: start; }
-.brand { display: flex; align-items: center; gap: 12px; font: 700 23px/1 var(--display); color: var(--ink); }
-h1 { margin: 0; font: 600 clamp(29px, 6vw, 54px)/1.1 var(--display); letter-spacing: -.01em; color: var(--ink); }
-h1 span { white-space: nowrap; color: var(--teal); font-style: italic; box-shadow: inset 0 -.12em 0 color-mix(in srgb, var(--orange) 40%, transparent); }
-p { margin: 0; color: var(--muted); font-size: 18px; }
-.subhead { font: 600 clamp(19px, 2.4vw, 23px)/1.3 var(--display); color: var(--ink); margin-bottom: -10px; }
-.soon { display: inline-block; font: 700 13px/1 var(--body); letter-spacing: .14em; text-transform: uppercase; color: var(--teal);
-        padding: 9px 14px; border: 1.5px solid var(--teal); border-radius: 999px; }
-.reach { display: grid; gap: 6px; padding-top: 18px; border-top: 1px solid var(--line); width: 100%; font-size: 15px; }
-.reach b { color: var(--ink); font-weight: 600; user-select: all; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 17px/1.55 var(--head);
+       background-image: repeating-linear-gradient(0deg, transparent 0 31px, rgb(31 51 70 / 6%) 31px 32px); }
+.in { max-width: 1160px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3, p { margin: 0; }
+a { color: var(--steel); }
+:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+
+/* Coming soon banner */
+.banner { background: var(--orange); color: #1b0c02; }
+.banner .in { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; padding-block: 11px; text-align: center; }
+.banner p { font: 700 15px/1.3 var(--head); letter-spacing: .02em; }
+.banner p b { font-weight: 700; text-transform: uppercase; letter-spacing: .12em; margin-right: 8px; }
+.banner a { display: inline-block; background: #1b0c02; color: #fff; padding: 9px 14px 8px; font: 700 13px/1 var(--head); letter-spacing: .1em;
+            text-transform: uppercase; text-decoration: none; }
+
+/* Preprinted header */
+.top { background: var(--steel); color: #fff; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; }
+.top .in { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 14px; }
+.mark { color: #fff; text-decoration: none; font: 700 22px/1 var(--head); letter-spacing: .02em; text-transform: uppercase; }
+.mark small { display: block; font: 400 11px/1.4 var(--typed); letter-spacing: .03em; text-transform: none; color: rgb(255 255 255 / 75%); margin-top: 3px; }
+.top nav { display: flex; align-items: center; gap: 24px; }
+.top nav a { color: #fff; text-decoration: none; font: 700 13px/1 var(--head); letter-spacing: .09em; text-transform: uppercase; }
+.top nav a.cta { background: var(--orange); color: #1b0c02; padding: 11px 14px 10px; }
+
+/* Form parts */
+.lbl { display: block; font: 700 10.5px/1 var(--head); letter-spacing: .13em; text-transform: uppercase; color: var(--steel); margin-bottom: 9px; }
+.typed { font: 400 15.5px/1.4 var(--typed); }
+.copytag { position: absolute; right: -2px; top: -28px; background: var(--ink); color: #fff; font: 700 10.5px/1 var(--head); letter-spacing: .14em;
+           text-transform: uppercase; padding: 7px 10px 6px; }
+.form-sheet { position: relative; border: 2px solid var(--ink); }
+.perf::before, .perf::after { content: ""; position: absolute; left: -2px; right: -2px; height: 10px;
+           background: radial-gradient(circle at 6px 5px, var(--page) 3.5px, transparent 4px) 0 0 / 14px 10px repeat-x; }
+.perf::before { top: -11px; } .perf::after { bottom: -11px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 22px; border: 2px solid var(--steel); background: var(--steel);
+       color: #fff; font: 700 14px/1 var(--head); letter-spacing: .1em; text-transform: uppercase; text-decoration: none; cursor: pointer; }
+.btn.out { background: transparent; color: var(--ink); border-color: var(--ink); }
+.btn.go { background: var(--orange); border-color: var(--orange); color: #1b0c02; }
+.btn:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .6; cursor: default; }
+
+/* The ticket */
+.hero { padding-block: 70px 64px; }
+.ticket { background: var(--copy-2); }
+.row { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); border-bottom: 1px solid var(--ink); }
+.row:last-child { border-bottom: 0; }
+.cell { padding: 14px 18px 16px; border-right: 1px solid var(--ink); min-width: 0; }
+.cell:last-child { border-right: 0; }
+.s8 { grid-column: span 8; } .s4 { grid-column: span 4; } .s3 { grid-column: span 3; }
+.ticket h1 { font: 700 clamp(50px, 8.6vw, 116px)/.88 var(--head); letter-spacing: -.02em; text-transform: uppercase; }
+.ticket h1 span { display: block; width: fit-content; margin-top: .04em; padding: 0 .06em;
+                  background: linear-gradient(transparent 52%, color-mix(in srgb, var(--orange) 55%, transparent) 52% 92%, transparent 92%); }
+.lede { font-size: 19px; max-width: 36em; margin-top: 18px; }
+.btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+.checks { display: grid; gap: 7px; }
+.checks div { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; font: 400 14.5px/1.35 var(--typed); align-items: baseline; }
+.checks .tk { color: var(--check); font-weight: 700; }
+.checks em { font-style: normal; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+.stamp { position: absolute; right: 4%; bottom: 14px; border: 5px solid var(--stamp); color: var(--stamp); padding: 12px 18px 8px; transform: rotate(-11deg);
+         font: 700 46px/1 var(--head); letter-spacing: .08em; opacity: .86; mix-blend-mode: multiply; pointer-events: none;
+         mask-image: radial-gradient(circle at 30% 40%, #000 55%, rgb(0 0 0 / 55%) 80%); }
+.stamp small { display: block; font: 700 12px/1.3 var(--typed); letter-spacing: 0; margin-top: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .stamp { animation: slam .5s cubic-bezier(.2, 1.7, .5, 1) .7s both; }
+  @keyframes slam { from { transform: rotate(-11deg) scale(2.2); opacity: 0; } }
+}
+
+/* Sections */
+section { padding-block: 40px 76px; }
+.sh { display: grid; gap: 12px; max-width: 46rem; margin-bottom: 40px; }
+.sh .no { font: 700 13px/1 var(--typed); color: var(--orange); }
+.sh h2 { font: 700 clamp(34px, 5vw, 62px)/.95 var(--head); text-transform: uppercase; letter-spacing: -.01em; }
+.sh h2 em { font-style: normal; color: var(--steel); }
+.sh p { font-size: 18.5px; color: var(--ink-2); }
+
+/* Four jobs, four copies */
+.jobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.job { position: relative; border: 2px solid var(--ink); padding: 40px 20px 22px; display: grid; gap: 10px; align-content: start; }
+.job::before { content: attr(data-copy); position: absolute; left: 0; right: 0; top: 0; background: var(--ink); color: #fff; font: 700 10.5px/1 var(--head);
+               letter-spacing: .14em; text-transform: uppercase; padding: 7px 20px 6px; }
+.job:nth-child(1) { background: var(--copy-white); } .job:nth-child(2) { background: var(--copy-2); }
+.job:nth-child(3) { background: var(--copy-3); } .job:nth-child(4) { background: var(--copy-4); }
+.job b { font: 700 13px/1 var(--typed); color: var(--orange); }
+.job h3 { font: 700 26px/1 var(--head); text-transform: uppercase; }
+.job p { font-size: 15.5px; color: var(--ink-2); }
+.job ul { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; font: 400 14px/1.35 var(--typed); }
+.job li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
+.job li::before { content: "■"; color: var(--orange); font-size: 10px; line-height: 1.9; }
+
+/* Notice of stop */
+.stopwrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+.points { display: grid; gap: 20px; }
+.points h3 { font: 700 20px/1.15 var(--head); text-transform: uppercase; margin-bottom: 6px; }
+.points p { color: var(--ink-2); font-size: 16px; }
+.notice { background: var(--copy-white); }
+.notice .bar { background: var(--stamp); color: #fff; padding: 10px 18px 9px; font: 700 13px/1 var(--head); letter-spacing: .16em; text-transform: uppercase;
+               display: flex; justify-content: space-between; gap: 12px; }
+.notice .cell { border-right: 0; }
+.notice .cell + .cell { border-top: 1px solid var(--ink); }
+.leg { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 12px; padding: 9px 0; border-bottom: 1px dotted var(--ink); font: 400 14.5px/1.3 var(--typed); align-items: baseline; }
+.leg:last-child { border-bottom: 0; }
+.leg .x { color: var(--stamp); font-weight: 700; letter-spacing: .06em; }
+
+/* Before, during, after - a real sequence, so the parts are lettered */
+.parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--copy-white); }
+.part { padding: 22px 22px 24px; border-right: 1px solid var(--ink); display: grid; gap: 10px; align-content: start; min-width: 0; }
+.part:last-child { border-right: 0; }
+.part h3 { font: 700 23px/1.1 var(--head); text-transform: uppercase; }
+.part ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; color: var(--ink-2); font-size: 15.5px; }
+
+/* Beta tester form */
+.apply { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 48px; align-items: start; }
+.deal { display: grid; gap: 24px; }
+.deal h3 { font: 700 14px/1 var(--head); letter-spacing: .14em; text-transform: uppercase; color: var(--steel); margin-bottom: 10px; }
+.deal ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; font: 400 15px/1.4 var(--typed); }
+.deal li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
+.deal li::before { content: "✓"; color: var(--check); font-weight: 700; }
+form { background: var(--copy-3); display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 28px; }
+form label { padding: 11px 14px 13px; border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); display: grid; gap: 6px; min-width: 0;
+             font: 700 10.5px/1 var(--head); letter-spacing: .12em; text-transform: uppercase; color: var(--steel); }
+form label.end { border-right: 0; }
+form input, form select, form textarea { width: 100%; border: 0; border-bottom: 1px dotted var(--ink); background: transparent; color: var(--ink);
+             font: 400 17px/1.4 var(--typed); padding: 4px 0; min-height: 36px; border-radius: 0; }
+form textarea { min-height: 70px; resize: vertical; }
+form input:focus, form select:focus, form textarea:focus { outline: none; background: rgb(255 255 255 / 45%); }
+.f3 { grid-column: span 3; } .f2 { grid-column: span 2; } .f6 { grid-column: span 6; }
+.trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.sendrow { grid-column: span 6; display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 14px; flex-wrap: wrap; }
+.sendrow span { font: 400 13px/1.35 var(--typed); color: var(--ink-2); max-width: 26em; }
+.said { grid-column: span 6; padding: 12px 14px; border-bottom: 1px solid var(--ink); background: color-mix(in srgb, var(--stamp) 14%, transparent);
+        font: 700 15px/1.35 var(--head); }
+.done { grid-column: span 6; padding: 28px 22px; display: grid; gap: 10px; position: relative; min-height: 180px; }
+.done b { font: 700 34px/1 var(--head); text-transform: uppercase; }
+.done p { font: 400 15.5px/1.45 var(--typed); max-width: 30em; }
+.done .stamp { bottom: 22px; font-size: 34px; }
+
+
+/* Exhibits: real screens from the app, stapled to the form they illustrate. */
+.exhibits { display: grid; gap: 18px; margin-top: 34px; }
+.ex-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .5fr); gap: 18px; align-items: start; }
+.exhibit { position: relative; margin: 0; background: #fff; border: 2px solid var(--ink); padding: 8px; box-shadow: 6px 6px 0 rgb(31 51 70 / 14%); }
+.exhibit a { display: block; }
+.exhibit img { display: block; width: 100%; height: auto; border: 1px solid rgb(31 51 70 / 20%); }
+.exhibit .tab { position: absolute; left: -2px; top: -26px; background: var(--steel); color: #fff; font: 700 10.5px/1 var(--head); letter-spacing: .14em;
+                text-transform: uppercase; padding: 7px 10px 6px; }
+.exhibit figcaption { font: 400 12.5px/1.35 var(--typed); color: var(--ink-2); padding: 8px 2px 0; }
+.exhibit.phone { max-width: 300px; justify-self: center; }
+
+
+/* Each box beside the screen that shows it, alternating sides. */
+.pairs { display: grid; gap: 56px; }
+.pair { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.5fr); gap: 32px; align-items: center; }
+.pair.flip { grid-template-columns: minmax(0, 1.5fr) minmax(0, .8fr); }
+.pair.flip > :first-child { order: 2; }
+.pair.phone { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); justify-content: center; }
+.pair.phone .job { max-width: 420px; justify-self: end; }
+.job.c1 { background: var(--copy-white); } .job.c2 { background: var(--copy-2); } .job.c3 { background: var(--copy-3); } .job.c4 { background: var(--copy-4); }
+.stoptop { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: end; margin-bottom: 40px; }
+.proofpair { grid-template-columns: minmax(0, .8fr) minmax(0, 1.5fr); align-items: start; }
+.proofpair .parts { grid-template-columns: minmax(0, 1fr); }
+.proofpair .part { border-right: 0; border-bottom: 1px solid var(--ink); padding: 16px 18px 18px; }
+.proofpair .part:last-child { border-bottom: 0; }
+.proofpair .part h3 { font-size: 19px; }
+.proofpair .part ul { font-size: 14.5px; }
+
+/* Each box the same size as the screen beside it. */
+.pair, .pair.flip, .proofpair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; }
+.pair.phone { grid-template-columns: 340px 340px; justify-content: center; }
+.pair.phone .job { max-width: none; justify-self: stretch; }
+.pair > .job, .pair > .form-sheet { height: 100%; }
+.pair > .exhibit { display: flex; flex-direction: column; }
+.pair > .exhibit figcaption { margin-top: auto; }
+.pair .job { align-content: start; }
+
+/* The driver app: the box full width, its screens in a row beneath it. */
+.appstrip { display: grid; gap: 44px; }
+.appstrip .job { padding-bottom: 20px; }
+.appstrip .job ul { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.phones { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
+.phones .exhibit.phone { max-width: none; display: flex; flex-direction: column; }
+.phones .exhibit figcaption { margin-top: auto; }
+
+footer { background: var(--steel); color: #fff; }
+footer .in { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding-block: 26px 30px; font: 400 14px/1.4 var(--typed); }
+footer b { font-weight: 700; user-select: all; }
+
+@media (max-width: 960px) {
+  .top nav a:not(.cta) { display: none; }
+  .row { grid-template-columns: minmax(0, 1fr); }
+  .row .cell { grid-column: auto; border-right: 0; border-bottom: 1px solid var(--ink); }
+  .row .cell:last-child { border-bottom: 0; }
+  .jobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stopwrap, .apply { grid-template-columns: minmax(0, 1fr); }
+  .parts { grid-template-columns: minmax(0, 1fr); }
+  .ex-row, .pair, .pair.flip, .pair.phone, .proofpair, .stoptop { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .pair > .job, .pair > .form-sheet { height: auto; }
+  .phones { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 14px; }
+  .appstrip .job ul { grid-template-columns: minmax(0, 1fr); }
+  .pair.flip > :first-child { order: 0; }
+  .pair.phone .job { max-width: none; justify-self: stretch; }
+  .part { border-right: 0; border-bottom: 1px solid var(--ink); }
+  .part:last-child { border-bottom: 0; }
+  .stamp { font-size: 30px; }
+}
+@media (max-width: 560px) {
+  .jobs { grid-template-columns: minmax(0, 1fr); }
+  .f3, .f2 { grid-column: span 6; }
+  form label { border-right: 0; }
+  .leg { grid-template-columns: minmax(0, 1fr) auto; } .leg .t { grid-column: 1 / -1; }
+  .hero { padding-block: 48px 52px; }
+}
 </style>
 </head>
 <body>
-<main>
-  <div class="brand">
-    <svg width="36" height="36" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--teal)"/><path d="M16 7l8 3v6c0 5.2-3.4 8.6-8 10-4.6-1.4-8-4.8-8-10v-6z" fill="none" stroke="#fff" stroke-width="2"/><path d="M12 16.2l2.8 2.8 5.4-5.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    TripProof Online
+
+<div class="banner">
+  <div class="in">
+    <p><b>Coming Soon</b>Click "Become A Tester" to sign up for beta testing our product.</p>
+    <a href="#apply">Become A Tester</a>
   </div>
-  <h1>Every trip.<br>The right driver.<br>The right vehicle.<br><span>The proof to back it up.</span></h1>
-  <p class="subhead">A trip is only as defensible as the record behind it.</p>
-  <p>TripProof checks driver and vehicle eligibility against applicable requirements before a trip is assigned, then preserves the trip records and supporting evidence needed to demonstrate what happened.</p>
-  <p class="soon">Coming soon</p>
-  <div class="reach">
-    <span>Email <b>support@tripproofonline.com</b></span>
-    <span>Phone <b>(727) 207-5512</b></span>
+</div>
+
+<header class="top">
+  <div class="in">
+    <a class="mark" href="#top">TripProof Online<small>Form TP-1 · Proof of Service · NEMT</small></a>
+    <nav aria-label="Sections">
+      <a href="#system">The System</a>
+      <a href="#proof">How A Trip Is Proven</a>
+      <a href="/broker/">For Brokers</a>
+      <a class="cta" href="#apply">Become A Tester</a>
+    </nav>
   </div>
+</header>
+
+<main id="top">
+<div class="hero">
+  <div class="in">
+    <div class="form-sheet perf ticket">
+      <div class="row">
+        <div class="cell s8"><span class="lbl">1. Statement</span>
+          <h1>Every trip.<span>Proven.</span></h1>
+          <p class="lede">Dispatch, compliance, a driver app and billing for non-emergency medical transportation, built as one system. Every driver checked before every trip. Every trip on the record, from the pre-trip check to the payment.</p>
+          <div class="btns"><a class="btn go" href="#apply">Become A Tester</a><a class="btn out" href="#proof">See How A Trip Is Proven</a></div>
+        </div>
+        <div class="cell s4"><span class="lbl">2. Status</span>
+          <p class="typed">COMING SOON.<br>RECRUITING BETA TESTERS NATIONWIDE.</p>
+          <span class="lbl" style="margin-top:24px">3. Checked Before Assignment</span>
+          <div class="checks">
+            <div><span class="tk">✓</span><span>License valid for the vehicle</span><em>49 CFR 391.11</em></div>
+            <div><span class="tk">✓</span><span>Not excluded (OIG / SAM)</span><em>42 CFR 1001</em></div>
+            <div><span class="tk">✓</span><span>Fit for safety-sensitive work</span><em>49 CFR 382.501</em></div>
+            <div><span class="tk">✓</span><span>Vehicle inspected, no open defect</span><em>49 CFR 396.11</em></div>
+            <div><span class="tk">✓</span><span>Broker contract terms met</span><em>Payer rules</em></div>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="cell s3"><span class="lbl">4. Trip No.</span><p class="typed">TP-20261114-4C19E2</p></div>
+        <div class="cell s3"><span class="lbl">5. Aboard</span><p class="typed">9:53 AM · GPS</p></div>
+        <div class="cell s3"><span class="lbl">6. Dropped Off</span><p class="typed">10:12 AM · 6.8 MI</p></div>
+        <div class="cell s3"><span class="lbl">7. Signature</span><p class="typed">ON FILE</p></div>
+      </div>
+      <div class="stamp" aria-hidden="true">PROVEN<small>10:12 AM · 6.8 MI</small></div>
+    </div>
+  </div>
+</div>
+
+<section id="system">
+  <div class="in">
+    <div class="sh">
+      <span class="no">Part 1</span>
+      <h2>Four jobs. <em>One record.</em></h2>
+      <p>Most transport companies run dispatch in one place, driver files in another and billing in a third. TripProof does all four, so the trip and the proof of it are the same record.</p>
+    </div>
+    <div class="pairs">
+      <div class="pair"><article class="job c1" data-copy="White · Office Copy">
+        <b>§ 01</b><h3>Dispatch</h3>
+        <p>Book, assign and run the day from one board.</p>
+        <ul><li>Auto Assign the day's trips to the drivers you have</li><li>Will-calls, on-call cover, facility closing times</li><li>A driver out sick, off their trips in one action</li></ul>
+      </article>
+        <figure class="exhibit"><span class="tab">Exhibit A</span><a href="img/dispatch-board.jpg" target="_blank" rel="noopener"><img src="img/dispatch-board.jpg" alt="The TripProof dispatch board" loading="lazy"></a><figcaption>DISPATCH BOARD · UNASSIGNED TRIPS LEFT, EACH DRIVER'S DAY RIGHT · ACTUAL SCREEN, TEST DATA</figcaption></figure></div>
+      <div class="pair flip"><article class="job c2" data-copy="Canary · Driver Copy">
+        <b>§ 02</b><h3>Compliance</h3>
+        <p>Every driver and vehicle file, checked the day of the trip.</p>
+        <ul><li>Licenses, driving records, screenings, training</li><li>Federal exclusion lists screened every day</li><li>Federal, state NEMT and broker contract rules</li></ul>
+      </article>
+        <figure class="exhibit"><span class="tab">Exhibit B</span><a href="img/driver-disqualified.jpg" target="_blank" rel="noopener"><img src="img/driver-disqualified.jpg" alt="A disqualified driver's requirements in TripProof" loading="lazy"></a><figcaption>COMPLIANCE · A DRIVER STOPPED BY HIS DRIVING RECORD · ACTUAL SCREEN, TEST DATA</figcaption></figure></div>
+      <div class="appstrip">
+        <article class="job c3" data-copy="Blue · Broker Copy">
+        <b>§ 03</b><h3>Driver App</h3>
+        <p>The driver's phone records the trip as it happens.</p>
+      </article>
+        <div class="phones">
+          <figure class="exhibit phone"><span class="tab">Exhibit C-1</span><a href="img/app-trips.jpg" target="_blank" rel="noopener"><img src="img/app-trips.jpg" alt="The driver's trips for the day in the TripProof app" loading="lazy"></a><figcaption>TODAY'S TRIPS</figcaption></figure>
+          <figure class="exhibit phone"><span class="tab">Exhibit C-2</span><a href="img/app-trip.jpg" target="_blank" rel="noopener"><img src="img/app-trip.jpg" alt="A trip under way in the TripProof driver app" loading="lazy"></a><figcaption>PASSENGER ABOARD</figcaption></figure>
+          <figure class="exhibit phone"><span class="tab">Exhibit C-3</span><a href="img/app-problem.jpg" target="_blank" rel="noopener"><img src="img/app-problem.jpg" alt="Telling the office about a problem from the TripProof driver app" loading="lazy"></a><figcaption>REPORT A PROBLEM</figcaption></figure>
+          <figure class="exhibit phone"><span class="tab">Exhibit C-4</span><a href="img/driver-app-signature.jpg" target="_blank" rel="noopener"><img src="img/driver-app-signature.jpg" alt="The passenger signing in the TripProof driver app" loading="lazy"></a><figcaption>THE PASSENGER SIGNS</figcaption></figure>
+          <figure class="exhibit phone"><span class="tab">Exhibit C-5</span><a href="img/app-cannot-sign.jpg" target="_blank" rel="noopener"><img src="img/app-cannot-sign.jpg" alt="The driver saying why the passenger could not sign" loading="lazy"></a><figcaption>WHY NO SIGNATURE</figcaption></figure>
+        </div>
+      </div>
+      <div class="pair flip"><article class="job c4" data-copy="Buff · Billing Copy">
+        <b>§ 04</b><h3>Billing</h3>
+        <p>From a driven trip to money in the bank.</p>
+        <ul><li>Priced from your fee schedules</li><li>Broker batches, invoices, online payment</li><li>Short pays and denials tracked until settled</li></ul>
+      </article>
+        <figure class="exhibit"><span class="tab">Exhibit D</span><a href="img/billing-trip.jpg" target="_blank" rel="noopener"><img src="img/billing-trip.jpg" alt="A trip in TripProof billing" loading="lazy"></a><figcaption>BILLING · GPS MILES, SIGNATURE, CHARGES, PAYMENT · ACTUAL SCREEN, TEST DATA</figcaption></figure></div>
+    </div>
+  </div>
+</section>
+
+<section id="stop">
+  <div class="in">
+    <div class="stoptop">
+      <div class="sh" style="margin-bottom:30px">
+        <span class="no">Part 2</span>
+        <h2>A stop is <em>a stop.</em></h2>
+        <p>When a driver stops being qualified, TripProof does not flash a warning someone can click past. The assignment is refused, the reason is named, and dispatch is told.</p>
+      </div>
+      <div class="points">
+        <div><h3>Caught the moment it changes</h3><p>A record read, a screening returned, a license lapsed: every trip that driver holds in the next month is checked again on the spot.</p></div>
+        <div><h3>Flagged where dispatch looks</h3><p>The trips go to the top of the board with the reason, and whoever takes dispatch alerts gets a text.</p></div>
+      </div>
+    </div>
+    <div class="pair">
+    <div class="form-sheet notice" aria-label="Sample notice of a compliance stop">
+      <div class="bar"><span>Notice Of Compliance Stop</span><span>Sample</span></div>
+      <div class="cell"><span class="lbl">Driver</span><p class="typed">E. SAMPLE</p></div>
+      <div class="cell"><span class="lbl">Reason</span>
+        <p class="typed">FL DRIVING RECORD DATED 07/25/2026 READ AS DISQUALIFYING: LICENSE SUSPENDED.</p></div>
+      <div class="cell"><span class="lbl">Trips Stopped</span>
+        <div class="leg"><span class="t">TUE 8:10 AM</span><span>WHEELCHAIR · BROKER</span><span class="x">STOPPED</span></div>
+        <div class="leg"><span class="t">TUE 1:45 PM</span><span>AMBULATORY · PRIVATE</span><span class="x">STOPPED</span></div>
+        <div class="leg"><span class="t">THU 9:30 AM</span><span>WILL-CALL · BROKER</span><span class="x">STOPPED</span></div>
+      </div>
+      <div class="cell"><span class="lbl">Dispatch Texted</span>
+        <p class="typed">TRIP TP-...4C19E2, PICKUP 8:10 AM ON 11/17, MAY NOT RUN AS ASSIGNED. CHECK DISPATCH.</p></div>
+    </div>
+      <figure class="exhibit"><span class="tab">Exhibit E</span><a href="img/compliance-stop.jpg" target="_blank" rel="noopener"><img src="img/compliance-stop.jpg" alt="A compliance stop on the TripProof dispatch board" loading="lazy"></a><figcaption>DISPATCH · A TRIP ON A DRIVER WHO MAY NOT DRIVE, WITH THE REASON AND A CHANGE DRIVER BUTTON · ACTUAL SCREEN, TEST DATA</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="proof">
+  <div class="in">
+    <div class="sh">
+      <span class="no">Part 3</span>
+      <h2>Checked before. Recorded during. <em>Sealed after.</em></h2>
+    </div>
+    <div class="pair proofpair">
+    <div class="form-sheet parts">
+      <div class="part"><span class="lbl">A. Before The Trip</span><h3>Only a qualified driver, in a vehicle that fits, can be assigned</h3>
+        <ul><li>Driver and vehicle checked against federal rules, state NEMT programs and the broker's contract.</li><li>Wheelchair trips only go to lift vehicles and trained drivers.</li><li>Pickups outside your hours need someone on call first.</li></ul></div>
+      <div class="part"><span class="lbl">B. During The Trip</span><h3>The driver's phone writes the record as it happens</h3>
+        <ul><li>On the way, arrived, aboard and dropped off, each with time and position.</li><li>Waiting time and problems on the road reach the office in the moment.</li><li>The passenger signs at the drop-off, or the driver says why not.</li></ul></div>
+      <div class="part"><span class="lbl">C. After The Trip</span><h3>One record that answers an audit, and gets you paid</h3>
+        <ul><li>The route on a map, the full timeline and the rules each check passed under.</li><li>Priced, billed and tracked to payment, with the proof behind every line.</li><li>History is added to, never quietly changed.</li></ul></div>
+    </div>
+    <figure class="exhibit"><span class="tab">Exhibit F</span><a href="img/trip-record.jpg" target="_blank" rel="noopener"><img src="img/trip-record.jpg" alt="A trip record in TripProof with the GPS route and timeline" loading="lazy"></a><figcaption>THE TRIP RECORD · THE ROUTE DRIVEN AND EVERY STEP, WITH WHO REPORTED IT AND WHEN · ACTUAL SCREEN, TEST DATA</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="apply">
+  <div class="in apply">
+    <div class="deal">
+      <div class="sh" style="margin-bottom:0">
+        <span class="no">Part 4</span>
+        <h2>Beta test <em>TripProof.</em></h2>
+        <p>We are looking for NEMT companies, anywhere in the country, to run TripProof on real days before it opens to everyone.</p>
+      </div>
+      <div><h3>What You Get</h3><ul><li>Early use of dispatch, compliance, the driver app and billing</li><li>A direct line to the people building it</li><li>Your brokers' rules and your workflow built in</li></ul></div>
+      <div><h3>What We Ask</h3><ul><li>Run real trips through it and tell us what gets in the way</li><li>A short call every couple of weeks while we test</li></ul></div>
+    </div>
+
+    <form class="form-sheet" id="signup" novalidate>
+      <label class="f3">Company *<input id="company" autocomplete="organization" required></label>
+      <label class="f3 end">Your Name *<input id="name" autocomplete="name" required></label>
+      <label class="f3">Email *<input id="email" type="email" autocomplete="email" required></label>
+      <label class="f3 end">Phone<input id="phone" type="tel" autocomplete="tel"></label>
+      <label class="f3">State<select id="state"><option value="">-</option>
+        <option>AL</option><option>AK</option><option>AZ</option><option>AR</option><option>CA</option><option>CO</option><option>CT</option><option>DE</option><option>DC</option><option>FL</option><option>GA</option><option>HI</option><option>ID</option><option>IL</option><option>IN</option><option>IA</option><option>KS</option><option>KY</option><option>LA</option><option>ME</option><option>MD</option><option>MA</option><option>MI</option><option>MN</option><option>MS</option><option>MO</option><option>MT</option><option>NE</option><option>NV</option><option>NH</option><option>NJ</option><option>NM</option><option>NY</option><option>NC</option><option>ND</option><option>OH</option><option>OK</option><option>OR</option><option>PA</option><option>RI</option><option>SC</option><option>SD</option><option>TN</option><option>TX</option><option>UT</option><option>VT</option><option>VA</option><option>WA</option><option>WV</option><option>WI</option><option>WY</option>
+      </select></label>
+      <label class="f3 end">Vehicles<select id="fleet"><option value="">-</option><option>1-5</option><option>6-15</option><option>16-40</option><option>41+</option></select></label>
+      <label class="f6 end">Brokers You Work With<input id="brokers" placeholder="e.g. ModivCare, MTM, private pay"></label>
+      <label class="f6 end">Anything Else<textarea id="note"></textarea></label>
+      <label class="trap" aria-hidden="true">Leave this empty<input id="website" tabindex="-1" autocomplete="off"></label>
+      <div class="said" id="said" hidden></div>
+      <div class="sendrow"><span>Used only to contact you about beta testing TripProof. Answered by a person.</span>
+        <button class="btn go" id="send" type="submit">File This Form</button></div>
+    </form>
+  </div>
+</section>
 </main>
+
+<footer>
+  <div class="in">
+    <span><b>TripProof Online</b> · Every trip. Proven.</span>
+    <span>Email <b>support@tripproofonline.com</b> · Phone <b>(727) 207-5512</b></span>
+  </div>
+</footer>
+
+<script>
+// The beta tester list is kept by the TripProof API.
+const API = 'https://dev.tripproofonline.com/api/testers'
+const LIVE = /(^|\.)tripproofonline\.com$/.test(location.hostname)
+const form = document.getElementById('signup'), said = document.getElementById('said'), send = document.getElementById('send')
+form.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  said.hidden = true
+  const v = (id) => document.getElementById(id).value.trim()
+  const body = { company: v('company'), name: v('name'), email: v('email'), phone: v('phone'), state: v('state'),
+                 fleet: v('fleet'), brokers: v('brokers'), note: v('note'), website: v('website') }
+  const missing = !body.company ? 'company' : !body.name ? 'name' : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email) ? 'email' : null
+  if (missing) {
+    said.textContent = missing === 'email' ? 'Give an email address we can reach you at.'
+      : missing === 'name' ? 'Give your name.' : 'Give your company name.'
+    said.hidden = false
+    document.getElementById(missing).focus()
+    return
+  }
+  send.disabled = true; send.textContent = 'Filing…'
+  try {
+    if (LIVE) {
+      const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'That did not go through. Try again, or email support@tripproofonline.com.')
+    }
+    const done = document.createElement('div')
+    done.className = 'done'
+    done.innerHTML = '<b>Filed. You are on the list.</b><p></p><div class="stamp">RECEIVED</div>'
+    done.querySelector('p').textContent = `Thank you, ${body.name}. We will be in touch at ${body.email} as beta testing opens.`
+    form.replaceChildren(done)
+  } catch (x) {
+    said.textContent = x.message
+    said.hidden = false
+    send.disabled = false; send.textContent = 'File This Form'
+  }
+})
+</script>
 </body>
 </html>

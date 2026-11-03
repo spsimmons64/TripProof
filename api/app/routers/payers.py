@@ -255,6 +255,45 @@ def payer_willcall_rules(payerrecordid: str, body: WillCallRulesIn, request: Req
     return {"ok": True}
 
 
+class BrokerRulesIn(BaseModel):
+    ontimeminutes: int | None = None        # late only after this many minutes past the pickup
+    billdays: int | None = None             # billed within this many days of the trip
+    tripnumberrequired: bool = False        # the broker's trip number on every claim
+    waitcapminutes: int | None = None       # the most waiting it pays for
+    milecap: float | None = None            # the most loaded miles it pays for on one leg
+    returnnoticehours: int | None = None    # notice it wants to take a trip back
+    signaturerequired: bool = False         # a passenger signature on every leg
+
+
+@router.put("/company/payers/{payerrecordid}/broker-rules")
+def payer_broker_rules(payerrecordid: str, body: BrokerRulesIn, request: Request,
+                       user: dict = Depends(account_admin), conn: Connection = Depends(get_conn)):
+    """What this company's contract with a broker says, each enforced only where it is filled in."""
+    acct = user["accountid"]
+    if not row(conn, "SELECT 1 AS x FROM payers WHERE recordid = :i AND (accountid IS NULL OR accountid = :a)",
+               i=payerrecordid, a=acct):
+        raise HTTPException(404, "No such payer")
+    for v, lo, hi, says in ((body.ontimeminutes, 1, 240, "The on-time window is in minutes, between 1 and 240"),
+                            (body.billdays, 1, 730, "The billing deadline is in days, between 1 and 730"),
+                            (body.waitcapminutes, 1, 600, "The waiting cap is in minutes, between 1 and 600"),
+                            (body.milecap, 1, 500, "The mileage cap is in miles, between 1 and 500"),
+                            (body.returnnoticehours, 1, 336, "The return notice is in hours, between 1 and 336")):
+        if v is not None and not lo <= v <= hi:
+            raise HTTPException(400, says)
+    clean = {"ot": body.ontimeminutes, "bd": body.billdays, "tn": int(body.tripnumberrequired), "wc": body.waitcapminutes,
+             "mc": body.milecap, "rn": body.returnnoticehours, "sr": int(body.signaturerequired)}
+    run(conn, """
+        INSERT INTO accountpayers (accountid, payerid, ontimeminutes, billdays, tripnumberrequired, waitcapminutes,
+                                   milecap, returnnoticehours, signaturerequired, updated, updatedby)
+        VALUES (:a, :p, :ot, :bd, :tn, :wc, :mc, :rn, :sr, :now, :u)
+        ON DUPLICATE KEY UPDATE ontimeminutes = :ot, billdays = :bd, tripnumberrequired = :tn, waitcapminutes = :wc,
+               milecap = :mc, returnnoticehours = :rn, signaturerequired = :sr, updated = :now, updatedby = :u
+    """, a=acct, p=payerrecordid, now=utcnow(), u=user["recordid"], **clean)
+    log(conn, user, "payer-broker-rules", "company", acct, {"payer": payerrecordid, **clean}, ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
+
+
 class PayerStatusIn(BaseModel):
     active: bool
     # Who the company deals with there - its own, even at a shared payer.

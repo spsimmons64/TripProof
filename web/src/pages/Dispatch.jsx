@@ -796,9 +796,11 @@ function AutoAssignDialog({ day, legids, assigned = [], onClose, onDone, onRetur
               <tbody>
                 {crew.drivers.map((d) => (
                   <tr key={d.driverid}>
-                    <td><input type="checkbox" checked={on.has(d.driverid)} onChange={(e) => tick(d.driverid, e.target.checked)} /></td>
+                    <td><input type="checkbox" checked={on.has(d.driverid)} disabled={Boolean(d.stopped)}
+                      aria-label={`${d.name} is driving today`} onChange={(e) => tick(d.driverid, e.target.checked)} /></td>
                     <td>{d.name}</td>
-                    <td>{d.out ? <span className="st-expired">Out</span> : d.vehiclename || ''}</td>
+                    <td>{d.stopped ? <span className="st-expired">May Not Drive: {d.stopped}</span>
+                      : d.out ? <span className="st-expired">Out</span> : d.vehiclename || ''}</td>
                   </tr>
                 ))}
               </tbody>

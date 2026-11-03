@@ -116,6 +116,10 @@ function PayerDialog({ held, categories, data, offered, onPick, lines, reload, o
     // The broker's will-call terms (none for private pay).
     pickuplimit: held.pickuplimit ?? '', clockstarts: held.clockstarts || '',
     afterhourscontact: held.afterhourscontact || '',
+    // What the contract with the broker says, each enforced only where it is filled in.
+    ontimeminutes: held.ontimeminutes ?? '', billdays: held.billdays ?? '', waitcapminutes: held.waitcapminutes ?? '',
+    milecap: held.milecap ?? '', returnnoticehours: held.returnnoticehours ?? '',
+    tripnumberrequired: Boolean(held.tripnumberrequired), signaturerequired: Boolean(held.signaturerequired),
   })
   const [busy, setBusy] = useState(null)
   const [err, setErr] = useState(null)
@@ -153,6 +157,10 @@ function PayerDialog({ held, categories, data, offered, onPick, lines, reload, o
       await api.put(`/company/payers/${id}/willcall-rules`, {
         pickuplimit: f.pickuplimit === '' ? null : Number(f.pickuplimit), clockstarts: f.clockstarts || null,
         afterhourscontact: f.afterhourscontact })
+      const n = (v) => (v === '' ? null : Number(v))
+      await api.put(`/company/payers/${id}/broker-rules`, {
+        ontimeminutes: n(f.ontimeminutes), billdays: n(f.billdays), waitcapminutes: n(f.waitcapminutes), milecap: n(f.milecap),
+        returnnoticehours: n(f.returnnoticehours), tripnumberrequired: f.tripnumberrequired, signaturerequired: f.signaturerequired })
     }
   }
   const save = () => act(async () => {
@@ -310,6 +318,31 @@ function PayerDialog({ held, categories, data, offered, onPick, lines, reload, o
           <label className="field span-6">After-Hours Contact
             <input value={f.afterhourscontact} className="upper"
               onChange={(e) => setF({ ...f, afterhourscontact: e.target.value.toUpperCase() })} />
+          </label>
+
+          <h3 className="formsection span-6">Broker Rules</h3>
+          <label className="field span-2">On-Time Window (Minutes)
+            <input type="number" min="1" max="240" value={f.ontimeminutes} onChange={set('ontimeminutes')} />
+          </label>
+          <label className="field span-2">Billing Deadline (Days)
+            <input type="number" min="1" max="730" value={f.billdays} onChange={set('billdays')} />
+          </label>
+          <label className="field span-2">Return Notice (Hours)
+            <input type="number" min="1" max="336" value={f.returnnoticehours} onChange={set('returnnoticehours')} />
+          </label>
+          <label className="field span-3">Waiting Cap (Minutes)
+            <input type="number" min="1" max="600" value={f.waitcapminutes} onChange={set('waitcapminutes')} />
+          </label>
+          <label className="field span-3">Mileage Cap (Miles Per Leg)
+            <input type="number" min="1" max="500" step="0.1" value={f.milecap} onChange={set('milecap')} />
+          </label>
+          <label className="field check span-3">
+            <input type="checkbox" checked={f.tripnumberrequired} onChange={(e) => setF({ ...f, tripnumberrequired: e.target.checked })} />
+            <span>Broker Trip Number Required</span>
+          </label>
+          <label className="field check span-3">
+            <input type="checkbox" checked={f.signaturerequired} onChange={(e) => setF({ ...f, signaturerequired: e.target.checked })} />
+            <span>Passenger Signature Required</span>
           </label>
         </div>
         </fieldset>

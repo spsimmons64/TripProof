@@ -366,6 +366,18 @@ def test_4a2_a_disqualifying_record_stops_every_trip_until_the_office_clears_it(
         assert conn.execute(text("SELECT finding FROM drivermvrs WHERE recordid = :m"), {"m": bad}).scalar() == "disqualified"
     assert c.post(clear, headers=h, json={"reason": "again"}).status_code == 404
 
+    # Read in error: re-read as what it says, with a reason, and no newer record needed.
+    wrong = driving_record(co, "disqualified", "MISREAD SPEEDING AS SUSPENSION")
+    assert stopped()
+    fix = f"/api/drivers/{co['driver']}/mvrs/{wrong}/clear"
+    assert c.post(fix, headers=h, json={"reason": "read in error", "misread": True}).status_code == 400
+    assert c.post(fix, headers=h, json={"reason": "read in error", "misread": True, "finding": "qualified"}).status_code == 200
+    assert not stopped()
+    with co["db"].connect() as conn:
+        said = [json.loads(x)["finding"] for x in conn.execute(text(
+            "SELECT detail FROM activitylog WHERE accountid = :a AND action = 'reviewed' AND entitytype = 'drivermvr' ORDER BY added"), {"a": co["acct"]}).scalars()]
+    assert said[-2:] == ["disqualified", "qualified"], said
+
 
 def test_4a3_trips_already_assigned_are_flagged_when_the_driver_is_disqualified(make):
     """Assigned first, disqualified after: every upcoming leg shows on the attention board and its
@@ -2888,7 +2900,11 @@ def test_6aa_the_passenger_signs_at_the_drop_off_or_the_driver_says_why_not(make
     png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
     bad = finish(legs["SIGNS"][1], signature="data:text/html;base64,PGI+")
     assert bad.status_code == 400, bad.text
+    assert c.post("/api/driver/positions", headers=me, json={"fixes": [{"latitude": 30.31, "longitude": -81.66}]}).status_code == 200
     assert c.post(f"/api/driver/legs/{legs['SIGNS'][1]}/state", headers=me, json={"state": "completed", "signature": png}).status_code == 200
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT gps FROM triplegs WHERE recordid = :l"), {"l": legs["SIGNS"][1]}).scalar() == 1
+        assert conn.execute(text("SELECT gps FROM triplegs WHERE recordid = :l"), {"l": legs["WILL NOT"][1]}).scalar() == 0
     signed = c.get(f"/api/trip-billing/{legs['SIGNS'][0]}", headers=h).json()
     assert signed["legs"][0]["signature"] and not any("signature" in r for r in signed["reasons"]), signed["reasons"]
     assert c.get(f"/api/trip-billing/legs/{legs['SIGNS'][1]}/signature", headers=h).json()["image"] == png
@@ -2933,3 +2949,105 @@ def test_6ac_booking_ahead_keeps_to_the_company_hours_unless_somebody_is_on_call
         conn.execute(text("UPDATE drivers SET phone = '(904) 555-0123' WHERE recordid = :d"), {"d": co["driver"]})
     assert c.put("/api/oncall", headers=h, json={"day": str(on), "items": [{"driverid": co["driver"], "vehicleid": co["vehicle"]}]}).status_code == 200
     assert book("19:00", "ON CALL").status_code == 200
+
+
+def test_6ad_invoices_with_no_email_wait_on_the_to_print_list_until_marked_printed(make):
+    co = make()
+    c, h = co["client"], co["h"]
+    tid, _ = _billable(co, "BY POST")
+    assert c.post(f"/api/trip-billing/{tid}/clear", headers=h).status_code == 200
+    inv = c.post("/api/trip-billing/bill", headers=h, json={"tripids": [tid]}).json()["invoices"][0]
+    waiting = c.get("/api/trip-billing/invoices/to-print", headers=h).json()["items"]
+    assert [i["invoiceid"] for i in waiting] == [inv["invoiceid"]] and c.get("/api/trip-billing", headers=h).json()["toprint"] == 1
+    assert c.get(f"/api/trip-billing/invoices/pdf?ids={inv['invoiceid']}", headers=h).status_code == 200
+    assert c.post("/api/trip-billing/invoices/printed", headers=h, json={"ids": [inv["invoiceid"]]}).json()["printed"] == 1
+    assert c.get("/api/trip-billing/invoices/to-print", headers=h).json()["items"] == []
+    assert c.get("/api/trip-billing", headers=h).json()["toprint"] == 0
+    # Still unpaid at 14 and 30 days: back on the list as a reminder each time, then no more.
+    for days, what in ((15, "Reminder 1"), (31, "Reminder 2")):
+        with co["db"].begin() as conn:
+            conn.execute(text("UPDATE tripinvoices SET createdon = UTC_TIMESTAMP() - INTERVAL :d DAY WHERE recordid = :i"), {"d": days, "i": inv["invoiceid"]})
+        due = c.get("/api/trip-billing/invoices/to-print", headers=h).json()["items"]
+        assert [i["what"] for i in due] == [what], due
+        assert c.post("/api/trip-billing/invoices/printed", headers=h, json={"ids": [inv["invoiceid"]]}).json()["printed"] == 1
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE tripinvoices SET createdon = UTC_TIMESTAMP() - INTERVAL 90 DAY WHERE recordid = :i"), {"i": inv["invoiceid"]})
+    assert c.get("/api/trip-billing/invoices/to-print", headers=h).json()["items"] == []
+
+
+def test_6ae_a_brokers_own_rules_are_kept_where_they_are_filled_in(make):
+    """Billing deadline, trip number, signature and mileage cap in Billing; the on-time window on the
+    board; and the notice to return a trip. Nothing is enforced that is left blank."""
+    from app.db import localnow
+    from app import dispatch as dsp
+    co = make()
+    c, h = co["client"], co["h"]
+    rules = f"/api/company/payers/{co['payer']}/broker-rules"
+    assert c.put(rules, headers=h, json={"billdays": 0}).status_code == 400
+    tid, leg = _billable(co, "RULED", broker=co["payer"], miles=10)
+    before = c.get(f"/api/trip-billing/{tid}", headers=h).json()
+    assert before["amount"] == 58.0 and not before["stops"], before                       # $40 + 9 x $2
+    assert c.put(rules, headers=h, json={"billdays": 30, "tripnumberrequired": True, "signaturerequired": True, "milecap": 4}).status_code == 200
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE triplegs SET signature = 0 WHERE recordid = :l"), {"l": leg})
+        conn.execute(text("UPDATE trips SET tripdate = CURDATE() - INTERVAL 40 DAY WHERE recordid = :t"), {"t": tid})
+    got = c.get(f"/api/trip-billing/{tid}", headers=h).json()
+    said = " | ".join(got["stops"])
+    assert got["amount"] == 46.0, got                                                       # $40 + 3 x $2: capped at 4 miles
+    assert "billed within 30 days" in said and "own trip number" in said and "no signature" in said, said
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE trips SET tripdate = CURDATE() - INTERVAL 1 DAY, brokertripno = 'MC-123' WHERE recordid = :t"), {"t": tid})
+        conn.execute(text("UPDATE triplegs SET signature = 1 WHERE recordid = :l"), {"l": leg})
+    assert not c.get(f"/api/trip-billing/{tid}", headers=h).json()["stops"]
+    assert c.post(f"/api/trip-billing/{tid}/clear", headers=h).status_code == 200
+    ready = next(i for i in c.get("/api/trip-billing?state=ready", headers=h).json()["items"] if i["recordid"] == tid)
+    assert ready["billby"], ready
+
+    # Booked with its number; returned inside the notice only with who agreed.
+    with co["db"].begin() as conn:
+        here = localnow(dsp.zone(conn, co["acct"]))
+    soon = (here + timedelta(hours=10)).replace(second=0, microsecond=0)
+    got = c.post("/api/trips", headers=h, json={"passenger": "GOING BACK", "tripdate": str(soon.date()), "payer": "broker", "brokerid": co["payer"],
+                                                 "brokertripno": "mc-555", "legs": [{"pickupat": soon.strftime("%Y-%m-%dT%H:%M:00"),
+                                                 "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+    assert got.status_code == 200, got.text
+    back = got.json()["recordid"]
+    assert c.get(f"/api/trips/{back}", headers=h).json()["brokertripno"] == "MC-555"
+    assert c.put(rules, headers=h, json={"returnnoticehours": 48}).status_code == 200
+    reason = "drivershortage"
+    late = c.post(f"/api/trips/{back}/return", headers=h, json={"reason": reason})
+    assert late.status_code == 400 and "48 hours' notice" in late.text, late.text
+    assert c.post(f"/api/trips/{back}/return", headers=h, json={"reason": reason, "note": "JANE AT THE BROKER OK'D IT"}).status_code == 200
+
+    # The on-time window: twelve minutes past the pickup is late by default, not inside a twenty-minute window.
+    gone = (here - timedelta(minutes=12)).replace(second=0, microsecond=0)
+    got = c.post("/api/trips", headers=h, json={"passenger": "RUNNING LATE", "tripdate": str(gone.date()), "payer": "broker", "brokerid": co["payer"],
+                                                 "legs": [{"pickupat": gone.strftime("%Y-%m-%dT%H:%M:00"),
+                                                 "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+    assert got.status_code == 200, got.text
+    with co["db"].begin() as conn:
+        lateleg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": got.json()["recordid"]}).scalar()
+        conn.execute(text("UPDATE triplegs SET driverid = :d, vehicleid = :v WHERE recordid = :l"), {"d": co["driver"], "v": co["vehicle"], "l": lateleg})
+
+    def late_now():
+        return next(i for i in c.get(f"/api/dispatch/board?day={gone.date()}&state=all&pagesize=200", headers=h).json()["items"] if i["legid"] == lateleg)["late"]
+    assert late_now() == "late"
+    assert c.put(rules, headers=h, json={"ontimeminutes": 20}).status_code == 200
+    assert late_now() is None
+
+
+def test_6af_a_driver_who_may_not_drive_is_not_offered_as_driving_today(make):
+    """Who's Driving Today? shows a disqualified driver with the reason, unticked, and will not take him."""
+    from app.db import localnow
+    from app import dispatch as dsp
+    co = make()
+    c, h = co["client"], co["h"]
+    with co["db"].connect() as conn:
+        today = localnow(dsp.zone(conn, co["acct"])).date()
+    first = next(d for d in c.get(f"/api/dispatch/crew?day={today}", headers=h).json()["drivers"] if d["driverid"] == co["driver"])
+    assert first["on"] and not first["stopped"], first
+    driving_record(co, "disqualified", "LICENSE SUSPENDED 2023")
+    then = next(d for d in c.get(f"/api/dispatch/crew?day={today}", headers=h).json()["drivers"] if d["driverid"] == co["driver"])
+    assert not then["on"] and then["stopped"], then
+    refused = c.post("/api/dispatch/crew", headers=h, json={"day": str(today), "driverids": [co["driver"]]})
+    assert refused.status_code == 409 and "may not drive" in refused.text, refused.text

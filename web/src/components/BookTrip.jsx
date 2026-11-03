@@ -16,7 +16,7 @@ import { US_STATES } from '../admin/CustomerProfile.jsx'
 const EMPTY = {
   passenger: '', passengerphone: '', tripdate: '', servicelevel: 'ambulatory', critical: false,
   readyabout: '', responsibility: 'provider', responsibilitynote: '', responsibilityChosen: false,
-  payer: 'private', brokerid: '', note: '', pickupplace: '', dropoffplace: '', pickupat: '',
+  payer: 'private', brokerid: '', brokertripno: '', note: '', pickupplace: '', dropoffplace: '', pickupat: '',
   ret: 'no', returnat: '', appointmentat: '',
 }
 
@@ -148,6 +148,7 @@ export default function BookTrip({ day, onClose, onBooked }) {
         critical: f.critical,
         payer: f.payer,
         brokerid: f.brokerid || null,
+        brokertripno: f.brokerid ? f.brokertripno.trim() || null : null,
         note: f.note.trim() || null,
         legs,
       })
@@ -249,6 +250,11 @@ export default function BookTrip({ day, onClose, onBooked }) {
               ))}
             </select>
           </label>
+          {f.brokerid && (
+            <label className="field span-2">Broker Trip Number
+              <input value={f.brokertripno} className="upper" onChange={(e) => setF({ ...f, brokertripno: e.target.value.toUpperCase() })} />
+            </label>
+          )}
           <label className="field span-2">Return
             <select value={f.ret} onChange={(e) => setF({ ...f, ret: e.target.value })}>
               <option value="no">One way</option>

@@ -1147,6 +1147,9 @@ def mark_mvr_reviewed(driverid: str, mvrid: str, body: MvrReviewIn, request: Req
 
 class MvrLiftIn(BaseModel):
     reason: str | None = None
+    # Read in error: the record never said that. Re-read as what it does say, with no newer record.
+    misread: bool = False
+    finding: str | None = None        # misread: qualified | restricted
 
 
 @router.post("/drivers/{driverid}/mvrs/{mvrid}/clear")
@@ -1166,6 +1169,17 @@ def clear_mvr_disqualification(driverid: str, mvrid: str, body: MvrLiftIn, reque
         raise HTTPException(404, "No such disqualifying record")
     if not reason:
         raise HTTPException(400, "Say why the disqualification has ended")
+    if body.misread:
+        if body.finding not in ("qualified", "restricted"):
+            raise HTTPException(400, "Say what the record does say")
+        run(conn, "UPDATE drivermvrs SET finding = :f, note = :n, reviewedon = :now, reviewedby = :u WHERE recordid = :m",
+            f=body.finding, n=reason, now=utcnow(), u=user["recordid"], m=mvrid)
+        # Logged as a reading, as every reading is, so the record keeps what it was first read as.
+        log(conn, user, "reviewed", "drivermvr", driverid, {"mvrid": mvrid, "finding": body.finding, "misread": True,
+                                                              "reason": reason}, ip=client_ip(request))
+        _reevaluate_subject(conn, user, "driver", driverid)
+        saved(conn)
+        return {"ok": True}
     newer = row(conn, """
         SELECT m.recordid FROM drivermvrs m JOIN driverlicenses l ON l.recordid = m.licenseid
         WHERE m.accountid = :a AND m.driverid = :d AND l.state = :s AND m.receivedon IS NOT NULL AND m.cancelledon IS NULL

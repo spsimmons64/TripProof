@@ -272,3 +272,17 @@ def test_fee_schedule(client, admin):
     assert client.post("/api/admin/fees", json={"code": "drug", "name": "Drug Test", "price": 45}, headers=h).status_code == 200
 
 
+
+
+def test_tester_signups_are_kept_and_listed(client, admin):
+    """The public sign-up form: kept and listed for TripProof staff; a bot that fills the hidden field
+    is thanked and not kept; and nobody else can read the list."""
+    form = {"company": "Gulf Coast Rides", "name": "Pat Tester", "email": "Pat@Example.com", "fleet": "6-15", "state": "FL"}
+    assert client.post("/api/testers", json={**form, "email": "not an email"}).status_code == 400
+    assert client.post("/api/testers", json={**form, "company": " "}).status_code == 400
+    assert client.post("/api/testers", json=form).status_code == 200
+    assert client.post("/api/testers", json={**form, "company": "Spam Bot", "website": "http://spam"}).status_code == 200
+    got = client.get("/api/admin/testers", headers=admin["h"]).json()["items"]
+    mine = [t for t in got if t["company"] == "Gulf Coast Rides"]
+    assert mine and mine[0]["email"] == "pat@example.com" and not any(t["company"] == "Spam Bot" for t in got)
+    assert client.get("/api/admin/testers").status_code in (401, 403)

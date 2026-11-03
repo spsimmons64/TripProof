@@ -39,7 +39,7 @@ export default function EditTrip({ tripid, onClose, onDone }) {
   if (trip && !f) {
     const start = {
       passenger: trip.passenger || '', passengerphone: trip.passengerphone || '',
-      servicelevel: trip.servicelevel || 'ambulatory', brokerid: trip.brokerid || '',
+      servicelevel: trip.servicelevel || 'ambulatory', brokerid: trip.brokerid || '', brokertripno: trip.brokertripno || '',
       payer: trip.payer || 'private', note: trip.note || '', reason: '', critical: Boolean(trip.critical),
       legs: trip.legs.map((l) => ({
         legid: l.recordid, legnumber: l.legnumber, pickupat: clock(l.pickupat),
@@ -103,6 +103,7 @@ export default function EditTrip({ tripid, onClose, onDone }) {
       await api.put(`/trips/${tripid}`, {
         passenger: f.passenger, passengerphone: f.passengerphone.trim() || null,
         servicelevel: f.servicelevel, brokerid: f.brokerid || null, payer: f.payer,
+        brokertripno: f.brokerid ? f.brokertripno.trim() || null : null,
         note: f.note.trim() || null, reason: f.reason.trim() || null, critical: f.critical,
         legs: f.legs.map((l) => ({
           legid: l.legid,
@@ -172,6 +173,12 @@ export default function EditTrip({ tripid, onClose, onDone }) {
                 ))}
               </select>
             </label>
+            {f.brokerid && (
+              <label className="field span-3">Broker Trip Number
+                <input value={f.brokertripno} className="upper" disabled={shut}
+                  onChange={(e) => setF({ ...f, brokertripno: e.target.value.toUpperCase() })} />
+              </label>
+            )}
             <label className="field check">
               <input type="checkbox" checked={f.critical} onChange={(e) => setF({ ...f, critical: e.target.checked })} />
               Critical Trip

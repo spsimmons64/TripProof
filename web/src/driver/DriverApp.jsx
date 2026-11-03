@@ -871,7 +871,7 @@ function Trip({ me, leg, reporting, onBack, onDone, onCheck }) {
         </div>
       ) : (
         <button className="dvtrouble" disabled={busy} onClick={() => setAsking('issue')}>
-          <AlertTriangle size={18} /> Tell The Office A Problem
+          <AlertTriangle size={18} /> Report A Problem
         </button>
       ))}
 

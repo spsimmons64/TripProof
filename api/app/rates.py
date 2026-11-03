@@ -388,6 +388,8 @@ def payers(conn: Connection, accountid: str) -> list[dict]:
                COALESCE(ap.active, p.active) AS active, ap.active IS NOT NULL AS decided,
                ap.scheduleid,
                ap.pickuplimit, ap.clockstarts, ap.afterhourscontact,
+               ap.ontimeminutes, ap.billdays, ap.tripnumberrequired, ap.waitcapminutes, ap.milecap,
+               ap.returnnoticehours, ap.signaturerequired,
                p.accountid IS NULL AS shared,
                -- A company's own broker that is also on the master list reads its address and
                -- contact from the master, so there is one copy of where a broker is.

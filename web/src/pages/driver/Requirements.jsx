@@ -758,7 +758,8 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
   })
 
   const clearMvr = () => act(async () => {
-    await api.post(`/drivers/${id}/mvrs/${form.mvrid}/clear`, { reason: form.note })
+    await api.post(`/drivers/${id}/mvrs/${form.mvrid}/clear`,
+      { reason: form.note, misread: form.how === 'misread', finding: form.how === 'misread' ? form.result : null })
     setFiling(false)
   })
 

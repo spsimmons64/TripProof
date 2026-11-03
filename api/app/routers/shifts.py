@@ -402,6 +402,19 @@ class CrewIn(BaseModel):
     driverids: list[str] = []
 
 
+# What refuses every trip, in any vehicle, for any payer: not something a vehicle or a contract adds.
+STOPS_EVERY_TRIP = ("MVR_DISQUALIFIED", "DA_PROHIBITION", "HIRED")
+
+
+def _stopped(conn: Connection, acct: str, driverid: str) -> str | None:
+    """Why this driver may not drive at all today, by the trip check itself - or None. A driver who
+    may not drive any trip is not offered as driving."""
+    from app import tripcheck
+    said = tripcheck.check(conn, acct, driverid, None, at=utcnow(), record=False)
+    hit = next((b for b in said["blockers"] if b["code"] in STOPS_EVERY_TRIP and b.get("enforceable")), None)
+    return (hit.get("reason") or hit.get("name") or "Disqualified").rstrip(".") if hit else None
+
+
 @router.get("/dispatch/crew")
 def crew(day: date, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
     """Every hired driver, and whether they are driving today: as ticked already this morning, or -
@@ -420,8 +433,9 @@ def crew(day: date, user: dict = Depends(current_user), conn: Connection = Depen
     """, a=acct)
     for d in drivers:
         d["out"] = away.get(d["driverid"])
+        d["stopped"] = _stopped(conn, acct, d["driverid"])
         d["vehiclename"] = (held.get(d["driverid"]) or {}).get("vehiclename")
-        d["on"] = d["driverid"] in held if held else not d["out"]
+        d["on"] = not d["stopped"] and (d["driverid"] in held if held else not d["out"])
     return {"day": day, "drivers": drivers, "ticked": bool(held)}
 
 
@@ -434,6 +448,11 @@ def set_crew(body: CrewIn, request: Request, user: dict = Depends(editor), conn:
     if body.day != localnow(dispatch.zone(conn, acct)).date():
         raise HTTPException(409, "Who is driving is decided on the day itself.")
     keep = set(body.driverids)
+    for d in keep:
+        why = _stopped(conn, acct, d)
+        if why:
+            who = row(conn, "SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS n FROM drivers WHERE recordid = :d AND accountid = :a", d=d, a=acct)
+            raise HTTPException(409, f"{((who or {}).get('n') or 'That driver').title()} may not drive: {why}.")
     held = rows(conn, "SELECT recordid, driverid FROM dayshifts WHERE accountid = :a AND workday = :w "
                       "AND driverid IS NOT NULL", a=acct, w=body.day)
     for s in held:

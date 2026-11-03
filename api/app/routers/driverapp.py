@@ -578,6 +578,12 @@ def move_leg(legid: str, body: StateIn, request: Request,
                 why=None if body.signature else body.unsigned,
                 n=None if body.signature else " ".join((body.unsignednote or "").split()).upper()[:400] or None, now=now)
             run(conn, "UPDATE triplegs SET signature = :s WHERE recordid = :l", s=1 if body.signature else 0, l=legid)
+        # GPS on this leg: the phone reported where it was between setting off and now.
+        began = row(conn, "SELECT MIN(happenedon) AS at FROM tripevents WHERE legid = :l AND state IN ('enroute', 'onboard')", l=legid)
+        if began and began["at"] and row(conn, """SELECT 1 AS x FROM driverlocations WHERE accountid = :a AND driverid = :d
+                                                  AND recordedon BETWEEN :b AND :n LIMIT 1""",
+                                         a=driver["accountid"], d=driver["recordid"], b=began["at"], n=now):
+            run(conn, "UPDATE triplegs SET gps = 1 WHERE recordid = :l", l=legid)
         _settle_verify(conn, driver["accountid"], leg["tripid"])
 
     _place(conn, driver, body, legid)
