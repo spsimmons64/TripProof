@@ -608,8 +608,10 @@ def _take(conn: Connection, user: dict, t: dict, body: PaymentIn, request: Reque
     if body.denied:
         run(conn, "UPDATE trips SET billingstatus = 'held', verifystate = 'needscorrection', holdreason = :r, updated = :now WHERE recordid = :t",
             r=f"DENIED BY THE PAYER: {note}"[:600], now=utcnow(), t=tripid)
-    elif body.writedown is None or down >= owing:
-        run(conn, "UPDATE trips SET billingstatus = 'paid', updated = :now WHERE recordid = :t", now=utcnow(), t=tripid)
+    else:
+        # Paid only once nothing is owed: a payer that paid short is still owed the rest.
+        run(conn, "UPDATE trips SET billingstatus = :s, updated = :now WHERE recordid = :t",
+            s="paid" if owing - paid - down <= 0 else "billed", now=utcnow(), t=tripid)
     log(conn, user, "trip-payment", "trip", tripid, {"amount": str(paid), "writedown": str(down), "denied": body.denied, "note": note}, ip=client_ip(request))
 
 

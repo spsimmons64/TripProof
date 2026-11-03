@@ -202,7 +202,7 @@ def _reevaluate_subject(conn: Connection, user: dict, subject: str, subjectid: s
 
 def _recheck_upcoming(conn: Connection, acct: str, col: str, subjectid: str, userid: str) -> None:
     """Something on this driver's or vehicle's file just changed - a license revoked, a screening
-    filed, a record lapsed - so every trip they are assigned in the coming week is checked again
+    filed, a record lapsed - so every trip they are assigned in the coming month is checked again
     now, not at tomorrow's sweep. The bell reads the newest check per trip. Never a reason for the
     change itself to fail."""
     try:
@@ -210,7 +210,9 @@ def _recheck_upcoming(conn: Connection, acct: str, col: str, subjectid: str, use
             SELECT l.recordid, l.driverid, l.vehicleid FROM triplegs l
             JOIN trips t ON t.recordid = l.tripid AND t.deleted IS NULL AND t.cancelledon IS NULL
             WHERE l.accountid = :a AND l.{col} = :s AND l.driverid IS NOT NULL
-              AND l.pickupat BETWEEN UTC_TIMESTAMP() AND UTC_TIMESTAMP() + INTERVAL 7 DAY
+              AND (l.pickupat BETWEEN UTC_TIMESTAMP() AND UTC_TIMESTAMP() + INTERVAL 31 DAY
+                   OR (l.pickupat IS NULL AND t.tripdate BETWEEN UTC_DATE() AND UTC_DATE() + INTERVAL 31 DAY
+                       AND l.outcomestate IS NULL AND l.executionstate <> 'completed'))
         """, a=acct, s=subjectid):
             tripcheck.check(conn, acct, leg["driverid"], leg["vehicleid"], legid=leg["recordid"],
                             userid=userid, shadow=True)

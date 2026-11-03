@@ -6,8 +6,9 @@
 # Thursday stopped qualifying overnight because something lapsed. So once a day:
 #
 #   1. each pending and hired driver's standing per program is kept as a snapshot;
-#   2. every assigned trip in the next seven days is checked again against the file as it stands,
-#      and the check is kept - the bell reads the newest one per leg.
+#   2. every assigned trip in the next month - will-calls with no time yet included - is checked
+#      again against the file as it stands, and the check is kept: the bell and the board read the
+#      newest one per leg.
 ###################################################################################################
 import json
 from datetime import timedelta
@@ -18,7 +19,7 @@ from app import facts as factset
 from app import mvr, qualification, rules, tripcheck
 from app.db import newid, rows, run, utcnow
 
-AHEAD = timedelta(days=7)
+AHEAD = timedelta(days=31)
 
 
 def snapshot(conn: Connection) -> int:
@@ -49,8 +50,10 @@ def sweep(conn: Connection) -> dict:
     for leg in rows(conn, """
         SELECT l.recordid, l.accountid, l.driverid, l.vehicleid FROM triplegs l
         JOIN trips t ON t.recordid = l.tripid
-        WHERE l.driverid IS NOT NULL AND l.pickupat BETWEEN :now AND :until
-          AND t.deleted IS NULL AND t.cancelledon IS NULL
+        WHERE l.driverid IS NOT NULL AND t.deleted IS NULL AND t.cancelledon IS NULL
+          AND (l.pickupat BETWEEN :now AND :until
+               OR (l.pickupat IS NULL AND t.tripdate BETWEEN DATE(:now) AND DATE(:until)
+                   AND l.outcomestate IS NULL AND l.executionstate <> 'completed'))
     """, now=now, until=now + AHEAD):
         got = tripcheck.check(conn, leg["accountid"], leg["driverid"], leg["vehicleid"],
                               legid=leg["recordid"], shadow=True)

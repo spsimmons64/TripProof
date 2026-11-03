@@ -451,6 +451,50 @@ def test_4a4_any_stop_on_an_assigned_trip_is_flagged_and_texted_once(make):
     assert not flagged()
 
 
+def test_4a5_will_calls_and_trips_weeks_out_are_checked_and_a_closed_day_still_texts_a_stop(make):
+    """The daily check reaches a will-call with no time yet and a trip three weeks out; and a stop on
+    a trip within the day is texted to the office even on a day the company is closed."""
+    from app import dailycompliance, tripcheck, willcall
+    from app.db import localnow
+    from app import dispatch as dsp
+    co = make()
+    c, h = co["client"], co["h"]
+    on = date.today() + timedelta(days=21)
+    got = c.post("/api/trips", headers=h, json={"passenger": "THREE WEEKS", "tripdate": str(on), "payer": "private", "legs": [
+        {"pickupat": f"{on}T09:00:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"},
+        {"pickupat": None, "pickupplace": "1 MAIN ST, JACKSONVILLE, FL 32202", "dropoffplace": "40 BAY ST, JACKSONVILLE, FL 32207", "responsibility": "provider"}]})
+    assert got.status_code == 200, got.text
+    with co["db"].begin() as conn:
+        legs = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t ORDER BY legnumber"), {"t": got.json()["recordid"]}).scalars().all()
+        conn.execute(text("UPDATE triplegs SET driverid = :d, vehicleid = :v WHERE tripid = :t"), {"d": co["driver"], "v": co["vehicle"], "t": got.json()["recordid"]})
+        conn.execute(text("UPDATE drivers SET status = 'inactive' WHERE recordid = :d"), {"d": co["driver"]})
+        dailycompliance.sweep(conn)
+    board = {i["legid"]: i["attention"] for i in c.get("/api/dispatch/board?state=attention&pagesize=500", headers=h).json()["items"]}
+    assert board.get(legs[0]) == "compliancestop" and board.get(legs[1]) == "compliancestop", board
+
+    # Closed every day, with the driver on call so the trip can be booked at all.
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET status = 'hired', phone = '(904) 555-0123' WHERE recordid = :d"), {"d": co["driver"]})
+        conn.execute(text("UPDATE users SET dispatchalerts = 1, mobile = '(813) 555-0100' WHERE accountid = :a"), {"a": co["acct"]})
+        today = localnow(dsp.zone(conn, co["acct"])).date()
+    assert c.put("/api/company", headers=h, json={"hours": {str(d): None for d in range(7)}}).status_code == 200
+    for d in {today, today + timedelta(days=1)}:
+        assert c.put("/api/oncall", headers=h, json={"day": str(d), "items": [{"driverid": co["driver"], "vehicleid": co["vehicle"]}]}).status_code == 200
+    with co["db"].connect() as conn:
+        at = (localnow(dsp.zone(conn, co["acct"])) + timedelta(hours=3)).replace(second=0, microsecond=0)
+    soon = c.post("/api/trips", headers=h, json={"passenger": "CLOSED TODAY", "tripdate": str(at.date()), "payer": "private", "legs": [
+        {"pickupat": at.strftime("%Y-%m-%dT%H:%M:00"), "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207", "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]})
+    assert soon.status_code == 200, soon.text
+    with co["db"].begin() as conn:
+        leg = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": soon.json()["recordid"]}).scalar()
+        conn.execute(text("UPDATE triplegs SET driverid = :d, vehicleid = :v WHERE recordid = :l"), {"d": co["driver"], "v": co["vehicle"], "l": leg})
+        conn.execute(text("UPDATE drivers SET status = 'inactive' WHERE recordid = :d"), {"d": co["driver"]})
+        assert tripcheck.check(conn, co["acct"], co["driver"], co["vehicle"], legid=leg, shadow=True)["decision"] == "notqualified"
+        willcall.office_alerts(conn)
+        sent = conn.execute(text("SELECT body FROM drivertexts WHERE legid = :l AND kind = 'alertstop'"), {"l": leg}).scalars().all()
+    assert sent and "may not run as assigned" in sent[0], sent
+
+
 def test_4b_a_changed_finding_keeps_the_first_one_on_the_record(make):
     co = make()
     add_line(co, co["payer"], "GA")
@@ -2359,8 +2403,8 @@ def test_6q_a_clean_trip_prices_itself_and_the_rest_say_why(make):
     with co["db"].connect() as conn:
         assert conn.execute(text("SELECT COUNT(*) FROM tripcharges WHERE tripid = :t AND rateid IS NOT NULL"), {"t": clean}).scalar() == 3
     assert c.post(f"/api/trip-billing/{clean}/payment", headers=h, json={"amount": "30.00"}).status_code == 200
-    paid = queue("paid")[0][clean]
-    assert paid["paid"] == 30.0 and paid["amount"] == 32.20, paid
+    paid = queue("submitted")[0][clean]                   # paid short: still Submitted
+    assert paid["paid"] == 30.0 and paid["amount"] == 32.20 and clean not in queue("paid")[0], paid
     assert c.post(f"/api/trip-billing/{nogps}/payment", headers=h, json={"denied": True}).status_code == 400
     assert c.post(f"/api/trip-billing/{nogps}/payment", headers=h, json={"denied": True, "note": "no signature"}).status_code == 200
     assert "DENIED" in queue("exceptions")[0][nogps]["reason"]
@@ -2685,6 +2729,9 @@ def test_6w_billing_can_be_put_right(make):
     assert c.get(f"/api/trip-billing/{one}", headers=h).json()["billingstatus"] == "billed"     # none of it
     assert c.post(f"/api/trip-billing/batches/{batch}/payment", headers=h, json={"lines": [
         {"tripid": one, "amount": "44"}, {"tripid": two, "amount": "40"}, {"tripid": three, "denied": True, "note": "no auth"}]}).status_code == 200
+    # Paid short: still Submitted, with the rest owed, until it is paid or written down.
+    short = c.get(f"/api/trip-billing/{two}", headers=h).json()
+    assert short["billingstatus"] == "billed" and short["owing"] == 4.0, short
     out = c.get("/api/trip-billing?state=outstanding", headers=h).json()
     assert {t["recordid"]: t["owing"] for t in out["items"]} == {two: 4.0} and out["aging"]["current"] == 4.0, out["items"]
     assert "DENIED" in next(t for t in c.get("/api/trip-billing?state=exceptions", headers=h).json()["items"] if t["recordid"] == three)["reason"]

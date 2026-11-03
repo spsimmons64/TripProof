@@ -97,10 +97,10 @@ def office_alerts(conn: Connection) -> int:
         here = localnow(dispatch.zone(conn, acct))
         today = here.date()
         h = company_hours(conn, acct, today)
-        if h and h.get("closed"):
-            continue
-        opens, closes = plan.span(today, h["open"], h["close"]) if h else (None, None)
-        open_now = not h or opens <= here < closes
+        # A day the company is closed: only what cannot wait for it to open, below.
+        closed = bool(h and h.get("closed"))
+        opens, closes = plan.span(today, h["open"], h["close"]) if h and not closed else (None, None)
+        open_now = not h or (not closed and opens <= here < closes)
         said = []                                                  # (kind, legid, tripid, text)
         handed = "t.brokerstate NOT IN ('offered', 'returnpending', 'returned') AND l.brokerstate IS NULL"
         if open_now:
@@ -132,7 +132,7 @@ def office_alerts(conn: Connection) -> int:
                              f"Will-call {l['externalid']} has no coverage recorded and you close at "
                              f"{closes:%-I:%M %p}."))
         # A passenger still waiting at a place about to lock up, whatever the company's own hours.
-        for l in rows(conn, f"""
+        for l in [] if closed else rows(conn, f"""
             SELECT l.recordid, l.tripid, t.externalid, p.closesat FROM triplegs l JOIN trips t ON t.recordid = l.tripid
             JOIN places p ON p.accountid = l.accountid AND p.deleted IS NULL AND p.closesat IS NOT NULL
              AND CONCAT_WS(', ', p.address, p.city, CONCAT_WS(' ', p.state, p.zip)) = l.pickupplace
@@ -148,8 +148,9 @@ def office_alerts(conn: Connection) -> int:
         # the app; once per driver on it, so a second driver stopped on the same trip is said too.
         for l in rows(conn, f"""
             SELECT l.recordid, l.tripid, l.driverid, l.pickupat, t.externalid FROM triplegs l JOIN trips t ON t.recordid = l.tripid
-            WHERE l.accountid = :a AND t.deleted IS NULL AND l.pickupat BETWEEN :here AND :until AND {tripcheck.STOPPED_LEG}
-        """, a=acct, here=here.replace(tzinfo=None), until=here.replace(tzinfo=None) + STOP_WITHIN):
+            WHERE l.accountid = :a AND t.deleted IS NULL AND {tripcheck.STOPPED_LEG}
+              AND (l.pickupat BETWEEN :here AND :until OR (l.pickupat IS NULL AND t.tripdate BETWEEN :d AND DATE(:until)))
+        """, a=acct, d=today, here=here.replace(tzinfo=None), until=here.replace(tzinfo=None) + STOP_WITHIN):
             said.append((f"alertstop:{l['driverid']}", l["recordid"], l["tripid"],
                          f"Trip {l['externalid']}, pickup {sms.when(l['pickupat'])}, may not run as assigned. Check Dispatch."))
         if not said:
