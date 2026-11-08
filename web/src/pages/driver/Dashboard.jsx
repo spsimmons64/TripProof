@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Ban, Car, Check, ChevronLeft, Download, FlaskConical, LayoutDashboard, ChevronRight, Clock, ExternalLink, Eye, FileSignature, FileText, FileUp, FolderOpen, History, IdCard, ListChecks, Loader2, MoreHorizontal, Plus, X, Send, UserCheck, UserX } from 'lucide-react'
 import { STATE_NAMES } from '../../lib/states.js'
 import { api } from '../../lib/api.js'
+import { QualificationOverview } from './Requirements.jsx'
 import { useRefreshOnFocus, useWatch } from '../../lib/live.js'
 import { date } from '../../lib/format.js'
 import { Bubble, Loading, useLoad } from '../../components/ui.jsx'
@@ -154,7 +155,7 @@ const TRIPSTATE = {
   disputed: ['Disputed', 'st-ordered'],
 }
 
-function TripHistory({ id }) {
+export function TripHistory({ id }) {
   const [data, error] = useLoad(() => api.get(`/drivers/${id}/trips`), [id])
   const [page, setPage] = useState(1)
   const trips = data?.trips || []
@@ -281,8 +282,9 @@ export function HiringDashboard({ id, onGo }) {
   const go = (code) => onGo?.('requirements', code)
   return (
     <div className="hiregrid">
+      {/* A hired driver's standing, read first. What they have driven is a page of its own. */}
       {data.driver?.status === 'hired'
-        ? <TripHistory id={id} />
+        ? <QualificationOverview id={id} className="hirewide" />
         : <PreHirePanel counts={data.counts} waiting={data.waiting} stops={data.stops} />}
 
       {/* The office's own queue, read before any of the chasing below it: it is the one list

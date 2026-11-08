@@ -1,0 +1,1066 @@
+{
+  "prepared_on": "2026-11-07",
+  "purpose": "Map each missing applicability fact/evidence evaluator to impacted Florida rule IDs; these cannot be automatically enforced until the missing primitive is implemented.",
+  "missing_facts": [
+    {
+      "name": "company.contracted_through_transportation_coordinator",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-119"
+      ],
+      "why": [
+        "Appendix C explicitly excepts providers contracted through coordinator."
+      ]
+    },
+    {
+      "name": "company.fl_ahca_enrollment_required",
+      "impacted_rule_count": 7,
+      "impacted_rules": [
+        "MED-CO-115",
+        "MED-CO-116",
+        "MED-CO-117",
+        "MED-CO-118",
+        "MED-CO-119",
+        "MED-CO-120",
+        "MED-CO-121"
+      ],
+      "why": [
+        "Need classification determining whether this provider must directly enroll, rather than operating solely as a broker subcontractor."
+      ]
+    },
+    {
+      "name": "company.fl_local_license_required",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-117"
+      ],
+      "why": [
+        "Local occupational, taxi or for-hire license depends on local jurisdiction and vehicle/service classification."
+      ]
+    },
+    {
+      "name": "company.fl_local_td_service_plan",
+      "impacted_rule_count": 3,
+      "impacted_rules": [
+        "ST-CO-012",
+        "ST-CO-013",
+        "ST-CO-014"
+      ],
+      "why": [
+        "Cannot infer uniform first aid certificate requirement from this provision; the local plan determines it.",
+        "Local service plan and purchasers determine additional screening conditions; cannot be universalized.",
+        "There is no statewide universal two-year CPR certification mandate in this provision."
+      ]
+    },
+    {
+      "name": "company.fl_transportation_enrollment_specialty",
+      "impacted_rule_count": 2,
+      "impacted_rules": [
+        "MED-CO-119",
+        "MED-CO-120"
+      ],
+      "why": [
+        "Only non-emergency, multi-load and taxicab provider specialties listed as requiring this bond.",
+        "Only private transportation and taxicab specialties require operator license under Appendix C."
+      ]
+    },
+    {
+      "name": "company.is_tnc_under_627748",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-016"
+      ],
+      "why": [
+        "Digital medical dispatch alone does not establish TNC classification; Medicaid contracting may expressly exclude it."
+      ]
+    },
+    {
+      "name": "driver.fit_for_duty_status",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-016"
+      ],
+      "why": [
+        "Need current fitness/safety-disqualification determination; past medical card not enough."
+      ]
+    },
+    {
+      "name": "driver.florida_resident",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-002"
+      ],
+      "why": [
+        "Law expressly applies to Florida residents and does not universally ban qualified out-of-state CDL holders."
+      ]
+    },
+    {
+      "name": "driver.last_qualifying_off_duty_period",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-014"
+      ],
+      "why": [
+        "Need verified off-duty periods and any permitted exceptions."
+      ]
+    },
+    {
+      "name": "driver.medical_leave_30_or_more_days",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-010"
+      ],
+      "why": [
+        "Event-based conditional medical leave and return date not in current schema."
+      ]
+    },
+    {
+      "name": "driver.projected_24h_driving_hours",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-012"
+      ],
+      "why": [
+        "Need driving-hour totals including intended trip and exception classification."
+      ]
+    },
+    {
+      "name": "driver.projected_24h_on_duty_hours",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-013"
+      ],
+      "why": [
+        "Need on-duty time and projected trip duration."
+      ]
+    },
+    {
+      "name": "driver.qualified_bus_vehicle_types",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-005"
+      ],
+      "why": [
+        "Qualification must be matched to the bus type rather than treating a generic training attendance as proficiency."
+      ]
+    },
+    {
+      "name": "driver.seven_day_duty_hours_and_restart",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-015"
+      ],
+      "why": [
+        "Need 7-day rolling work hours and 24h rest reset information."
+      ]
+    },
+    {
+      "name": "operation.fl_14_90_applicable",
+      "impacted_rule_count": 28,
+      "impacted_rules": [
+        "ST-CO-001",
+        "ST-CO-002",
+        "ST-CO-003",
+        "ST-DRV-003",
+        "ST-DRV-004",
+        "ST-DRV-005",
+        "ST-DRV-006",
+        "ST-DRV-007",
+        "ST-CO-004",
+        "ST-CO-005",
+        "ST-CO-006",
+        "ST-CO-007",
+        "ST-DRV-008",
+        "ST-DRV-009",
+        "ST-DRV-010",
+        "ST-DRV-011",
+        "ST-DRV-012",
+        "ST-DRV-013",
+        "ST-DRV-014",
+        "ST-DRV-015",
+        "ST-DRV-016",
+        "ST-VEH-002",
+        "ST-VEH-003",
+        "ST-VEH-004",
+        "ST-CO-008",
+        "ST-VEH-005",
+        "ST-CO-009",
+        "ST-CO-011"
+      ],
+      "why": [
+        "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation.",
+        "Classification must determine whether 14-90 applies to vehicle/operator and which provisions."
+      ]
+    },
+    {
+      "name": "operation.fl_ctc_coordinated",
+      "impacted_rule_count": 15,
+      "impacted_rules": [
+        "ST-CO-010",
+        "ST-CO-011",
+        "ST-VEH-006",
+        "ST-VEH-007",
+        "ST-VEH-008",
+        "ST-DRV-017",
+        "ST-DRV-018",
+        "ST-DRV-019",
+        "ST-VEH-009",
+        "ST-VEH-010",
+        "ST-VEH-011",
+        "ST-CO-012",
+        "ST-CO-013",
+        "ST-CO-014",
+        "ST-CO-015"
+      ],
+      "why": [
+        "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+      ]
+    },
+    {
+      "name": "trip.crosses_state_line",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-112"
+      ],
+      "why": [
+        "Need trip route state boundaries, not operation.interstate which means ever."
+      ]
+    },
+    {
+      "name": "trip.driver_pickup_identification_exception",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-018"
+      ],
+      "why": [
+        "Requires trip events and whether rider is regularly transported by this driver."
+      ]
+    },
+    {
+      "name": "trip.duplicates_other_covered_service",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-102"
+      ],
+      "why": [
+        "Requires trip/payer-level determination about duplication of already furnished services."
+      ]
+    },
+    {
+      "name": "trip.escort_accommodation",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-105"
+      ],
+      "why": [
+        "Need trip escort seating and acceptance decision."
+      ]
+    },
+    {
+      "name": "trip.escort_assigned",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-106"
+      ],
+      "why": [
+        "Trip escort assignment not available."
+      ]
+    },
+    {
+      "name": "trip.escort_entitlement",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-105"
+      ],
+      "why": [
+        "Trip must record disability/assistance/age conditions qualifying for policy escort."
+      ]
+    },
+    {
+      "name": "trip.escort_provider_employment_relation",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-DRV-101"
+      ],
+      "why": [
+        "Escort identity and employment relationship are not in schema."
+      ]
+    },
+    {
+      "name": "trip.fl_medicaid_eligibility_status",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-100"
+      ],
+      "why": [
+        "Trip-specific beneficiary eligibility and applicable program eligibility on service date are not in current facts."
+      ]
+    },
+    {
+      "name": "trip.fl_medicaid_fee_for_service",
+      "impacted_rule_count": 2,
+      "impacted_rules": [
+        "MED-CO-111",
+        "MED-CO-114"
+      ],
+      "why": [
+        "Policy \u00a77.1 explicitly restricts this authorization instruction to FFS delivery.",
+        "Section 8.1 limits reimbursement language to AHCA broker context."
+      ]
+    },
+    {
+      "name": "trip.is_ppec_transport",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-106"
+      ],
+      "why": [
+        "Trip requires PPEC service category."
+      ]
+    },
+    {
+      "name": "trip.is_urgent_or_unscheduled",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-108"
+      ],
+      "why": [
+        "Trip urgency/unscheduled status not represented."
+      ]
+    },
+    {
+      "name": "trip.medical_necessity_approved",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-101"
+      ],
+      "why": [
+        "Trip medical necessity or payer approval must be known."
+      ]
+    },
+    {
+      "name": "trip.medically_approved_transport_mode",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-104"
+      ],
+      "why": [
+        "Requires licensed professional mode determination and trip transport classification."
+      ]
+    },
+    {
+      "name": "trip.operates_in_florida",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-001"
+      ],
+      "why": [
+        "Only require Florida roadway compliance when assigned trip actually uses Florida highways; exemptions and out-of-state reciprocity must be respected."
+      ]
+    },
+    {
+      "name": "trip.passenger_and_escort_seats_required",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-008"
+      ],
+      "why": [
+        "Number of occupied passenger/escort seats is trip-specific and not represented by vehicle.seats alone."
+      ]
+    },
+    {
+      "name": "trip.passenger_needs_boarding_assistance",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-019"
+      ],
+      "why": [
+        "Need requested assistance and driver's ability to provide it."
+      ]
+    },
+    {
+      "name": "trip.ppec_escort_medically_required",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-106"
+      ],
+      "why": [
+        "Trip escort medical necessity not available."
+      ]
+    },
+    {
+      "name": "trip.recipient_no_other_transport",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-103"
+      ],
+      "why": [
+        "Beneficiary transport access is not a recognized TripProof fact."
+      ]
+    },
+    {
+      "name": "trip.vehicle_actual_projected_weight",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-005"
+      ],
+      "why": [
+        "Need projected combined rider, wheelchair, equipment and vehicle load, axle/tire ratings."
+      ]
+    },
+    {
+      "name": "vehicle.active_critical_defects",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-003"
+      ],
+      "why": [
+        "Needs defect severity, disposition and clearance, not only an inspection certificate."
+      ]
+    },
+    {
+      "name": "vehicle.fl_insurance_proof_statute_applies",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-020"
+      ],
+      "why": [
+        "Requires identifying which financial security mandates apply to this vehicle and driver."
+      ]
+    },
+    {
+      "name": "vehicle.fl_pip_security_required",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-013"
+      ],
+      "why": [
+        "School buses, limousines, taxicabs, nonresidents and other categories have different or additional treatment."
+      ]
+    },
+    {
+      "name": "vehicle.fl_registration_required",
+      "impacted_rule_count": 2,
+      "impacted_rules": [
+        "ST-VEH-001",
+        "ST-VEH-012"
+      ],
+      "why": [
+        "Some nonresident and statutory exemptions apply, so cannot presume all vehicles must hold Florida registration.",
+        "Statute is tied to vehicles required to register in Florida."
+      ]
+    },
+    {
+      "name": "vehicle.is_nonpublic_sector_bus",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-015"
+      ],
+      "why": [
+        "Applies to nonpublic-sector bus defined by law and excludes specified school buses."
+      ]
+    },
+    {
+      "name": "vehicle.is_taxicab",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-014"
+      ],
+      "why": [
+        "Cannot treat every NEMT passenger van as a taxicab."
+      ]
+    }
+  ],
+  "missing_evidence": [
+    {
+      "name": "ahca_appendix_b_documents",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-121"
+      ],
+      "why": [
+        "Each Appendix B item needs its own evidence mapping; cannot validate with a generic credential."
+      ]
+    },
+    {
+      "name": "assistance_proficiency_evaluation",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-007"
+      ],
+      "why": [
+        "A course document alone may not verify required testing/proficiency."
+      ]
+    },
+    {
+      "name": "driver_possession_of_vehicle_insurance_proof",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-020"
+      ],
+      "why": [
+        "Company insurance file does not establish that the operating driver has legally acceptable proof on hand."
+      ]
+    },
+    {
+      "name": "evidence.appropriate_medicaid_transportation_mode",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-104"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.coordinated_td_air_conditioner_heater_working_or_repaired",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-011"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.coordinated_td_vehicle_grievance_helpline_posted",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-006"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.coordinated_td_vehicle_interior_safe_and_clean",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-007"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.florida_medicaid_nonemergency_surety_bond_when_required",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-119"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.medicaid_net_escort_cannot_be_driver_or_provider_employee",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-DRV-101"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.medicaid_net_escort_permitted_when_specified",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-105"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.no_duplicate_medicaid_transportation_service",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-102"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.non-institutional_medicaid_provider_agreement",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-116"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.passenger_lacks_alternative_transportation",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-103"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.ppec_recipient_medically_required_escort",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-106"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.return-to-duty_medical_evaluation_after_30-day_medical_absen",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-010"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.smoking_prohibited_in_td_coordinated_vehicles",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-009"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_funded_service_chapter_14-90_safety_compliance",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-011"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_local_cpr_policy_applies",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-013"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_local_driver_background_screening_policy_applies",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-014"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_local_first_aid_policy_applies",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-012"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_paratransit_driver_announces_identity_at_pickup",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-018"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_paratransit_driver_visible_photo_id",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-017"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_paratransit_must_not_exceed_registered_seating_capacity",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-008"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_paratransit_passenger_boarding_assistance",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-019"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.td_passenger_trip_database_accessible_to_coordinator",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-015"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.tnc_classification_excludes_designated_medical_transportatio",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-016"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transit_72_on-duty_hours_in_7_days_restriction",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-015"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transit_bus_safe_load_not_over_gvwr",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-005"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transit_driving_hours_maximum_12_in_24_hours",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-012"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transit_eight_consecutive_off-duty_hours",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-014"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transit_impaired_or_fatigued_driver_not_permitted",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-016"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transit_inspection_reports_retained_four_years",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-008"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transit_on-duty_maximum_16_in_24_hours",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-013"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transit_unsafe_bus_defect_disqualification",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-003"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.transport_only_medically_necessary_medicaid_net",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-101"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "evidence.two-way_communications_for_coordinated_td_vehicles",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-010"
+      ],
+      "why": [
+        "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+      ]
+    },
+    {
+      "name": "fdot_annual_safety_cert_submission",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-009"
+      ],
+      "why": [
+        "An annual submission receipt must be tracked by the bus transit system; not a per-driver qualification."
+      ]
+    },
+    {
+      "name": "fl_14_90_safety_inspection_compliance",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-004"
+      ],
+      "why": [
+        "Generic DOT annual inspection document may not demonstrate Florida Chapter 14-90 specific inspection protocol."
+      ]
+    },
+    {
+      "name": "fl_level1_or_approved_equivalent",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-DRV-100"
+      ],
+      "why": [
+        "Existing FL_LEVEL1 credential cannot confirm authorized functionally equivalent screening or eligibility result."
+      ]
+    },
+    {
+      "name": "fl_net_booking_policy_review",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-107"
+      ],
+      "why": [
+        "Provider reservation policy needs a verifiable compliance review, not a blanket trip failure."
+      ]
+    },
+    {
+      "name": "fl_net_claim_submission",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-114"
+      ],
+      "why": [
+        "Claims routing is not an assignment-time qualification."
+      ]
+    },
+    {
+      "name": "fl_net_escort_billing_control",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-113"
+      ],
+      "why": [
+        "Fare and billing records must distinguish permitted additional riders from required escort."
+      ]
+    },
+    {
+      "name": "for_hire_financial_security_proof",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-014"
+      ],
+      "why": [
+        "Must evaluate legally permitted financial responsibility methods, not assume standard PIP amount applies."
+      ]
+    },
+    {
+      "name": "insurance_policy_limits_and_status",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-118"
+      ],
+      "why": [
+        "Certificate document presence is not enough to prove $100,000 per person/$200,000 per incident and active coverage."
+      ]
+    },
+    {
+      "name": "lift_operation_training_and_test",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-DRV-006"
+      ],
+      "why": [
+        "WHEELCHAIR_SECUREMENT alone may not establish lift-operation testing for the assigned bus."
+      ]
+    },
+    {
+      "name": "medicaid_distance_denial_review",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-110"
+      ],
+      "why": [
+        "Need denial reason and routing policy to ensure geographic distance is not a prohibited criterion."
+      ]
+    },
+    {
+      "name": "medicaid_trip_cap_policy_review",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-109"
+      ],
+      "why": [
+        "Cannot infer policy compliance from an individual trip without reviewing program rejection logic."
+      ]
+    },
+    {
+      "name": "nonpublic_bus_liability_limits",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-015"
+      ],
+      "why": [
+        "Must check $100k/$300k/$50k or $300k combined alternative, not merely certificate presence."
+      ]
+    },
+    {
+      "name": "out_of_state_medical_service_prior_authorization",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-112"
+      ],
+      "why": [
+        "Medical service prior authorization unavailable."
+      ]
+    },
+    {
+      "name": "procedure_receipt_by_driver",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-004"
+      ],
+      "why": [
+        "Company policy presence does not prove each driver received procedures."
+      ]
+    },
+    {
+      "name": "td_liability_limits_verification",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-010"
+      ],
+      "why": [
+        "Insurance certificate must be evaluated for actual covered TD insurance limits and status."
+      ]
+    },
+    {
+      "name": "transit_driver_record_retention",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-CO-005"
+      ],
+      "why": [
+        "Retention clock and audit preservation are not represented by a document's expiration."
+      ]
+    },
+    {
+      "name": "trip_ahca_broker_authorization",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-111"
+      ],
+      "why": [
+        "Need trip-specific broker authorization evidence; not a provider enrollment credential."
+      ]
+    },
+    {
+      "name": "trip_day_bus_inspection_and_defects",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-002"
+      ],
+      "why": [
+        "Vehicle inspection document type may not identify that the latest check occurred for the relevant service date or was acceptable."
+      ]
+    },
+    {
+      "name": "trip_eligibility_verification",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-100"
+      ],
+      "why": [
+        "Trip-level eligibility verification evidence is unavailable."
+      ]
+    },
+    {
+      "name": "trip_urgent_booking_review",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-CO-108"
+      ],
+      "why": [
+        "Need indication that no prohibited advance booking requirement applied."
+      ]
+    },
+    {
+      "name": "vehicle_combined_licensure_compliance",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "MED-VEH-100"
+      ],
+      "why": [
+        "Registration does not alone prove all applicable passenger transport vehicle requirements; composite qualification evaluation required."
+      ]
+    },
+    {
+      "name": "vehicle_pip_security_verification",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-013"
+      ],
+      "why": [
+        "Need proof of active PIP or legally accepted alternate financial security."
+      ]
+    },
+    {
+      "name": "vehicle_property_damage_security",
+      "impacted_rule_count": 1,
+      "impacted_rules": [
+        "ST-VEH-012"
+      ],
+      "why": [
+        "Need validate applicable financial-security method and $10,000 coverage or an expressly authorized alternative."
+      ]
+    }
+  ]
+}

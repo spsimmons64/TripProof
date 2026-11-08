@@ -1,0 +1,1049 @@
+{
+  "format": "tripproof-requirements/1",
+  "title": "Florida Medicaid NEMT Requirements — Research Draft",
+  "prepared_on": "2026-11-07",
+  "prepared_by": "OpenAI research draft for TripProof Online; legal and source verification required",
+  "requirements": [
+    {
+      "id": "MED-DRV-100",
+      "qualification": "BKG-003",
+      "name": "Florida Medicaid NEMT Level 1 or equivalent driver screen",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 409.907(8)(a)4",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/409.907",
+      "citation_text": "must comply with a level 1 background screening pursuant to chapter 435 or an equivalent screening as authorized in s. 316.87.",
+      "requirement_text": "Every covered Florida Medicaid NEMT driver must have satisfactory Level 1 or legally acceptable equivalent background screening.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "FL_LEVEL1"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "notes": "Do not require Level 2 for all NEMT drivers. Record observed 2026-11-07; actual statutory enactment/effective date needs history verification.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "fl_level1_or_approved_equivalent",
+          "why": "Existing FL_LEVEL1 credential cannot confirm authorized functionally equivalent screening or eligibility result."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-100",
+      "qualification": "FLM-100",
+      "name": "Florida Medicaid eligibility verification each trip",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 2.1",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "Provider(s) must verify each recipient’s eligibility each time a service is rendered.",
+      "requirement_text": "Verify Medicaid eligibility for the recipient on the date each Florida Medicaid NET service is furnished.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting florida medicaid eligibility verification each trip."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.fl_medicaid_eligibility_status",
+          "why": "Trip-specific beneficiary eligibility and applicable program eligibility on service date are not in current facts."
+        },
+        {
+          "kind": "evidence",
+          "name": "trip_eligibility_verification",
+          "why": "Trip-level eligibility verification evidence is unavailable."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-101",
+      "qualification": "FLM-101",
+      "name": "Transport only medically necessary Medicaid NET",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.1",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "Are determined medically necessary",
+      "requirement_text": "A Florida Medicaid NET trip must meet the policy medical-necessity requirements.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transport only medically necessary medicaid net."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medical_necessity_approved",
+          "why": "Trip medical necessity or payer approval must be known."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transport_only_medically_necessary_medicaid_net",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-102",
+      "qualification": "FLM-102",
+      "name": "No duplicate Medicaid transportation service",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.1",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "Do not duplicate another service",
+      "requirement_text": "Do not furnish or claim a Florida Medicaid NET service that unnecessarily duplicates another covered service.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting no duplicate medicaid transportation service."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.duplicates_other_covered_service",
+          "why": "Requires trip/payer-level determination about duplication of already furnished services."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.no_duplicate_medicaid_transportation_service",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-103",
+      "qualification": "FLM-103",
+      "name": "Passenger lacks alternative transportation",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "The recipient has no other means of transportation.",
+      "requirement_text": "Florida Medicaid NET is for an eligible recipient without another available means of transportation.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting passenger lacks alternative transportation."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.recipient_no_other_transport",
+          "why": "Beneficiary transport access is not a recognized TripProof fact."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.passenger_lacks_alternative_transportation",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-104",
+      "qualification": "FLM-104",
+      "name": "Appropriate Medicaid transportation mode",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "The mode of transport is medically appropriate for the recipient’s mental or physical condition as determined by a licensed health care professional.",
+      "requirement_text": "Use a medically appropriate transportation mode, with the applicable professional determination.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting appropriate medicaid transportation mode."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medically_approved_transport_mode",
+          "why": "Requires licensed professional mode determination and trip transport classification."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.appropriate_medicaid_transportation_mode",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-100",
+      "qualification": "FLM-105",
+      "name": "Medicaid NET vehicle meets passenger transport regulation",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 3.2",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "using vehicles that meet all applicable licensure and regulatory requirements for passenger transport:",
+      "requirement_text": "Only use a passenger transport vehicle meeting all regulations applicable to that vehicle and service.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_REGISTRATION"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "vehicle_combined_licensure_compliance",
+          "why": "Registration does not alone prove all applicable passenger transport vehicle requirements; composite qualification evaluation required."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-105",
+      "qualification": "FLM-106",
+      "name": "Medicaid NET escort permitted when specified",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.3",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "Providers must allow an escort to accompany the recipient",
+      "requirement_text": "When the policy conditions apply, allow an escort to accompany the Medicaid recipient.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting medicaid net escort permitted when specified."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.escort_entitlement",
+          "why": "Trip must record disability/assistance/age conditions qualifying for policy escort."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.escort_accommodation",
+          "why": "Need trip escort seating and acceptance decision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.medicaid_net_escort_permitted_when_specified",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-101",
+      "qualification": "FLM-107",
+      "name": "Medicaid NET escort cannot be driver or provider employee",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.3",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "The escort cannot be the driver or an employee of the transportation provider.",
+      "requirement_text": "Do not designate the driver or transportation-provider employee as the recipient’s required escort.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting medicaid net escort cannot be driver or provider employee."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.escort_provider_employment_relation",
+          "why": "Escort identity and employment relationship are not in schema."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.medicaid_net_escort_cannot_be_driver_or_provider_employee",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-106",
+      "qualification": "FLM-108",
+      "name": "PPEC recipient medically required escort",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.4",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "must be accompanied by an escort during transport when it is medically necessary to protect the health and safety of the recipient.",
+      "requirement_text": "Transport a PPEC recipient with an escort when medically necessary.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting ppec recipient medically required escort."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.is_ppec_transport",
+          "why": "Trip requires PPEC service category."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.ppec_escort_medically_required",
+          "why": "Trip escort medical necessity not available."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.escort_assigned",
+          "why": "Trip escort assignment not available."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.ppec_recipient_medically_required_escort",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-107",
+      "qualification": "FLM-109",
+      "name": "No excessive Medicaid advance-reservation requirement",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.6",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "Providers may not require reservations to be made more than three business days in advance",
+      "requirement_text": "Do not impose a mandatory reservation notice period exceeding three business days for scheduled NET appointments.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting no excessive medicaid advance-reservation requirement."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "fl_net_booking_policy_review",
+          "why": "Provider reservation policy needs a verifiable compliance review, not a blanket trip failure."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-108",
+      "qualification": "FLM-110",
+      "name": "No advance reservation required for urgent NET",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.6",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "nor require advance reservations for unscheduled or urgent care trips.",
+      "requirement_text": "Do not impose advance-reservation requirements on unscheduled or urgent-care Medicaid NET trips.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting no advance reservation required for urgent net."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.is_urgent_or_unscheduled",
+          "why": "Trip urgency/unscheduled status not represented."
+        },
+        {
+          "kind": "evidence",
+          "name": "trip_urgent_booking_review",
+          "why": "Need indication that no prohibited advance booking requirement applied."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-109",
+      "qualification": "FLM-111",
+      "name": "No numerical Medicaid-compensable trip cap",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.7",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "Providers may not limit the number of Florida Medicaid-compensable trips provided to a recipient",
+      "requirement_text": "Do not deny Medicaid NET solely because a recipient has exceeded an internal fixed trip-count cap.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting no numerical medicaid-compensable trip cap."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "medicaid_trip_cap_policy_review",
+          "why": "Cannot infer policy compliance from an individual trip without reviewing program rejection logic."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-110",
+      "qualification": "FLM-112",
+      "name": "No Medicaid NET restriction based solely on distance",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.7",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "The distance from a recipient’s address to a Florida Medicaid-compensable service cannot be used as a criterion to deny transportation to medically necessary services.",
+      "requirement_text": "Do not deny medically necessary Medicaid NET solely on geographic distance.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting no medicaid net restriction based solely on distance."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "medicaid_distance_denial_review",
+          "why": "Need denial reason and routing policy to ensure geographic distance is not a prohibited criterion."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-111",
+      "qualification": "FLM-113",
+      "name": "FFS Medicaid NET authorization through AHCA broker",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 7.1–7.2",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "All NET services must be coordinated and authorized through the transportation broker contracted with AHCA.",
+      "requirement_text": "For fee-for-service Florida Medicaid NET, require authorization and coordination through the AHCA-contracted transportation broker.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting ffs medicaid net authorization through ahca broker."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.fl_medicaid_fee_for_service",
+          "why": "Policy §7.1 explicitly restricts this authorization instruction to FFS delivery."
+        },
+        {
+          "kind": "evidence",
+          "name": "trip_ahca_broker_authorization",
+          "why": "Need trip-specific broker authorization evidence; not a provider enrollment credential."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-112",
+      "qualification": "FLM-114",
+      "name": "Medicaid NET out-of-state covered service authorization",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.1",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "The Florida Medicaid covered service(s) that will be provided out-of-state are prior authorized.",
+      "requirement_text": "Obtain the policy-required authorization for out-of-state medical services before associated Florida Medicaid NET.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting medicaid net out-of-state covered service authorization."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.crosses_state_line",
+          "why": "Need trip route state boundaries, not operation.interstate which means ever."
+        },
+        {
+          "kind": "evidence",
+          "name": "out_of_state_medical_service_prior_authorization",
+          "why": "Medical service prior authorization unavailable."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-113",
+      "qualification": "FLM-115",
+      "name": "No beneficiary payment for required escort",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 4.2.3",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "may not seek reimbursement from the recipient, their parent, legal guardian, or their authorized representative for transporting the escort",
+      "requirement_text": "Do not separately charge the Medicaid recipient or representative for a required policy escort.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting no beneficiary payment for required escort."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "fl_net_escort_billing_control",
+          "why": "Fare and billing records must distinguish permitted additional riders from required escort."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-114",
+      "qualification": "FLM-116",
+      "name": "FFS Medicaid NET claims to AHCA broker",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-4.330; NET Coverage Policy 8.1–8.2",
+      "citation_url": "https://ahca.myflorida.com/content/download/5967/file/59G-4.330.pdf?version=2",
+      "citation_text": "All claims for NET services must be submitted to the transportation broker contracted with AHCA.",
+      "requirement_text": "Submit fee-for-service Florida Medicaid NET reimbursement claims to the AHCA-contracted transportation broker.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting ffs medicaid net claims to ahca broker."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2019-11-19",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.fl_medicaid_fee_for_service",
+          "why": "Section 8.1 limits reimbursement language to AHCA broker context."
+        },
+        {
+          "kind": "evidence",
+          "name": "fl_net_claim_submission",
+          "why": "Claims routing is not an assignment-time qualification."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-115",
+      "qualification": "FLM-117",
+      "name": "Florida Medicaid transportation enrollment status",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-1.060; Provider Enrollment Policy 2.2",
+      "citation_url": "https://ahca.myflorida.com/content/download/28712/file/Provider%20Enrollment%20Policy.pdf",
+      "citation_text": "All providers must enroll in the Florida Medicaid program in order to provide services to Florida Medicaid recipients.",
+      "requirement_text": "Maintain appropriate Florida Medicaid enrollment when the provider itself is required to enroll.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "MEDICAID_ENROLLMENT"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-04-08",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.fl_ahca_enrollment_required",
+          "why": "Need classification determining whether this provider must directly enroll, rather than operating solely as a broker subcontractor."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-116",
+      "qualification": "FLM-118",
+      "name": "Non-institutional Medicaid provider agreement",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-1.060; Provider Enrollment Policy Appendix C—Transportation",
+      "citation_url": "https://ahca.myflorida.com/content/download/28712/file/Provider%20Enrollment%20Policy.pdf",
+      "citation_text": "Non-institutional Medicaid Provider Agreement",
+      "requirement_text": "Maintain the required Florida Medicaid non-institutional provider agreement for direct transportation enrollment.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting non-institutional medicaid provider agreement."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-04-08",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.fl_ahca_enrollment_required",
+          "why": "Need classification determining whether this provider must directly enroll, rather than operating solely as a broker subcontractor."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.non-institutional_medicaid_provider_agreement",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-117",
+      "qualification": "FLM-119",
+      "name": "Medicaid transportation local operating license",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-1.060; Provider Enrollment Policy Appendix C—Transportation",
+      "citation_url": "https://ahca.myflorida.com/content/download/28712/file/Provider%20Enrollment%20Policy.pdf",
+      "citation_text": "Local License",
+      "requirement_text": "Supply and maintain the applicable local license required for Florida Medicaid transportation enrollment.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "BUSINESS_LICENSE"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-04-08",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.fl_ahca_enrollment_required",
+          "why": "Need classification determining whether this provider must directly enroll, rather than operating solely as a broker subcontractor."
+        },
+        {
+          "kind": "fact",
+          "name": "company.fl_local_license_required",
+          "why": "Local occupational, taxi or for-hire license depends on local jurisdiction and vehicle/service classification."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-118",
+      "qualification": "FLM-120",
+      "name": "Florida Medicaid transportation liability insurance limits",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-1.060; Provider Enrollment Policy Appendix C—Transportation",
+      "citation_url": "https://ahca.myflorida.com/content/download/28712/file/Provider%20Enrollment%20Policy.pdf",
+      "citation_text": "Proof of liability insurance ($100,000 per person & $200,000 per incident)",
+      "requirement_text": "Provide proof of at least the liability insurance limits specified for Florida Medicaid transportation enrollment.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "AUTO_LIABILITY_COI"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-04-08",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.fl_ahca_enrollment_required",
+          "why": "Need classification determining whether this provider must directly enroll, rather than operating solely as a broker subcontractor."
+        },
+        {
+          "kind": "evidence",
+          "name": "insurance_policy_limits_and_status",
+          "why": "Certificate document presence is not enough to prove $100,000 per person/$200,000 per incident and active coverage."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-119",
+      "qualification": "FLM-121",
+      "name": "Florida Medicaid nonemergency surety bond when required",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-1.060; Provider Enrollment Policy Appendix C—Transportation",
+      "citation_url": "https://ahca.myflorida.com/content/download/28712/file/Provider%20Enrollment%20Policy.pdf",
+      "citation_text": "(not required if contracted through the transportation coordinator)",
+      "requirement_text": "Maintain the AHCA transportation surety bond for applicable nonemergency, multiload or taxicab enrollment unless the listed coordinator-contract exception applies.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting florida medicaid nonemergency surety bond when required."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-04-08",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.fl_ahca_enrollment_required",
+          "why": "Need classification determining whether this provider must directly enroll, rather than operating solely as a broker subcontractor."
+        },
+        {
+          "kind": "fact",
+          "name": "company.fl_transportation_enrollment_specialty",
+          "why": "Only non-emergency, multi-load and taxicab provider specialties listed as requiring this bond."
+        },
+        {
+          "kind": "fact",
+          "name": "company.contracted_through_transportation_coordinator",
+          "why": "Appendix C explicitly excepts providers contracted through coordinator."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.florida_medicaid_nonemergency_surety_bond_when_required",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-120",
+      "qualification": "FLM-122",
+      "name": "Private transport and taxi operator license when required",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-1.060; Provider Enrollment Policy Appendix C—Transportation",
+      "citation_url": "https://ahca.myflorida.com/content/download/28712/file/Provider%20Enrollment%20Policy.pdf",
+      "citation_text": "Operator’s License (Private transportation and Taxicab only)",
+      "requirement_text": "Maintain the operator license for provider enrollment when in the private transportation or taxicab specialty.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "BUSINESS_LICENSE"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-04-08",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.fl_ahca_enrollment_required",
+          "why": "Need classification determining whether this provider must directly enroll, rather than operating solely as a broker subcontractor."
+        },
+        {
+          "kind": "fact",
+          "name": "company.fl_transportation_enrollment_specialty",
+          "why": "Only private transportation and taxicab specialties require operator license under Appendix C."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-121",
+      "qualification": "FLM-123",
+      "name": "Medicaid transportation enrollment required documents",
+      "category": "MEDICAID",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "AHCA",
+      "citation": "F.A.C. 59G-1.060; Provider Enrollment Policy Appendix C—Transportation",
+      "citation_url": "https://ahca.myflorida.com/content/download/28712/file/Provider%20Enrollment%20Policy.pdf",
+      "citation_text": "Required documents for all provider types listed in Appendix B",
+      "requirement_text": "Maintain Appendix B general enrollment documents applicable to the entity.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "FL"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting medicaid transportation enrollment required documents."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "track",
+      "effective_from": "2026-04-08",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.fl_ahca_enrollment_required",
+          "why": "Need classification determining whether this provider must directly enroll, rather than operating solely as a broker subcontractor."
+        },
+        {
+          "kind": "evidence",
+          "name": "ahca_appendix_b_documents",
+          "why": "Each Appendix B item needs its own evidence mapping; cannot validate with a generic credential."
+        }
+      ]
+    }
+  ]
+}

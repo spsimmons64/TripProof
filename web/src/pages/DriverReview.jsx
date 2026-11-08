@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Ban, Car, Check, ChevronLeft, Download, FlaskConical, LayoutDashboard, ChevronRight, Clock, ExternalLink, Eye, FileSignature, FileText, FileUp, FolderOpen, History, IdCard, ListChecks, Loader2, MoreHorizontal, Plus, X, Send, UserCheck, UserX } from 'lucide-react'
+import { Ban, Car, Check, ChevronLeft, Download, FlaskConical, LayoutDashboard, ChevronRight, Clock, ExternalLink, Eye, FileSignature, FileText, FileUp, FolderOpen, History, IdCard, ListChecks, Loader2, MoreHorizontal, Plus, Route, X, Send, UserCheck, UserX } from 'lucide-react'
 import { STATE_NAMES } from '../lib/states.js'
 import { api } from '../lib/api.js'
 import { useRefreshOnFocus, useWatch } from '../lib/live.js'
@@ -9,6 +9,7 @@ import { Bubble, Loading, useLoad } from '../components/ui.jsx'
 import { Modal } from '../admin/common.jsx'
 import Pager, { PAGE_SIZES } from '../components/Pager.jsx'
 import { useUser } from '../App.jsx'
+import { DotSetupButton } from '../components/DotSetup.jsx'
 import SignatureBlock from '../components/UserSignature.jsx'
 import { ItemPanel, PanelsDialog, ReadingViewer, SingleDocumentDialog, docStanding } from '../components/RequirementDialogs.jsx'
 import DocumentViewer, { DocumentPane } from '../components/DocumentViewer.jsx'
@@ -22,7 +23,7 @@ import { Email, Phone } from '../components/Contact.jsx'
 
 import { when } from './driver/common.jsx'
 import { DriverInformation } from './driver/DriverInformation.jsx'
-import { HiringDashboard, PendingBriefing } from './driver/Dashboard.jsx'
+import { HiringDashboard, PendingBriefing, TripHistory } from './driver/Dashboard.jsx'
 import { DriverActivity } from './driver/Activity.jsx'
 import { HoursOfService } from './driver/HoursOfService.jsx'
 import { TestingHistory } from './driver/Testing.jsx'
@@ -72,8 +73,9 @@ function NotCleared({ stops }) {
         <h2>Disqualified From Safety-Sensitive Functions</h2>
         <p>This driver must not be assigned to drive or perform safety-sensitive functions.</p>
         <ul>
+          {/* What it is, and what put it there - read here, not asked about. */}
           {stops.map((x) => (
-            <li key={x.code}>{x.name}</li>
+            <li key={x.code}><b>{x.name}</b>{x.why ? <> - {x.why}</> : null}</li>
           ))}
         </ul>
       </div>
@@ -107,6 +109,9 @@ const SECTIONS = [
   ['testing', 'D&A Testing History', FlaskConical],
   // 49 CFR 390.15(b) keeps the register, and it is a register of what happened while driving
   // for THIS carrier - so it is not a question to put to somebody who has not driven here yet.
+  // What they have driven, once there is a driving history to have.
+  ['trips', 'Trip History', Route,
+   (r) => Boolean(r?.hiredon) || ['hired', 'inactive'].includes(r?.status)],
   ['accidents', 'Accident History', Car,
    (r) => Boolean(r?.hiredon) || ['hired', 'inactive'].includes(r?.status)],
 ]
@@ -212,6 +217,7 @@ export default function DriverReview({ id, driver, record, onDone }) {
             </div>
           </div>
           <div className="row headactions">
+            <DotSetupButton kind="driver" id={id} record={record} onSaved={() => onDone?.()} />
             <Link className="btn back" to="/drivers"><ChevronLeft size={14} /> Back to drivers list</Link>
           </div>
         </div>
@@ -276,6 +282,7 @@ export default function DriverReview({ id, driver, record, onDone }) {
           {section === 'files' && <DriverFiles id={id} onView={setViewingFile} onViewSigned={viewSigned} onChanged={refresh} onGo={(to, code) => { setSection(to); setFocusReq(code || null) }} />}
           {section === 'hours' && <HoursOfService id={id} onChanged={refresh} />}
           {section === 'testing' && <TestingHistory id={id} onChanged={refresh} />}
+          {section === 'trips' && <TripHistory id={id} />}
           {section === 'accidents' && <AccidentHistory id={id} onChanged={refresh} />}
         </div>
       </div>

@@ -257,7 +257,9 @@ class DriverIn(BaseModel):
     terminatedon: date | None = None
     # One ordered answer, because the three thresholds are nested and separate boxes could say
     # things that cannot be true - a CDL vehicle that is not a commercial motor vehicle.
-    operation: str = "noncmv"           # noncmv | cmv | cdl | cdlheavy
+    # noncmv | cmv | cdl | cdlheavy. Left out (None), what is on file stays: it is set in DOT & CDL
+    # Setup, so the Driver Information save does not send it.
+    operation: str | None = None
     chapter1490: bool = False
     endorsementsneeded: str | None = None     # the letters the work requires: P, S, H, N, T, X
     # 391.11(b)(2), and three-valued: not assessed is not the same as assessed and failed.
@@ -515,6 +517,7 @@ async def file_license_copy(
     run(conn, "UPDATE driverlicenses SET copydocumentid = :doc, updated = :now WHERE recordid = :l",
         doc=documentid, now=utcnow(), l=licenseid)
     _filed_here(conn, acct, driverid, "driverlicenses", licenseid, user["recordid"])
+    _close_asks(conn, acct, driverid, "DRIVER_LICENSE")
     log(conn, user, "licensecopy", "driver", driverid, {"pages": len(pages)}, ip=client_ip(request))
     saved(conn)
     return {"ok": True, "documentid": documentid}
@@ -2572,10 +2575,11 @@ def application_activity(driverid: str, user: dict = Depends(current_user), conn
     said_of = {"sent": "sent", "queued": "sending", "failed": "not sent - {error}",
                "off": "not sent - texting is not set up", "nophone": "not sent - no mobile number on file"}
     for t in rows(conn, """
-        SELECT body, status, error, added FROM drivertexts WHERE accountid = :a AND driverid = :d
+        SELECT body, channel, status, error, added FROM drivertexts WHERE accountid = :a AND driverid = :d
     """, a=acct, d=driverid):
         state = said_of.get(t["status"], t["status"]).format(error=(t["error"] or "Twilio refused it").rstrip("."))
-        events.append(entry(t["added"], f'Texted {who}: "{t["body"]}" ({state})', "office", "TripProof"))
+        how = f"Notified {who} in the app" if t["channel"] == "push" else f"Texted {who}"
+        events.append(entry(t["added"], f'{how}: "{t["body"]}" ({state})', "office", "TripProof"))
     events.sort(key=lambda e: e["at"], reverse=True)
     return {"status": (app_ or {}).get("status"), "events": events}
 
@@ -2603,7 +2607,13 @@ def company_questions(user: dict = Depends(current_user), conn: Connection = Dep
 
     An unanswered question is not a 'no'. It is reported as unanswered, and every rule that needs
     it says so rather than quietly deciding."""
-    return {"questions": factset.questions(conn, user["accountid"])}
+    return {"questions": _asked(conn, user["accountid"])}
+
+
+def _asked(conn: Connection, accountid: str) -> list[dict]:
+    dot = rules.dot_module(conn, accountid)
+    return [q for q in factset.questions(conn, accountid)
+            if dot or q["code"] not in rules.DOT_QUESTIONS]
 
 
 class AnswerIn(BaseModel):
@@ -2624,7 +2634,7 @@ def answer_question(code: str, body: AnswerIn, request: Request,
         now=utcnow(), u=user["recordid"])
     log(conn, user, "answer", "companyquestion", code, {"code": code, "answer": body.answer},
         ip=client_ip(request))
-    out = factset.questions(conn, user["accountid"])
+    out = _asked(conn, user["accountid"])
     saved(conn)
     return {"questions": out}
 
@@ -2815,6 +2825,25 @@ async def reinstate_driver(
     return {"ok": True}
 
 
+def _close_asks(conn: Connection, acct: str, driverid: str, *names: str | None) -> None:
+    """The office has filed the document itself, so whatever it asked the driver for is answered.
+    An outstanding upload or signing request for the same document is closed: its link stops
+    working, and the file stops saying it is waiting on the driver for something already here."""
+    names = tuple({n for n in names if n})
+    if not names:
+        return
+    marks = ", ".join(f":n{i}" for i in range(len(names)))
+    given = {f"n{i}": n for i, n in enumerate(names)}
+    run(conn, f"""UPDATE uploadrequests SET cancelledon = :now
+                  WHERE accountid = :a AND driverid = :d AND credentialcode IN ({marks})
+                    AND uploadedon IS NULL AND cancelledon IS NULL""",
+        now=utcnow(), a=acct, d=driverid, **given)
+    run(conn, f"""UPDATE signingrequests SET cancelledon = :now
+                  WHERE accountid = :a AND driverid = :d AND doctype IN ({marks})
+                    AND signedon IS NULL AND cancelledon IS NULL""",
+        now=utcnow(), a=acct, d=driverid, **given)
+
+
 @router.post("/drivers/{driverid}/requirements/{code}/document")
 async def file_against_requirement(
     driverid: str,
@@ -2865,6 +2894,7 @@ async def file_against_requirement(
         # left to review them, because the person who would have is the one who filed it.
         det="reviewed",
         n=(note or "").strip()[:512] or None)
+    _close_asks(conn, acct, driverid, code, (rule["evidencesource"] or "").partition(":")[2])
     log(conn, user, "requirement-document", "driver", driverid, {"code": code}, ip=client_ip(request))
     saved(conn)
     return {"ok": True}
@@ -3471,7 +3501,7 @@ def _mcs150_counts(conn: Connection, acct: str) -> dict:
 def mcs150(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
     """What is known for the biennial update, when the next one is due, and what has been filed.
 
-    The due date is worked out from the USDOT number under 49 CFR 390.19(b) and never from the last
+    The due date is worked out from the USDOT number under 49 CFR 390.19T(b) and never from the last
     filing. Everything the form asks for that TripProof holds is here to copy; everything it does
     not hold is named."""
     acct = user["accountid"]
@@ -4754,8 +4784,8 @@ def requirement_detail(driverid: str, code: str, user: dict = Depends(current_us
         SELECT code, authority, citation, authoritycategory, legalreview FROM compliancerules
         WHERE subject = 'driver' AND effectiveto IS NULL AND (accountid IS NULL OR accountid = :a)
           AND qualificationcode = :q
-        ORDER BY FIELD(authoritycategory, 'FEDERAL_GENERAL', 'STATE_GENERAL', 'FEDERAL_MEDICAID',
-                       'STATE_MEDICAID', 'CONTRACT_COMPANY'), code
+        ORDER BY FIELD(authoritycategory, 'MEDICAID', 'FEDERAL_NEMT', 'STATE_NEMT', 'COMPANY',
+                       'BROKER_PAYER', 'FMCSA_DOT'), code
     """, a=acct, q=rule["qualificationcode"]) if rule["qualificationcode"] else []
 
     kind, _, which = (rule["evidencesource"] or "").partition(":")
@@ -5003,6 +5033,7 @@ def set_random_pool(driverid: str, body: RandomPoolIn, request: Request,
     an entire driver record it never loaded. That is how a screen with one field quietly blanks
     an address.
     """
+    rules.require_dot(conn, user["accountid"])
     acct = user["accountid"]
     _applicant(conn, acct, driverid)
     if body.on:
@@ -5036,8 +5067,9 @@ def _write_driver(conn: Connection, accountid: str, driverid: str, body: DriverI
                licensestate = :ls, email = :em, phone = :ph,
                emergencyname = :en, emergencyphone = :ep, hiredon = :h, terminatedon = :t,
                address1 = :a1, address2 = :a2, city = :city, state = :st, zip = :zip,
-               operation = :operation,
-               endorsementsneeded = :needs, englishproficient = :english, stub = 0,
+               operation = COALESCE(:operation, operation),
+               endorsementsneeded = IF(:keepneeds, endorsementsneeded, :needs),
+               englishproficient = :english, stub = 0,
                updated = :now
         WHERE recordid = :id AND accountid = :a AND deleted IS NULL
     """, id=driverid, a=accountid, ext=body.externalid or None, f=body.firstname, l=body.lastname, dob=body.dob,
@@ -5045,12 +5077,54 @@ def _write_driver(conn: Connection, accountid: str, driverid: str, body: DriverI
         en=(body.emergencyname or None), ep=(body.emergencyphone or None),
         h=body.hiredon, t=body.terminatedon, a1=body.address1, a2=body.address2, city=body.city,
         st=(body.state or "").upper()[:2] or None, zip=body.zip,
-        operation=body.operation if body.operation in OPERATION else "noncmv",
+        operation=(body.operation if body.operation in OPERATION else "noncmv")
+                  if body.operation is not None else None,
         # Kept as the letters themselves, in one order, so "P, S" and "sp" are one answer.
         needs="".join(rules.ENDORSEMENTS(body.endorsementsneeded)) or None,
+        keepneeds=int("endorsementsneeded" not in body.model_fields_set),
         english=None if body.englishproficient is None else int(body.englishproficient),
         now=utcnow())
     return bool(r.rowcount)
+
+
+class DriverDotIn(BaseModel):
+    operation: str = "noncmv"
+    endorsementsneeded: str | None = None
+
+
+@router.get("/drivers/{driverid}/dot")
+def driver_dot(driverid: str, user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
+    """DOT & CDL Setup for one driver: what they will operate, the endorsements that needs, their
+    random pool membership and the licenses on file."""
+    acct = user["accountid"]
+    rules.require_dot(conn, acct)
+    d = _applicant(conn, acct, driverid)
+    held = row(conn, "SELECT operation, endorsementsneeded FROM drivers WHERE recordid = :d AND accountid = :a",
+               d=driverid, a=acct) or {}
+    pool = randompool.standing(conn, acct, driverid)
+    return {"operation": held.get("operation") or "noncmv", "endorsementsneeded": held.get("endorsementsneeded"),
+            "pool": {"joinedon": str(pool["joinedon"]) if pool else None,
+                     "leftpoolon": str(pool["leftpoolon"]) if pool and pool["leftpoolon"] else None},
+            "licenses": _licenses(conn, acct, driverid)}
+
+
+@router.put("/drivers/{driverid}/dot")
+def save_driver_dot(driverid: str, body: DriverDotIn, request: Request, user: dict = Depends(editor),
+                    conn: Connection = Depends(get_conn)):
+    """What the driver will operate and the endorsements it needs - nothing else on the record."""
+    acct = user["accountid"]
+    rules.require_dot(conn, acct)
+    _applicant(conn, acct, driverid)
+    if body.operation not in OPERATION:
+        raise HTTPException(400, "Unknown operation")
+    run(conn, """UPDATE drivers SET operation = :o, endorsementsneeded = :n, updated = :now
+                 WHERE recordid = :d AND accountid = :a AND deleted IS NULL""",
+        o=body.operation, n="".join(rules.ENDORSEMENTS(body.endorsementsneeded)) or None,
+        now=utcnow(), d=driverid, a=acct)
+    randompool.reconcile(conn, acct, driverid)
+    log(conn, user, "update", "driverdot", driverid, body.model_dump(), ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
 
 
 @router.put("/drivers/{driverid}")
@@ -5092,7 +5166,7 @@ class CompanyIn(BaseModel):
     supportemail: str | None = None
     billingemail: str | None = None
     ein: str | None = None
-    # FMCSA's identifiers. The USDOT number is not decoration: 49 CFR 390.19(b) reads the biennial
+    # FMCSA's identifiers. The USDOT number is not decoration: 49 CFR 390.19T(b) reads the biennial
     # update's month off its last digit and the year off the digit before it.
     usdot: str | None = None
     mcnumber: str | None = None
@@ -5255,6 +5329,8 @@ async def create_credential(
     # back afterwards and tick "reviewed" on a thing they have just read is asking twice.
     if ctype["subject"] == "driver":
         _filed_here(conn, acct, subjectid, "credentials", cid, user["recordid"])
+        _close_asks(conn, acct, subjectid,
+                    (row(conn, "SELECT code FROM credentialtypes WHERE recordid = :t", t=credentialtypeid) or {}).get("code"))
     log(conn, user, "create", "credential", cid, {"type": credentialtypeid, "subject": ctype["subject"],
                                                   "subjectid": subjectid, "issuedon": issuedon, "expireson": expireson},
         ip=client_ip(request))

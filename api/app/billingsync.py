@@ -122,6 +122,18 @@ def billable_fleet(conn: Connection, accountid: str) -> int:
     return (row(conn, "SELECT fleetsize FROM accounts WHERE recordid = :a", a=accountid) or {}).get("fleetsize") or 1
 
 
+def dot_drivers(conn: Connection, accountid: str) -> int:
+    """Active DOT-regulated drivers: working drivers whose job is driving a commercial motor
+    vehicle. Holding a CDL while driving an ordinary van does not count."""
+    from app.facts import CMV_OPERATIONS
+    marks = ", ".join(f"'{o}'" for o in CMV_OPERATIONS)
+    return int((row(conn, f"""
+        SELECT COUNT(*) AS n FROM drivers
+        WHERE accountid = :a AND deleted IS NULL AND stub = 0 AND terminatedon IS NULL
+          AND status = 'hired' AND operation IN ({marks})
+    """, a=accountid) or {}).get("n") or 0)
+
+
 def reprice(conn: Connection, accountid: str) -> str:
     """Put the account's live subscription on the plan its current fleet size calls for, effective
     from the next invoice. Returns what happened, for the event log."""

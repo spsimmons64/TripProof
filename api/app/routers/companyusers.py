@@ -298,6 +298,8 @@ def close_driver_app_access(driverid: str, request: Request, user: dict = Depend
                   "AND deleted IS NULL", d=driverid, a=acct)
     if not r.rowcount:
         raise HTTPException(404, "No such driver")
+    run(conn, "UPDATE driverdevices SET ended = :now WHERE driverid = :d AND ended IS NULL",
+        now=utcnow(), d=driverid)
     log(conn, user, "driver-app-closed", "driver", driverid, {}, ip=client_ip(request))
     saved(conn)
     return {"ok": True}

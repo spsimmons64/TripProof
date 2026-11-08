@@ -274,15 +274,40 @@ def test_fee_schedule(client, admin):
 
 
 
-def test_tester_signups_are_kept_and_listed(client, admin):
-    """The public sign-up form: kept and listed for TripProof staff; a bot that fills the hidden field
-    is thanked and not kept; and nobody else can read the list."""
+def test_tester_signups_are_kept_and_listed(client, admin, monkeypatch):
+    """The public sign-up form: kept and listed for TripProof staff; the company gets the welcome email
+    with replies going to TripProof; a bot that fills the hidden field is thanked and not kept; and
+    nobody else can read the list."""
+    from app import mailer
+    sent = []
+    monkeypatch.setattr(mailer, "send", lambda to, subject, html, text, attachments=None, reply_to=None:
+                        sent.append((to, subject, text, reply_to)) or True)
     form = {"company": "Gulf Coast Rides", "name": "Pat Tester", "email": "Pat@Example.com", "fleet": "6-15", "state": "FL"}
     assert client.post("/api/testers", json={**form, "email": "not an email"}).status_code == 400
     assert client.post("/api/testers", json={**form, "company": " "}).status_code == 400
     assert client.post("/api/testers", json=form).status_code == 200
+    welcome = [m for m in sent if m[0] == "pat@example.com"]
+    assert len(welcome) == 1 and welcome[0][1] == "Thank you for your interest in TripProof Online"
+    assert "actively preventing noncompliant drivers" in welcome[0][2] and welcome[0][3]
     assert client.post("/api/testers", json={**form, "company": "Spam Bot", "website": "http://spam"}).status_code == 200
+    assert len(sent) == 2
     got = client.get("/api/admin/testers", headers=admin["h"]).json()["items"]
     mine = [t for t in got if t["company"] == "Gulf Coast Rides"]
     assert mine and mine[0]["email"] == "pat@example.com" and not any(t["company"] == "Spam Bot" for t in got)
     assert client.get("/api/admin/testers").status_code in (401, 403)
+
+
+def test_contact_messages_are_kept(client, db):
+    """The Contact page form: kept with its topic; a missing name, email or message is refused; a bot
+    that fills the hidden field is thanked and not kept."""
+    from sqlalchemy import text
+    form = {"topic": "sales", "name": "Lee Contact", "company": "Bay Vans", "email": "Lee@Example.com",
+            "message": "How many vehicles does Starter cover?"}
+    assert client.post("/api/contact", json={**form, "email": "nope"}).status_code == 400
+    assert client.post("/api/contact", json={**form, "name": " "}).status_code == 400
+    assert client.post("/api/contact", json={**form, "message": "  "}).status_code == 400
+    assert client.post("/api/contact", json=form).status_code == 200
+    assert client.post("/api/contact", json={**form, "name": "Spam Bot", "website": "http://spam"}).status_code == 200
+    with db.connect() as conn:
+        got = conn.execute(text("SELECT topic, email, name FROM contactmessages WHERE email = 'lee@example.com'")).all()
+    assert [tuple(g) for g in got] == [("sales", "lee@example.com", "Lee Contact")]

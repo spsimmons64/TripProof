@@ -1,0 +1,656 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tripproofonline.com/schema/tripproof-requirements-1.json",
+  "title": "TripProof requirements file",
+  "type": "object",
+  "required": [
+    "format",
+    "title",
+    "prepared_on",
+    "requirements"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": "tripproof-requirements/1"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 3
+    },
+    "prepared_on": {
+      "type": "string",
+      "format": "date"
+    },
+    "prepared_by": {
+      "type": "string"
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/requirement"
+      }
+    }
+  },
+  "$defs": {
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "qualification",
+        "name",
+        "category",
+        "jurisdiction",
+        "subject",
+        "authority",
+        "citation",
+        "citation_url",
+        "citation_text",
+        "requirement_text",
+        "applies_when",
+        "programs",
+        "evidence",
+        "validity",
+        "due",
+        "on_failure",
+        "effective_from"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(MED|FED|ST|CO|BRK|CMV)-(CO|DRV|VEH)-[0-9]{3}$"
+        },
+        "qualification": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}-[0-9]{3}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "category": {
+          "enum": [
+            "MEDICAID",
+            "FEDERAL",
+            "STATE",
+            "COMPANY",
+            "BROKER",
+            "CDL_CMV"
+          ]
+        },
+        "jurisdiction": {
+          "type": "string",
+          "pattern": "^(US|[A-Z]{2})$"
+        },
+        "subject": {
+          "enum": [
+            "company",
+            "driver",
+            "vehicle"
+          ]
+        },
+        "authority": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 96
+        },
+        "citation": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "citation_url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "citation_text": {
+          "type": "string",
+          "minLength": 10
+        },
+        "requirement_text": {
+          "type": "string",
+          "minLength": 10
+        },
+        "applies_when": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/condition"
+            }
+          ]
+        },
+        "programs": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "medicaid",
+                  "privatepay",
+                  "medicareadvantage",
+                  "commercialinsurance",
+                  "workerscomp",
+                  "facility",
+                  "dhscoordinated"
+                ]
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "validity": {
+          "$ref": "#/$defs/validity"
+        },
+        "due": {
+          "enum": [
+            "prehire",
+            "predrive",
+            "athire",
+            "ongoing"
+          ]
+        },
+        "due_within_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        },
+        "on_failure": {
+          "enum": [
+            "block",
+            "track"
+          ]
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date"
+        },
+        "effective_to": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            }
+          ]
+        },
+        "notes": {
+          "type": "string"
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name",
+              "why"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "fact",
+                  "evidence"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "fact": {
+      "enum": [
+        "company.state",
+        "company.operatingstates",
+        "company.medicaid",
+        "company.medicaidstates",
+        "company.billsdirect",
+        "company.programs",
+        "company.hipaa",
+        "company.exposure",
+        "company.cra",
+        "company.samgov",
+        "company.hiredautos",
+        "company.copec",
+        "company.transit",
+        "company.employmentmodel",
+        "company.public_transit_authority",
+        "operation.ada_part37_covered",
+        "operation.interstate",
+        "fleet.vehicles",
+        "fleet.wheelchair",
+        "fleet.cmv_federal",
+        "fleet.cdl_required",
+        "fleet.multiplecmv",
+        "fleet.heaviest_gvwr",
+        "driver.status",
+        "driver.age",
+        "driver.employee",
+        "driver.english",
+        "driver.cmv",
+        "driver.cdl",
+        "driver.heavy",
+        "driver.licensecommercial",
+        "driver.licenseclass",
+        "driver.wheelchairvehicle",
+        "driver.contracts",
+        "driver.prohibited",
+        "driver.licenseaction",
+        "driver.priorviolation",
+        "vehicle.seats",
+        "vehicle.gvwr",
+        "vehicle.lift",
+        "vehicle.cmv_federal",
+        "vehicle.cdl_required",
+        "vehicle.medicaidstates",
+        "vehicle.contracts",
+        "reach.fmcsr",
+        "reach.part382",
+        "reach.part391",
+        "reach.part391interstate",
+        "reach.authority"
+      ]
+    },
+    "test": {
+      "type": "object",
+      "required": [
+        "fact"
+      ],
+      "properties": {
+        "fact": {
+          "$ref": "#/$defs/fact"
+        },
+        "is": {
+          "type": "boolean"
+        },
+        "eq": {
+          "type": [
+            "string",
+            "number",
+            "boolean"
+          ]
+        },
+        "in": {
+          "type": "array",
+          "minItems": 1
+        },
+        "has": {
+          "type": [
+            "string",
+            "number"
+          ]
+        },
+        "lt": {
+          "type": "number"
+        },
+        "lte": {
+          "type": "number"
+        },
+        "gt": {
+          "type": "number"
+        },
+        "gte": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false,
+      "minProperties": 2,
+      "maxProperties": 2
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/test"
+        },
+        {
+          "type": "object",
+          "required": [
+            "all"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "all": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "not"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/condition"
+            }
+          }
+        }
+      ]
+    },
+    "evidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "license",
+                "license_copy"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "credential"
+          ],
+          "properties": {
+            "type": {
+              "const": "credential"
+            },
+            "credential": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]+$"
+            },
+            "new": {
+              "type": "boolean"
+            },
+            "credential_name": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "document"
+          ],
+          "properties": {
+            "type": {
+              "const": "signature"
+            },
+            "document": {
+              "enum": [
+                "CLEARINGHOUSE_CONSENT",
+                "DRUG_POLICY",
+                "FCRA_AUTH",
+                "FCRA_SUMMARY",
+                "I9",
+                "PHI_ACK",
+                "PREV7_ONDUTY",
+                "SAFETY_PERFORMANCE_CONSENT",
+                "W4",
+                "WORKPLACE_POLICY"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "list"
+          ],
+          "properties": {
+            "type": {
+              "const": "exclusion_check"
+            },
+            "list": {
+              "enum": [
+                "OIG_LEIE",
+                "SAM"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "lookback_years"
+          ],
+          "properties": {
+            "type": {
+              "const": "driving_record"
+            },
+            "lookback_years": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "reason"
+          ],
+          "properties": {
+            "type": {
+              "const": "drug_test"
+            },
+            "reason": {
+              "enum": [
+                "preemployment",
+                "random",
+                "postaccident",
+                "followup",
+                "returntoduty"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "role"
+          ],
+          "properties": {
+            "type": {
+              "const": "company_role"
+            },
+            "role": {
+              "enum": [
+                "der",
+                "supervisor",
+                "safety",
+                "security",
+                "bbpadmin"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "policy"
+          ],
+          "properties": {
+            "type": {
+              "const": "policy"
+            },
+            "policy": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]+$"
+            }
+          }
+        },
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "fact"
+              ],
+              "properties": {
+                "type": {
+                  "const": "fact"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": true,
+                "fact": {
+                  "$ref": "#/$defs/fact"
+                },
+                "is": {
+                  "type": "boolean"
+                },
+                "eq": {},
+                "in": {
+                  "type": "array"
+                },
+                "has": {},
+                "lt": {
+                  "type": "number"
+                },
+                "lte": {
+                  "type": "number"
+                },
+                "gt": {
+                  "type": "number"
+                },
+                "gte": {
+                  "type": "number"
+                }
+              },
+              "additionalProperties": false,
+              "minProperties": 3,
+              "maxProperties": 3
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "describe"
+          ],
+          "properties": {
+            "type": {
+              "const": "other"
+            },
+            "describe": {
+              "type": "string",
+              "minLength": 10
+            }
+          }
+        }
+      ]
+    },
+    "validity": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "renewal"
+          ],
+          "properties": {
+            "renewal": {
+              "enum": [
+                "once",
+                "perhire",
+                "ondocument"
+              ]
+            },
+            "warn_days": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 365
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "renewal",
+            "every"
+          ],
+          "properties": {
+            "renewal": {
+              "enum": [
+                "days",
+                "months"
+              ]
+            },
+            "every": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120
+            },
+            "warn_days": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 365
+            }
+          }
+        }
+      ]
+    }
+  }
+}

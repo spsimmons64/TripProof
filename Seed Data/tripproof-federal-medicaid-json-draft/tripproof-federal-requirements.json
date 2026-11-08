@@ -1,0 +1,2237 @@
+{
+  "format": "tripproof-requirements/1",
+  "title": "Federal requirements for NEMT providers, drivers and vehicles",
+  "prepared_on": "2026-11-07",
+  "prepared_by": "OpenAI research draft — requires legal verification prior to production use",
+  "requirements": [
+    {
+      "id": "FED-CO-001",
+      "qualification": "TRN-003",
+      "name": "Proficient disability passenger-assistance training program",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.173",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.173",
+      "citation_text": "shall ensure that personnel are trained to proficiency, as appropriate to their duties",
+      "requirement_text": "Covered transportation entities must ensure personnel are proficient in safe operation and appropriate assistance of passengers with disabilities.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "ADA_PERSONNEL_PROFICIENCY"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "block",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        },
+        {
+          "kind": "evidence",
+          "name": "ada_personnel_proficiency",
+          "why": "A written policy does not demonstrate that relevant staff have actually attained proficiency."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-001",
+      "qualification": "TRN-003",
+      "name": "Driver trained to disability-assistance proficiency",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.173",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.173",
+      "citation_text": "they operate vehicles and equipment safely and properly assist and treat individuals with disabilities",
+      "requirement_text": "The covered transportation driver must be trained to proficiency for safe operation and respectful assistance of passengers with disabilities.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "PASSENGER_ASSISTANCE"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        },
+        {
+          "kind": "evidence",
+          "name": "driver_ada_demonstrated_proficiency",
+          "why": "A simple completion certificate does not necessarily establish the proficiency demanded by the regulation."
+        }
+      ]
+    },
+    {
+      "id": "FED-VEH-002",
+      "qualification": "VEH-001",
+      "name": "Maintain operative vehicle accessibility features",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "vehicle",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.161(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.161",
+      "citation_text": "shall maintain in operative condition those features of facilities and vehicles",
+      "requirement_text": "Required vehicle accessibility features must be operative for a covered trip.",
+      "applies_when": {
+        "fact": "vehicle.lift",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Current verified operability of required lift, ramp, securement, and accessible communication equipment."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        },
+        {
+          "kind": "evidence",
+          "name": "vehicle_accessibility_equipment_status",
+          "why": "No current per-vehicle accessibility equipment operability evidence is defined."
+        }
+      ]
+    },
+    {
+      "id": "FED-VEH-003",
+      "qualification": "VEH-002",
+      "name": "Repair broken accessibility features promptly",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "vehicle",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.161(b)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.161",
+      "citation_text": "Accessibility features shall be repaired promptly if they are damaged or out of order.",
+      "requirement_text": "The operator must promptly repair damaged accessibility features and accommodate affected riders as required.",
+      "applies_when": {
+        "fact": "vehicle.lift",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Document accessibility defects, repair status and reasonable accommodation."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        },
+        {
+          "kind": "evidence",
+          "name": "accessibility_repair_and_accommodation_log",
+          "why": "No defect, repair or accommodation workflow is available."
+        }
+      ]
+    },
+    {
+      "id": "FED-VEH-004",
+      "qualification": "VEH-003",
+      "name": "Use wheelchair securement system",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "vehicle",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.165(c)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.165",
+      "citation_text": "shall provide and use a securement system to ensure that the wheelchair remains within the securement area.",
+      "requirement_text": "Covered vehicles transporting wheelchair users must provide and properly use appropriate wheelchair securement.",
+      "applies_when": {
+        "fact": "vehicle.lift",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Current presence, working condition and appropriate use of wheelchair securement system on the assigned vehicle."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2011-09-19",
+      "notes": "The condition vehicle.lift alone cannot determine whether a trip will transport a wheelchair passenger; this requirement also needs trip-level wheelchair-service status.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        },
+        {
+          "kind": "evidence",
+          "name": "vehicle_securement_present_functional",
+          "why": "TripProof lacks a current operational securement-system status and use verification."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.wheelchair_passenger",
+          "why": "The vehicle may have a lift but a particular trip may not involve a wheelchair passenger."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-005",
+      "qualification": "POL-003",
+      "name": "Do not require wheelchair transfer to regular seat",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.165(e)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.165",
+      "citation_text": "The entity may not require the individual to transfer.",
+      "requirement_text": "A covered transportation entity must not require wheelchair users to transfer to a standard vehicle seat.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "ADA_NO_FORCED_TRANSFER"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-002",
+      "qualification": "TRN-006",
+      "name": "Provide assistance with lifts ramps and restraints",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.165(f)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.165",
+      "citation_text": "shall assist individuals with disabilities with the use of securement systems, ramps and lifts.",
+      "requirement_text": "Where necessary or requested, covered staff must assist passengers with wheelchair securement systems, ramps and lifts.",
+      "applies_when": {
+        "fact": "driver.wheelchairvehicle",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "WHEELCHAIR_SECUREMENT"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        },
+        {
+          "kind": "evidence",
+          "name": "driver_ada_assistance_proficiency",
+          "why": "A training document does not prove assistance was provided on an individual trip."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-006",
+      "qualification": "POL-004",
+      "name": "Allow service animals aboard covered vehicles",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.167(d)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.167",
+      "citation_text": "The entity shall permit service animals to accompany individuals with disabilities in vehicles and facilities.",
+      "requirement_text": "A covered transportation entity must allow qualifying service animals to accompany passengers with disabilities.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "ADA_SERVICE_ANIMALS"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-007",
+      "qualification": "POL-005",
+      "name": "Permit permissible portable oxygen and respirators",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.167(h)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.167",
+      "citation_text": "The entity shall not prohibit an individual with a disability from traveling with a respirator or portable oxygen supply",
+      "requirement_text": "A covered operator must permit disability-related respirators and portable oxygen consistent with applicable DOT hazardous materials rules.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "ADA_OXYGEN_RESPIRATORS"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-008",
+      "qualification": "POL-006",
+      "name": "Allow adequate time for disability boarding",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.167(i)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.167",
+      "citation_text": "adequate time is provided to allow individuals with disabilities to complete boarding or disembarking",
+      "requirement_text": "A covered transportation entity must allow adequate boarding and disembarking time for passengers with disabilities.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "ADA_BOARDING_TIME"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        },
+        {
+          "kind": "evidence",
+          "name": "trip_accessibility_boarding_time",
+          "why": "Trip timetable and real service behavior are not represented by an adopted policy."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-009",
+      "qualification": "POL-007",
+      "name": "Accessible service information and scheduling",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.167(f)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.167",
+      "citation_text": "make available to individuals with disabilities adequate information concerning transportation services.",
+      "requirement_text": "Covered transportation providers must provide accessible service information and scheduling communications.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "ADA_ACCESSIBLE_COMMUNICATION"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-010",
+      "qualification": "POL-008",
+      "name": "Use required accessibility equipment",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "USDOT",
+      "citation": "49 CFR 37.167(e)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-37.167",
+      "citation_text": "make use of accessibility-related equipment or features required by part 38 of this title.",
+      "requirement_text": "The entity must ensure operators use required accessibility equipment on covered service.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "ADA_ACCESSIBILITY_EQUIPMENT_USE"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1991-10-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.ada_part37_covered",
+          "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-003",
+      "qualification": "DRV-005",
+      "name": "FMCSA driver minimum age 21",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.11(b)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.11",
+      "citation_text": "Is at least 21 years old;",
+      "requirement_text": "The driver must be at least 21 years old when required by 49 CFR Part 391.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "fact",
+        "fact": "driver.age",
+        "gte": 21
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1970-04-22",
+      "notes": "May be subject to the exceptions in 49 CFR Part 391, subpart G."
+    },
+    {
+      "id": "FED-DRV-004",
+      "qualification": "DRV-006",
+      "name": "FMCSA driver English-language qualification",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.11(b)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.11",
+      "citation_text": "Can read and speak the English language sufficiently to converse with the general public",
+      "requirement_text": "The driver must meet the applicable Part 391 English-language requirement.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "fact",
+        "fact": "driver.english",
+        "is": true
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1970-04-22"
+    },
+    {
+      "id": "FED-DRV-005",
+      "qualification": "DRV-001",
+      "name": "FMCSA valid license for covered CMV",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.11(b)(5)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.11",
+      "citation_text": "Has a currently valid commercial motor vehicle operator's license issued only by one State or jurisdiction;",
+      "requirement_text": "The driver must have an appropriate valid operator license for the covered commercial motor vehicle.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1970-04-22"
+    },
+    {
+      "id": "FED-DRV-006",
+      "qualification": "DRV-007",
+      "name": "Not disqualified under Part 391",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.11(b)(6)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.11",
+      "citation_text": "Is not disqualified to drive a commercial motor vehicle",
+      "requirement_text": "A covered CMV driver must not have an applicable Part 391 disqualification.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Verified driver disqualification status under 49 CFR 391.15."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1970-04-22",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "driver_fmcsa_disqualification_status",
+          "why": "The current driver facts do not establish all disqualifications under 49 CFR 391.15."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-007",
+      "qualification": "DRV-008",
+      "name": "Completed required CMV employment application",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.21(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.21",
+      "citation_text": "a person shall not drive a commercial motor vehicle unless he/she has completed and furnished",
+      "requirement_text": "The covered driver must have furnished a signed compliant FMCSA driver employment application before driving.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FMCSA_DRIVER_APPLICATION",
+        "new": true,
+        "credential_name": "FMCSA 391.21 driver employment application"
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1970-04-22"
+    },
+    {
+      "id": "FED-DRV-008",
+      "qualification": "DRV-003",
+      "name": "Three-year initial licensing record inquiry",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.23(a)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.23",
+      "citation_text": "to obtain that driver's motor vehicle record covering that driver's prior 3-year driving history.",
+      "requirement_text": "The covered motor carrier must obtain required licensing MVR history within 30 days after the driver begins employment.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "driving_record",
+        "lookback_years": 3
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "athire",
+      "on_failure": "track",
+      "effective_from": "2004-10-29",
+      "notes": "Not always a pre-drive gate: federal regulation generally permits up to 30 days after employment starts; this file is tracking only. The schema has no general due_within_days for an initial inquiry from date of employment."
+    },
+    {
+      "id": "FED-DRV-009",
+      "qualification": "DRV-009",
+      "name": "Investigate three-year regulated employer safety history",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.23(a)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.23",
+      "citation_text": "An investigation of the driver's safety performance history with Department of Transportation regulated employers during the preceding three years.",
+      "requirement_text": "The covered carrier must investigate the driver's preceding three years of safety performance history with DOT-regulated employers.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FMCSA_SAFETY_PERFORMANCE_INVESTIGATION",
+        "new": true,
+        "credential_name": "FMCSA prior-employer safety-performance investigation"
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "athire",
+      "on_failure": "track",
+      "effective_from": "2004-10-29",
+      "notes": "Document response or good faith effort within the 30-day timeframe under Part 391."
+    },
+    {
+      "id": "FED-DRV-010",
+      "qualification": "DRV-003",
+      "name": "Annual MVR inquiry under FMCSA rules",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.25(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.25",
+      "citation_text": "at least once every 12 months, make an inquiry to obtain the motor vehicle record",
+      "requirement_text": "The motor carrier must obtain each covered driver's required MVR at least every 12 months.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "driving_record",
+        "lookback_years": 1
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 12
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-09-29",
+      "notes": "This rule concerns a 12-month inquiry/review, not a universal initial three-year record."
+    },
+    {
+      "id": "FED-DRV-011",
+      "qualification": "DRV-010",
+      "name": "Annual MVR review documented",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.25(b)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.25",
+      "citation_text": "at least once every 12 months, review the motor vehicle record of each driver",
+      "requirement_text": "The carrier must perform and document the required annual MVR review of the covered driver.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FMCSA_ANNUAL_MVR_REVIEW",
+        "new": true,
+        "credential_name": "FMCSA documented annual MVR review"
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 12
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-09-29"
+    },
+    {
+      "id": "FED-DRV-012",
+      "qualification": "DRV-011",
+      "name": "Road test or acceptable equivalent",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.11(b)(7)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.11",
+      "citation_text": "Has successfully completed a driver's road test and has been issued a certificate of driver's road test",
+      "requirement_text": "The covered driver must have completed the required road test or hold an equivalent acceptable under 49 CFR 391.33.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FMCSA_ROAD_TEST_OR_EQUIVALENT",
+        "new": true,
+        "credential_name": "FMCSA road-test certificate or accepted 391.33 equivalent"
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1970-04-22",
+      "notes": "An appropriately accepted license or certificate may satisfy the equivalency rule; do not demand a road-test card in every case."
+    },
+    {
+      "id": "FED-DRV-013",
+      "qualification": "DRV-012",
+      "name": "FMCSA medical qualification and certification",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.41(a)(1)(i)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.41",
+      "citation_text": "A person subject to this part must not operate a commercial motor vehicle unless he or she is medically certified",
+      "requirement_text": "A covered driver must maintain a qualifying current medical certification or applicable permitted alternative.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "DOT_MEDICAL_CARD"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-19",
+      "notes": "Certification evidence for CDL drivers may be verified through the licensing authority; a physical DOT card alone may not be the right artifact. Exceptions and special certifications apply.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "fmcsamedical_certification_or_variance",
+          "why": "The engine must reconcile current medical qualification from driver licensing authority or examiner and any applicable variance."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-014",
+      "qualification": "DRV-013",
+      "name": "FMCSA medical re-examination interval",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.45(b)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.45",
+      "citation_text": "during the preceding 24 months, unless the driver is required to be examined and certified",
+      "requirement_text": "Covered drivers must be medically re-examined within the applicable period, which may be shorter than 24 months.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "DOT_MEDICAL_CARD"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-19",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "fmcsamedical_actual_expiration",
+          "why": "The driver-specific medical certificate expiry governs, including shortened 12-month intervals and re-examination after impairment."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-015",
+      "qualification": "DRV-014",
+      "name": "FMCSA driver qualification file",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 391.51(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-391.51",
+      "citation_text": "Each motor carrier shall maintain a driver qualification file for each driver it employs.",
+      "requirement_text": "The covered carrier must maintain the required qualification file for its driver.",
+      "applies_when": {
+        "fact": "reach.part391",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FMCSA_DRIVER_QUALIFICATION_FILE",
+        "new": true,
+        "credential_name": "FMCSA complete driver qualification file"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1970-04-22",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "fmcsa_driver_file_completeness",
+          "why": "A placeholder credential cannot validate all § 391.51 documents and record-retention details."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-016",
+      "qualification": "DRV-002",
+      "name": "CDL required for CDL-classified vehicle",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 383.23(a)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-383.23",
+      "citation_text": "no person may legally operate a CMV unless such person possesses a CDL",
+      "requirement_text": "A driver operating a vehicle requiring a CDL must hold a valid CDL for that vehicle.",
+      "applies_when": {
+        "fact": "driver.cdl",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2011-05-09",
+      "notes": "49 CFR Part 383 defines CMV differently from Part 390; do not infer CDL need solely from vehicle.cmv_federal. Endorsements require separate verification.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "cdl_passenger_endorsement_and_restrictions",
+          "why": "The current license evidence definition mentions class but not passenger endorsements and CDL restrictions."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-017",
+      "qualification": "DOT-001",
+      "name": "FMCSA pre-employment controlled substance test",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 382.301(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-382.301",
+      "citation_text": "unless the employer has received a controlled substances test result from the MRO or C/TPA indicating a verified negative test result",
+      "requirement_text": "A driver subject to Part 382 must have a qualifying negative pre-employment controlled-substances test or valid regulatory exception before safety-sensitive work.",
+      "applies_when": {
+        "fact": "reach.part382",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "drug_test",
+        "reason": "preemployment"
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1995-01-01",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.part382_prior_testing_exception",
+          "why": "49 CFR 382.301(b) permits a qualifying prior-program exception, not represented by the schema."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-018",
+      "qualification": "DOT-002",
+      "name": "FMCSA drug/alcohol prohibition and return-to-duty",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 382.503(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-382.503",
+      "citation_text": "No driver who has engaged in conduct prohibited by subpart B of this part shall perform safety-sensitive functions",
+      "requirement_text": "A driver in a prohibited status cannot perform Part 382 safety-sensitive functions until compliant return-to-duty requirements are satisfied.",
+      "applies_when": {
+        "fact": "reach.part382",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "fact",
+        "fact": "driver.prohibited",
+        "is": false
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2001-08-17",
+      "notes": "driver.prohibited must be reliably fed by DOT program and Clearinghouse status, not a self-attested toggle."
+    },
+    {
+      "id": "FED-DRV-019",
+      "qualification": "DOT-003",
+      "name": "FMCSA Clearinghouse pre-employment query",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 382.701(a)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-382.701",
+      "citation_text": "Employers must not employ a driver subject to controlled substances and alcohol testing under this part to perform a safety-sensitive function without first conducting a pre-employment query",
+      "requirement_text": "The employer must perform the required full Clearinghouse pre-employment query and resolve eligibility before safety-sensitive work.",
+      "applies_when": {
+        "fact": "reach.part382",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "CLEARINGHOUSE_QUERY"
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-01-06",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "clearinghouse_query_scope_result_and_consent",
+          "why": "The existing credential does not prove a full query, consent, result or prohibited-status resolution."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-020",
+      "qualification": "DOT-003",
+      "name": "FMCSA annual Clearinghouse query",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 382.701(b)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-382.701",
+      "citation_text": "Employers must conduct a query of the Clearinghouse at least once per year",
+      "requirement_text": "The employer must conduct an annual Clearinghouse query for each covered driver.",
+      "applies_when": {
+        "fact": "reach.part382",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "CLEARINGHOUSE_QUERY"
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 12
+      },
+      "due": "ongoing",
+      "on_failure": "block",
+      "effective_from": "2020-01-06",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "clearinghouse_annual_limited_full_resolution",
+          "why": "Limited queries with a record require timely full-query follow-up, which an upload alone cannot establish."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-011",
+      "qualification": "POL-009",
+      "name": "FMCSA driver drug/alcohol education materials",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FMCSA",
+      "citation": "49 CFR 382.601(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-382.601",
+      "citation_text": "Each employer shall provide educational materials that explain the requirements of this part",
+      "requirement_text": "The employer must distribute required Part 382 drug and alcohol education and policy materials to covered drivers.",
+      "applies_when": {
+        "fact": "reach.part382",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "DOT_DRUG_ALCOHOL_POLICY"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1995-01-01",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "dot_driver_policy_distribution",
+          "why": "Having a policy does not prove its distribution to each covered driver."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-012",
+      "qualification": "POL-010",
+      "name": "FMCSA random testing program",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FMCSA",
+      "citation": "49 CFR 382.305(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-382.305",
+      "citation_text": "Every employer shall comply with the requirements of this section.",
+      "requirement_text": "A covered employer must operate a compliant random controlled-substance and alcohol testing program.",
+      "applies_when": {
+        "fact": "reach.part382",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "DOT_RANDOM_TESTING_PROGRAM"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1995-01-01",
+      "notes": "Quoted source must be checked against exact current 382.305(a) text; program thresholds/percentages are not hardcoded here.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "dot_random_program_operation",
+          "why": "A written policy does not demonstrate random selection, testing and required annual percentages."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-013",
+      "qualification": "REG-006",
+      "name": "FMCSA CMV periodic vehicle inspection program",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FMCSA",
+      "citation": "49 CFR 396.17(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-396.17",
+      "citation_text": "Every commercial motor vehicle must be inspected as required by this section.",
+      "requirement_text": "The covered carrier must ensure required periodic CMV inspections.",
+      "applies_when": {
+        "fact": "reach.fmcsr",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "FMCSA_ANNUAL_INSPECTION_PROGRAM"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1988-12-07",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "carrier_vehicle_inspection_program_evidence",
+          "why": "Policy alone does not demonstrate each covered vehicle has passed inspection."
+        }
+      ]
+    },
+    {
+      "id": "FED-VEH-001",
+      "qualification": "VEH-004",
+      "name": "FMCSA annual vehicle inspection passed",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "vehicle",
+      "authority": "FMCSA",
+      "citation": "49 CFR 396.17(c)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-396.17",
+      "citation_text": "has passed an inspection in accordance with the terms of this section at least once during the preceding 12 months",
+      "requirement_text": "A CMV must have a passing inspection within the previous 12 months with the required onboard documentation.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "reach.fmcsr",
+            "is": true
+          },
+          {
+            "fact": "vehicle.cmv_federal",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "DOT_ANNUAL_INSPECTION"
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 12
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1988-12-07"
+    },
+    {
+      "id": "FED-CO-002",
+      "qualification": "REC-003",
+      "name": "FMCSA systematic vehicle inspection and maintenance",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FMCSA",
+      "citation": "49 CFR 396.3(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-396.3",
+      "citation_text": "Every motor carrier and intermodal equipment provider must systematically inspect, repair, and maintain",
+      "requirement_text": "The covered motor carrier must systematically inspect, maintain, and repair all vehicles subject to its control.",
+      "applies_when": {
+        "fact": "reach.fmcsr",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "FMCSA_MAINTENANCE_PROGRAM"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1970-04-22",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "fmcsa_vehicle_maintenance_records",
+          "why": "Maintenance schedule and repair records are not represented in the current evidence types."
+        }
+      ]
+    },
+    {
+      "id": "FED-VEH-005",
+      "qualification": "VEH-005",
+      "name": "FMCSA vehicle in safe and proper working condition",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "vehicle",
+      "authority": "FMCSA",
+      "citation": "49 CFR 396.3(a)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-396.3",
+      "citation_text": "Parts and accessories shall be in safe and proper operating condition at all times.",
+      "requirement_text": "The covered commercial vehicle must be in safe and proper condition before transportation.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "reach.fmcsr",
+            "is": true
+          },
+          {
+            "fact": "vehicle.cmv_federal",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Current vehicle safety inspection and open critical defect resolution."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1970-04-22",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "vehicle_current_safety_and_defect_status",
+          "why": "An annual inspection certificate alone does not establish current safe operating condition."
+        }
+      ]
+    },
+    {
+      "id": "FED-VEH-006",
+      "qualification": "VEH-006",
+      "name": "FMCSA bus emergency-exit inspection",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "vehicle",
+      "authority": "FMCSA",
+      "citation": "49 CFR 396.3(a)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-396.3",
+      "citation_text": "Pushout windows, emergency doors, and emergency door marking lights in buses shall be inspected at least every 90 days.",
+      "requirement_text": "A covered bus with required emergency exits must have inspections of those exits and lights no more than 90 days apart.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "reach.fmcsr",
+            "is": true
+          },
+          {
+            "fact": "vehicle.cmv_federal",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "BUS_EMERGENCY_EXIT_INSPECTION",
+        "new": true,
+        "credential_name": "Bus emergency exits and emergency lighting inspection"
+      },
+      "validity": {
+        "renewal": "days",
+        "every": 90
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1970-04-22",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.is_bus_with_pushout_windows_or_emergency_doors",
+          "why": "Not all vehicles classified as CMVs are buses with regulated emergency exit equipment."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-021",
+      "qualification": "HOS-001",
+      "name": "FMCSA passenger-carrier 10-hour driving limit",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 395.5(a)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-395.5",
+      "citation_text": "More than 10 hours following 8 consecutive hours off duty; or",
+      "requirement_text": "Covered passenger CMV drivers may not drive over 10 hours following 8 consecutive hours off duty.",
+      "applies_when": {
+        "fact": "reach.fmcsr",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Verified passenger carrier driving time and off-duty history for proposed assignment."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2005-08-25",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "reach.passenger_hos",
+          "why": "Part 395 coverage/exemptions and passenger-carrying category are not available."
+        },
+        {
+          "kind": "evidence",
+          "name": "driver_hos_time_and_trip_projections",
+          "why": "Current evidence types do not include driving time or duty-status history."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-022",
+      "qualification": "HOS-002",
+      "name": "FMCSA passenger-carrier 15-hour on-duty driving cut-off",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 395.5(a)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-395.5",
+      "citation_text": "For any period after having been on duty 15 hours following 8 consecutive hours off duty.",
+      "requirement_text": "A covered passenger CMV driver may not continue driving after reaching 15 hours on duty following qualifying rest.",
+      "applies_when": {
+        "fact": "reach.fmcsr",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Verified on-duty and off-duty records with anticipated trip times."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2005-08-25",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "reach.passenger_hos",
+          "why": "Determine HOS exceptions, passenger-carrier category and driver scope."
+        },
+        {
+          "kind": "evidence",
+          "name": "driver_hos_time_and_trip_projections",
+          "why": "The engine cannot currently evaluate duty hours."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-023",
+      "qualification": "HOS-003",
+      "name": "FMCSA passenger-carrier 60/70-hour weekly limit",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 395.5(b)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-395.5",
+      "citation_text": "Having been on duty 60 hours in any 7 consecutive days",
+      "requirement_text": "A covered passenger CMV driver must meet the applicable rolling 60-hour/7-day or 70-hour/8-day on-duty limit.",
+      "applies_when": {
+        "fact": "reach.fmcsr",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Driver rolling weekly on-duty totals and applicable carrier operating schedule."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2005-08-25",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.operates_cmv_seven_days",
+          "why": "Determines which weekly passenger carrier limit applies."
+        },
+        {
+          "kind": "fact",
+          "name": "reach.passenger_hos",
+          "why": "Determine coverage and exceptions."
+        },
+        {
+          "kind": "evidence",
+          "name": "driver_hos_time_and_trip_projections",
+          "why": "The engine cannot currently evaluate rolling on-duty hours."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-014",
+      "qualification": "BBP-001",
+      "name": "OSHA bloodborne pathogen exposure control plan",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "OSHA",
+      "citation": "29 CFR 1910.1030(c)(1)(i)",
+      "citation_url": "https://www.ecfr.gov/current/title-29/section-1910.1030",
+      "citation_text": "Each employer having an employee(s) with occupational exposure",
+      "requirement_text": "Where employees have reasonably anticipated occupational exposure, the employer must maintain a written exposure control plan.",
+      "applies_when": {
+        "fact": "company.exposure",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "BBP_EXPOSURE_PLAN"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "block",
+      "effective_from": "1992-03-06"
+    },
+    {
+      "id": "FED-CO-015",
+      "qualification": "BBP-001",
+      "name": "Annual OSHA bloodborne pathogen plan review",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "OSHA",
+      "citation": "29 CFR 1910.1030(c)(1)(iv)",
+      "citation_url": "https://www.ecfr.gov/current/title-29/section-1910.1030",
+      "citation_text": "The Exposure Control Plan shall be reviewed and updated at least annually",
+      "requirement_text": "The bloodborne pathogen exposure control plan must be reviewed and updated at least annually where the standard applies.",
+      "applies_when": {
+        "fact": "company.exposure",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "BBP_EXPOSURE_PLAN"
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 12
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1992-03-06",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "bbp_plan_review_date",
+          "why": "Document existence and plan expiration alone do not establish the plan-review date."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-024",
+      "qualification": "TRN-005",
+      "name": "OSHA bloodborne pathogens worker training",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "OSHA",
+      "citation": "29 CFR 1910.1030(g)(2)(ii)(B)",
+      "citation_url": "https://www.ecfr.gov/current/title-29/section-1910.1030",
+      "citation_text": "At least annually thereafter.",
+      "requirement_text": "After initial assignment, employees with occupational exposure must receive bloodborne pathogen training at least annually.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.exposure",
+            "is": true
+          },
+          {
+            "fact": "driver.employee",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "BLOODBORNE_PATHOGENS"
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 12
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1992-03-06",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.actual_bbp_occupational_exposure",
+          "why": "company.exposure indicates some positions are exposed, not necessarily this particular driver."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-025",
+      "qualification": "BBP-002",
+      "name": "OSHA hepatitis B vaccination offer",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "OSHA",
+      "citation": "29 CFR 1910.1030(f)(2)(i)",
+      "citation_url": "https://www.ecfr.gov/current/title-29/section-1910.1030",
+      "citation_text": "Hepatitis B vaccination shall be made available",
+      "requirement_text": "An employer must offer qualifying employees with occupational exposure hepatitis B vaccination under the standard.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.exposure",
+            "is": true
+          },
+          {
+            "fact": "driver.employee",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Confidential record that hepatitis B vaccination was offered, declined or otherwise addressed in compliance with the standard."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "athire",
+      "on_failure": "track",
+      "effective_from": "1992-03-06",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.actual_bbp_occupational_exposure",
+          "why": "The job-specific occupational exposure determination is needed."
+        },
+        {
+          "kind": "evidence",
+          "name": "bbp_hepatitis_b_offer_status",
+          "why": "No confidential vaccination-offer workflow exists in the schema."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-016",
+      "qualification": "HIP-001",
+      "name": "HIPAA Security Rule risk analysis",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "HHS OCR",
+      "citation": "45 CFR 164.308(a)(1)(ii)(A)",
+      "citation_url": "https://www.ecfr.gov/current/title-45/section-164.308",
+      "citation_text": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities",
+      "requirement_text": "Covered entities and business associates must perform required analysis of risks to electronic protected health information.",
+      "applies_when": {
+        "fact": "company.hipaa",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "HIPAA_RISK_ANALYSIS"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2005-04-20",
+      "notes": "HIPAA Security Rule applicable to ePHI, not automatically every Medicaid transportation provider.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "hipaa_current_risk_analysis_scope",
+          "why": "Document presence alone does not establish accurate, thorough and up-to-date scope of the risk analysis."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-017",
+      "qualification": "HIP-002",
+      "name": "HIPAA covered-entity workforce privacy training",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "HHS OCR",
+      "citation": "45 CFR 164.530(b)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-45/section-164.530",
+      "citation_text": "A covered entity must train all members of its workforce",
+      "requirement_text": "A HIPAA covered entity must train workforce members as necessary and appropriate to perform functions under privacy policies.",
+      "applies_when": {
+        "fact": "company.hipaa",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "HIPAA_WORKFORCE_TRAINING"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2003-04-14",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.hipaa_covered_entity",
+          "why": "The current company.hipaa fact also includes business associates, which are not identically subject to 164.530(b)."
+        },
+        {
+          "kind": "evidence",
+          "name": "hipaa_workforce_training_records",
+          "why": "A written policy alone does not prove training of relevant workforce."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-018",
+      "qualification": "HIP-003",
+      "name": "HIPAA business associate arrangements",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "HHS OCR",
+      "citation": "45 CFR 164.504(e)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-45/section-164.504",
+      "citation_text": "A contract between the covered entity and a business associate must establish",
+      "requirement_text": "Covered entities must obtain compliant business-associate assurances for applicable contracted PHI services.",
+      "applies_when": {
+        "fact": "company.hipaa",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Executed applicable business associate agreement containing required privacy obligations."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2003-04-14",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.hipaa_covered_entity",
+          "why": "Covered-entity versus business-associate role must be distinguished."
+        },
+        {
+          "kind": "fact",
+          "name": "company.contracts_business_associates",
+          "why": "Only relevant contracting relationships require these assurances."
+        },
+        {
+          "kind": "evidence",
+          "name": "hipaa_business_associate_agreement",
+          "why": "The existing evidence types do not validate contract terms."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-019",
+      "qualification": "FCR-001",
+      "name": "FCRA background report disclosure and authorization",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FTC / CFPB",
+      "citation": "15 U.S.C. 1681b(b)(2)(A)",
+      "citation_url": "https://uscode.house.gov/us/usc/t15/s1681b/",
+      "citation_text": "the consumer has authorized in writing (which authorization may be made on the document referred to in clause (i))",
+      "requirement_text": "When obtaining consumer reports for employment purposes, the company must make the required stand-alone disclosure and obtain written authorization.",
+      "applies_when": {
+        "fact": "company.cra",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "signature",
+        "document": "FCRA_AUTH"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "prehire",
+      "on_failure": "track",
+      "effective_from": "1997-09-30",
+      "notes": "The DOT-regulated application exception in section 1681b(b)(2)(B)-(C) may change the disclosure/authorization mechanics; evaluate it before enforcement.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.cra_employment_purpose",
+          "why": "This law applies to consumer reports used for employment purposes, including relevant contractor contexts; company.cra alone does not establish use purpose."
+        },
+        {
+          "kind": "evidence",
+          "name": "fcra_standalone_disclosure",
+          "why": "An authorization alone does not prove the required separate disclosure content."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-020",
+      "qualification": "EMP-001",
+      "name": "Verify employee work eligibility under federal I-9 rules",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "DHS USCIS",
+      "citation": "8 U.S.C. 1324a(b)(1)(A)",
+      "citation_url": "https://uscode.house.gov/us/usc/t8/s1324a/",
+      "citation_text": "The person or entity must attest, under penalty of perjury and on a form designated or established by the Attorney General by regulation, that it has verified",
+      "requirement_text": "An employer must verify identity and employment authorization for hires according to federal Form I-9 requirements.",
+      "applies_when": {
+        "fact": "driver.employee",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "signature",
+        "document": "I9"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "athire",
+      "on_failure": "track",
+      "effective_from": "1986-11-06",
+      "notes": "Employee Form I-9 must include both employee and employer sections; a signature alone is not complete verification.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "i9_completed_verification",
+          "why": "Employee signature alone does not show the employer completed and documented required identity and employment-authorization verification."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-021",
+      "qualification": "FTA-001",
+      "name": "FTA drug and alcohol program for covered transit operations",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FTA",
+      "citation": "49 CFR 655.11",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-655.11",
+      "citation_text": "Each employer shall establish an anti-drug use and alcohol misuse program consistent with the requirements of this part.",
+      "requirement_text": "Operators actually subject to 49 CFR Part 655 must maintain the required FTA drug and alcohol program.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "FTA_DRUG_ALCOHOL_PROGRAM"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2001-08-01",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.fta_part655_covered",
+          "why": "company.transit is broader than grant/program coverage; Section 5310-only operators do not automatically trigger Part 655."
+        },
+        {
+          "kind": "evidence",
+          "name": "fta_drug_alcohol_program_operations",
+          "why": "The current system cannot prove actual FTA program testing compliance."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-026",
+      "qualification": "TRN-005",
+      "name": "OSHA bloodborne pathogens training at initial assignment",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "OSHA",
+      "citation": "29 CFR 1910.1030(g)(2)(ii)(A)",
+      "citation_url": "https://www.ecfr.gov/current/title-29/section-1910.1030",
+      "citation_text": "At the time of initial assignment to tasks where occupational exposure may take place;",
+      "requirement_text": "An employee with occupational exposure must receive the required bloodborne pathogens training at initial assignment.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.exposure",
+            "is": true
+          },
+          {
+            "fact": "driver.employee",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "BLOODBORNE_PATHOGENS"
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1992-03-06",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.actual_bbp_occupational_exposure",
+          "why": "The current company-level exposure designation does not identify the particular driver position."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-027",
+      "qualification": "DRV-016",
+      "name": "CDL passenger endorsement for a passenger vehicle",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 383.93(b)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-383.93",
+      "citation_text": "Passenger vehicles;",
+      "requirement_text": "A CDL driver operating a qualifying passenger vehicle must have the required passenger endorsement.",
+      "applies_when": {
+        "fact": "driver.cdl",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Current CDL record showing the required passenger endorsement and correct class."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2011-05-09",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.passenger_endorsement_required",
+          "why": "Not all CDL uses require a passenger endorsement; identify the vehicle and operation triggering one."
+        },
+        {
+          "kind": "evidence",
+          "name": "driver_current_cdl_endorsements",
+          "why": "The license evidence verifies class but not every relevant endorsement."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-028",
+      "qualification": "VEH-007",
+      "name": "CMV driver inspection of essential equipment before driving",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 392.7(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-392.7",
+      "citation_text": "No commercial motor vehicle shall be driven unless the driver is satisfied that the following parts and accessories are in good working order",
+      "requirement_text": "A covered CMV driver must confirm required equipment is operable before driving.",
+      "applies_when": {
+        "fact": "reach.fmcsr",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Timestamped pre-trip equipment inspection and disposition of safety-critical defects."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1968-12-25",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "driver_cmv_equipment_pretrip_inspection",
+          "why": "Current credential types do not capture equipment-by-equipment inspection and defects."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-029",
+      "qualification": "VEH-007",
+      "name": "CMV driver safe-operating-condition confirmation",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 396.13(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-396.13",
+      "citation_text": "Be satisfied that the motor vehicle is in safe operating condition;",
+      "requirement_text": "Before driving, a covered driver must be satisfied the vehicle is in safe operating condition.",
+      "applies_when": {
+        "fact": "reach.fmcsr",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Pre-trip vehicle safety acknowledgment with any disqualifying defects cleared."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1979-12-27",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "driver_pretrip_vehicle_safety_attestation",
+          "why": "No current driver-vehicle-specific pre-trip safety confirmation evidence is defined."
+        }
+      ]
+    },
+    {
+      "id": "FED-DRV-030",
+      "qualification": "SAF-001",
+      "name": "CMV alcohol prohibition before duty",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "FMCSA",
+      "citation": "49 CFR 392.5(a)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-392.5",
+      "citation_text": "within 4 hours before going on duty or operating, or having physical control of, a commercial motor vehicle",
+      "requirement_text": "A covered driver must not use or be under the influence of alcohol within four hours before operating a CMV.",
+      "applies_when": {
+        "fact": "reach.fmcsr",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Legally appropriate current alcohol prohibition or out-of-service status and relevant confirmations."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1968-12-25",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "driver_3925_alcohol_prohibition_status",
+          "why": "The current fact driver.prohibited tracks DOT Part 382 status, not every Part 392.5 violation."
+        }
+      ]
+    },
+    {
+      "id": "FED-VEH-007",
+      "qualification": "VEH-008",
+      "name": "Do not dispatch an unsafe FMCSA regulated vehicle",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "vehicle",
+      "authority": "FMCSA",
+      "citation": "49 CFR 396.7(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-396.7",
+      "citation_text": "A motor vehicle shall not be operated in such a condition as to likely cause an accident or a breakdown of the vehicle.",
+      "requirement_text": "A regulated vehicle with a condition likely to cause an accident or breakdown cannot be assigned for operation.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "reach.fmcsr",
+            "is": true
+          },
+          {
+            "fact": "vehicle.cmv_federal",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Current vehicle unsafe-defect flag plus completed safety repairs and release-to-service record."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1979-07-02",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "vehicle_open_unsafe_defects",
+          "why": "The system must distinguish critical open vehicle defects and clear them after verified repairs."
+        }
+      ]
+    },
+    {
+      "id": "FED-VEH-008",
+      "qualification": "VEH-009",
+      "name": "Emergency equipment on covered buses and trucks",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "vehicle",
+      "authority": "FMCSA",
+      "citation": "49 CFR 393.95",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-393.95",
+      "citation_text": "Each truck, truck tractor, and bus (except those towed in driveaway-towaway operations) must be equipped as follows:",
+      "requirement_text": "A covered bus or truck must carry the emergency equipment specified by 49 CFR 393.95.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "reach.fmcsr",
+            "is": true
+          },
+          {
+            "fact": "vehicle.cmv_federal",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Vehicle inventory and current inspection of required extinguishers and warning devices, with applicable exemptions."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1973-11-08",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.is_bus_or_truck",
+          "why": "This regulation is not a universal equipment rule for every vehicle qualifying as a CMV by weight or capacity."
+        },
+        {
+          "kind": "evidence",
+          "name": "vehicle_emergency_equipment_checked",
+          "why": "TripProof needs proof of current condition and presence of required emergency equipment."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-022",
+      "qualification": "TRN-006",
+      "name": "FMCSA reasonable suspicion supervisor training",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FMCSA",
+      "citation": "49 CFR 382.603",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-382.603",
+      "citation_text": "Each employer shall ensure that all persons designated to supervise drivers receive at least 60 minutes of training on alcohol misuse",
+      "requirement_text": "Employers subject to Part 382 must ensure supervisors designated to oversee covered drivers receive both required 60-minute reasonable-suspicion training components.",
+      "applies_when": {
+        "fact": "reach.part382",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "DOT_SUPERVISOR_SUSPICION_TRAINING",
+        "new": true,
+        "credential_name": "DOT supervisor reasonable-suspicion training"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1995-01-01",
+      "notes": "Initial 60-minute alcohol and additional 60-minute drugs training; recurrent training not mandated by section 382.603.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.part382_designated_supervisors",
+          "why": "Determine designated supervisors and owner-operator exceptions before requiring training."
+        },
+        {
+          "kind": "evidence",
+          "name": "company_supervisors_dot_training_completion",
+          "why": "One company credential does not establish coverage for all designated supervisors."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-023",
+      "qualification": "INS-001",
+      "name": "Interstate for-hire passenger carrier liability insurance",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FMCSA",
+      "citation": "49 CFR 387.33T",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-387.33",
+      "citation_text": "For-hire motor carriers of passengers operating in interstate or foreign commerce.",
+      "requirement_text": "An interstate for-hire passenger carrier subject to Part 387 must carry the applicable federally required public liability limits, generally $1.5 million or $5 million by passenger capacity.",
+      "applies_when": {
+        "fact": "reach.authority",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "AUTO_LIABILITY_COI"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-05-17",
+      "notes": "Operative temporary text is §387.33T; base §387.33 remains suspended according to current CFR. Separate vehicle-by-vehicle limits may not be the correct determination; use applicable carrier coverage.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.part387_for_hire_covered",
+          "why": "Operating authority reach alone does not establish Part 387 coverage or a particular exemption."
+        },
+        {
+          "kind": "fact",
+          "name": "fleet.highest_passenger_capacity",
+          "why": "The limit depends on the highest seating capacity in the covered fleet; vehicle.seats cannot establish fleet maximum."
+        },
+        {
+          "kind": "fact",
+          "name": "company.part387_exception_or_transit_grant",
+          "why": "49 CFR 387.27(b) and certain grant-funded transit operations have distinct limits."
+        },
+        {
+          "kind": "evidence",
+          "name": "insurance_federal_limit_and_endorsements_verified",
+          "why": "Presence of a certificate is not proof that the applicable liability limit and coverage are correct."
+        }
+      ]
+    },
+    {
+      "id": "FED-CO-024",
+      "qualification": "REG-004",
+      "name": "FMCSA covered carrier identification report",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "FMCSA",
+      "citation": "49 CFR 390.19T(a)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-49/section-390.19",
+      "citation_text": "A U.S.-, Canada-, Mexico-, or non-North America-domiciled motor carrier conducting operations in interstate commerce must file a Motor Carrier Identification Report, Form MCS–150.",
+      "requirement_text": "An interstate motor carrier subject to the identification-report rule must maintain the required FMCSA motor-carrier identification filings and updates.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "reach.fmcsr",
+            "is": true
+          },
+          {
+            "fact": "operation.interstate",
+            "is": true
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FMCSA_MCS150_REGISTRATION",
+        "new": true,
+        "credential_name": "FMCSA motor carrier identification registration"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2023-11-17",
+      "notes": "The operative provision is §390.19T; base §390.19 remains suspended in the current regulatory text. The associated biennial-update schedule must be implemented separately.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.39019T_applicability",
+          "why": "Identify whether the operator is subject to this section and its exceptions."
+        },
+        {
+          "kind": "evidence",
+          "name": "fmCSA_mcs150_status_and_biennial_update",
+          "why": "A document on file does not establish whether the required registration and updates are current."
+        }
+      ]
+    }
+  ]
+}

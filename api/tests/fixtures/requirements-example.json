@@ -1,0 +1,50 @@
+{
+  "format": "tripproof-requirements/1",
+  "title": "Example: two requirements in the TripProof format",
+  "prepared_on": "2026-11-07",
+  "prepared_by": "Arrowleaf Technologies, LLC",
+  "requirements": [
+    {
+      "id": "MED-DRV-001",
+      "qualification": "DRV-001",
+      "name": "Valid driver's license (Medicaid NEMT)",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "CMS",
+      "citation": "42 U.S.C. 1396a(a)(87)(B)",
+      "citation_url": "https://www.govinfo.gov/content/pkg/USCODE-2023-title42/html/USCODE-2023-title42-chap7-subchapXIX-sec1396a.htm",
+      "citation_text": "(87) provide for a mechanism, which may include attestation, that ensures that, with respect to any provider (including a transportation network company) or individual driver of nonemergency transportation to medically necessary services receiving payments under such plan (but excluding any public transit authority), at a minimum— ... (B) each such individual driver has a valid driver's license;",
+      "requirement_text": "Every driver who carries Medicaid nonemergency transportation holds a valid driver's license.",
+      "applies_when": null,
+      "programs": ["medicaid"],
+      "evidence": { "type": "license" },
+      "validity": { "renewal": "ondocument", "warn_days": 30 },
+      "due": "prehire",
+      "on_failure": "block",
+      "effective_from": "2021-12-27",
+      "notes": "Added by Pub. L. 116-260, div. CC, title II, sec. 209(b)(4)(A). Per sec. 209(b)(4)(B) it applies to services furnished on or after the date one year after enactment (Dec. 27, 2020), with an exception for a State plan the Secretary determines needs State legislation. Public transit authorities are excluded by the statute's own words."
+    },
+    {
+      "id": "FED-DRV-001",
+      "qualification": "TRN-003",
+      "name": "Trained to proficiency to assist passengers with disabilities",
+      "category": "FEDERAL",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "US DOT",
+      "citation": "49 CFR 37.173",
+      "citation_url": "https://www.ecfr.gov/current/title-49/subtitle-A/part-37/subpart-G/section-37.173",
+      "citation_text": "Each public or private entity which operates a fixed route or demand responsive system shall ensure that personnel are trained to proficiency, as appropriate to their duties, so that they operate vehicles and equipment safely and properly assist and treat individuals with disabilities who use the service in a respectful and courteous way, with appropriate attention to the difference among individuals with disabilities.",
+      "requirement_text": "Every driver is trained to proficiency to operate the vehicle and its equipment safely and to assist passengers with disabilities.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": { "type": "credential", "credential": "PASSENGER_ASSISTANCE" },
+      "validity": { "renewal": "once" },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "1991-09-06",
+      "notes": "Applies to every driver of a demand responsive service, not only drivers of wheelchair vehicles. 1991-09-06 is the publication date of Part 37 (56 FR 45621); confirm the rule's effective date. The regulation sets no refresher interval."
+    }
+  ]
+}

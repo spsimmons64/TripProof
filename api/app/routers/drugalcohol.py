@@ -589,6 +589,7 @@ def supervisor_training(user: dict = Depends(current_user), conn: Connection = D
 @router.get("/company/random-selections")
 def random_selections(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
     """The draws made this year, against the rates FMCSA sets and the pool they were drawn from."""
+    rules.require_dot(conn, user["accountid"])
     acct = user["accountid"]
     year = localnow(user["timezone"]).date().year
     drawn = rows(conn, """

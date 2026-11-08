@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
-from app import invitations, signatures
+from app import invitations, rules, signatures
 from app.activity import log
 from app.db import get_conn, row, run, saved, utcnow
 from app.timezones import clean_timezone
@@ -49,7 +49,8 @@ def me(user: dict = Depends(current_user), conn: Connection = Depends(get_conn))
     # training record - the banner asks them to, and the question is answered here because
     # this call already runs on every page load. The appointment is the whole trigger: nobody
     # records the training first, so there is nothing else to be waiting for.
-    owes = row(conn, """
+    dot = rules.dot_module(conn, user["accountid"])
+    owes = dot and row(conn, """
         SELECT 1 AS x FROM companyroles r
         WHERE r.accountid = :a AND r.userid = :u AND r.role = 'supervisor' AND r.until IS NULL
           AND NOT EXISTS (
@@ -58,7 +59,7 @@ def me(user: dict = Depends(current_user), conn: Connection = Depends(get_conn))
               AND d.doctype = 'SUPERVISOR_TRAINING_RECORD')
         LIMIT 1
     """, a=user["accountid"], u=user["recordid"])
-    return {**user, "subscription": sub, "owessupervisorrecord": bool(owes)}
+    return {**user, "subscription": sub, "owessupervisorrecord": bool(owes), "dotmodule": dot}
 
 
 class MeIn(BaseModel):

@@ -1,0 +1,385 @@
+{
+  "prepared_on": "2026-11-07",
+  "missing": [
+    {
+      "name": "trip.medicaid_state",
+      "occurrences": 47
+    },
+    {
+      "name": "ga_medicaid_current_manual_confirmed",
+      "occurrences": 41
+    },
+    {
+      "name": "company.ga_passenger_carrier_certificate_required",
+      "occurrences": 9
+    },
+    {
+      "name": "trip.uses_georgia_roads",
+      "occurrences": 5
+    },
+    {
+      "name": "company.ga_broker_approved_alternate_training",
+      "occurrences": 2
+    },
+    {
+      "name": "carrier_insurance_limits",
+      "occurrences": 1
+    },
+    {
+      "name": "insurance_named_insured",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_dps_insurance_certificates_remain_updated",
+      "occurrences": 1
+    },
+    {
+      "name": "dps_certificate_current_status",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.owned_or_legally_leased_by_carrier",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_authorized_passenger_carrier_vehicle",
+      "occurrences": 1
+    },
+    {
+      "name": "driver.authorized_for_vehicle_by_carrier",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.authorized_operator_of_georgia_passenger_carrier",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle_ga_insurance_limit_check",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_registration_applicability",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_hands_free_device_operation",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_regulated_passenger_carrier_compliance",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.keep_dps_carrier_information_current",
+      "occurrences": 1
+    },
+    {
+      "name": "rule.ga_40_5_122_effective_date_verified",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_registration_required",
+      "occurrences": 1
+    },
+    {
+      "name": "company.ga_dhs_direct_transport_contract",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_dhs_fitness_adjudication",
+      "occurrences": 1
+    },
+    {
+      "name": "trip_broker_authorization",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_broker_authorized_trip",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_broker_provider_authorization",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_nemt_contracted_provider",
+      "occurrences": 1
+    },
+    {
+      "name": "trip.ga_medicaid_member_eligible",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_member_eligibility",
+      "occurrences": 1
+    },
+    {
+      "name": "trip.ga_medicaid_covered_service",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_covered_medical_purpose",
+      "occurrences": 1
+    },
+    {
+      "name": "trip.member_lacks_other_transport",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_no_alternate_transport_determination",
+      "occurrences": 1
+    },
+    {
+      "name": "trip.broker_approved_transport_mode",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.trip_transport_mode_capability",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.appropriate_georgia_nemt_service_mode",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_nemt_criminal_adjudication",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_no_disqualifying_violent_or_sexual_conviction",
+      "occurrences": 1
+    },
+    {
+      "name": "driver.ga_nemt_dui_conviction_lookback",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_dui_lookback",
+      "occurrences": 1
+    },
+    {
+      "name": "driver.ga_recent_felony",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_felony_approval",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_recent_felony_approved_review",
+      "occurrences": 1
+    },
+    {
+      "name": "driver.ga_five_year_license_suspension",
+      "occurrences": 1
+    },
+    {
+      "name": "driver.ga_child_support_suspension_exception",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_suspended_or_revoked_license_history",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_approved_mvr_source",
+      "occurrences": 1
+    },
+    {
+      "name": "driver.ga_moving_violations_and_fault_accidents",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_moving_violation_disqualification",
+      "occurrences": 1
+    },
+    {
+      "name": "company.ga_broker_training_refresh",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_driver_identification",
+      "occurrences": 1
+    },
+    {
+      "name": "driver.ga_nemt_impairment_hold",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_no_impaired_operation",
+      "occurrences": 1
+    },
+    {
+      "name": "driver.ga_wheelchair_securement_hold",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_wheelchair_retraining_broker_submission",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_wheelchair_securement_retraining_after_incident",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_initial_inspection_pass",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_inspection_approved_and_passing",
+      "occurrences": 1
+    },
+    {
+      "name": "ga_vehicle_safety_condition",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_communications_operational",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_two_way_communications",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_hvac_operational",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_vehicle_hvac_operational",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_seatbelts_operational",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_passenger_seat_belts",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_seatbelt_extensions_count",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_seat_belt_extensions",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_belt_cutter_installed",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_emergency_belt_cutter",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_fire_extinguisher_current",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_fire_extinguisher_equipment",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_reflectors_count",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_three_warning_triangles",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_firstaid_spill_kits_ready",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_first_aid_and_spill_kits",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_accident_packet_onboard",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_registration_insurance_proof_on_vehicle",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_wheelchair_securements_ready",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_wheelchair_securement_devices",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_wheelchair_interlock_pass",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_lift_interlock",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_wheelchair_accessibility_standard",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_dch_out_of_service_status",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_unsafe_vehicle_removed_from_service",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_vehicle_identification_and_broker_number",
+      "occurrences": 1
+    },
+    {
+      "name": "vehicle.ga_entrance_requires_step",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_safe_step_assistance",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_no_smoking_on_vehicle",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_transportation_provider_records_available",
+      "occurrences": 1
+    },
+    {
+      "name": "trip_manifest_completeness",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_daily_driver_manifest",
+      "occurrences": 1
+    },
+    {
+      "name": "trip_member_charges",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_provider_no_passenger_co_pay",
+      "occurrences": 1
+    },
+    {
+      "name": "trip.escort_required",
+      "occurrences": 1
+    },
+    {
+      "name": "trip.available_escort_seat",
+      "occurrences": 1
+    },
+    {
+      "name": "evidence.georgia_medicaid_qualified_escort_permitted",
+      "occurrences": 1
+    }
+  ]
+}

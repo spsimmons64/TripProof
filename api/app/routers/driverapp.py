@@ -102,10 +102,18 @@ def start_session(conn: Connection, driverid: str) -> str:
     sid = newid()
     run(conn, "UPDATE drivers SET sessionid = :s, lastloginon = :now WHERE recordid = :id",
         s=sid, now=utcnow(), id=driverid)
+    # And the phone signed out is no longer told about this driver's trips. The phone signing in
+    # registers itself once it has a token of its own.
+    end_devices(conn, driverid)
     now = utcnow()
     return jwt.encode({"sub": driverid, "kind": "driver", "sid": sid, "iat": now,
                        "exp": now + timedelta(hours=SHIFT_HOURS)},
                       settings.jwt_secret, algorithm="HS256")
+
+
+def end_devices(conn: Connection, driverid: str) -> None:
+    run(conn, "UPDATE driverdevices SET ended = :now WHERE driverid = :d AND ended IS NULL",
+        now=utcnow(), d=driverid)
 
 
 def current_driver(creds: HTTPAuthorizationCredentials | None = Depends(bearer),
@@ -205,6 +213,76 @@ def who_am_i(driver: dict = Depends(current_driver)):
             "name": f'{driver["firstname"]} {driver["lastname"]}'.strip(),
             "company": driver["accountname"], "timezone": driver["timezone"],
             "issues": ISSUES, "waitreasons": WAIT_REASONS, "unsigned": NO_SIGNATURE}
+
+
+# -------------------------------------------------------------------------------------------
+# The phone: notifications, signing out, and deleting the login
+# -------------------------------------------------------------------------------------------
+class DeviceIn(BaseModel):
+    platform: str
+    token: str
+
+
+@router.post("/device")
+def register_device(body: DeviceIn, driver: dict = Depends(current_driver),
+                    conn: Connection = Depends(get_conn)):
+    """The app on this phone, ready to be told about trips instead of texted.
+
+    Sent each time the app starts, because a token can change under it; the same token again only
+    says the phone is still there. A token that was another driver's (one phone, two drivers in
+    turn) stops being theirs."""
+    token = body.token.strip()
+    if body.platform not in ("android", "ios") or not 20 <= len(token) <= 400:
+        raise HTTPException(400, "That is not a device this app can be told on.")
+    now = utcnow()
+    run(conn, "UPDATE driverdevices SET ended = :now WHERE token = :t AND driverid <> :d AND ended IS NULL",
+        now=now, t=token, d=driver["recordid"])
+    same = row(conn, """
+        SELECT recordid FROM driverdevices WHERE driverid = :d AND token = :t AND ended IS NULL
+    """, d=driver["recordid"], t=token)
+    if same:
+        run(conn, "UPDATE driverdevices SET lastseen = :now WHERE recordid = :r", now=now, r=same["recordid"])
+    else:
+        # One phone at a time, as the session is.
+        end_devices(conn, driver["recordid"])
+        run(conn, """
+            INSERT INTO driverdevices (recordid, accountid, driverid, platform, token, added, lastseen)
+            VALUES (:id, :a, :d, :p, :t, :now, :now)
+        """, id=newid(), a=driver["accountid"], d=driver["recordid"], p=body.platform, t=token, now=now)
+    saved(conn)
+    return {"ok": True}
+
+
+@router.post("/signout")
+def sign_out(driver: dict = Depends(current_driver), conn: Connection = Depends(get_conn)):
+    """Signed out on purpose: the session ends and the phone stops being told about trips."""
+    run(conn, "UPDATE drivers SET sessionid = :s WHERE recordid = :d", s=newid(), d=driver["recordid"])
+    end_devices(conn, driver["recordid"])
+    saved(conn)
+    return {"ok": True}
+
+
+@router.post("/delete-login")
+def delete_login(request: Request, driver: dict = Depends(current_driver),
+                 conn: Connection = Depends(get_conn)):
+    """The driver deletes their own app login, which both app stores require an app to offer.
+
+    The login goes at once: the password, every session and every phone registered to it. What is
+    not deleted is the company's record of the driver - their trips, positions on those trips,
+    licence and screening documents - which the company is required to keep and which is not the
+    driver's app account. The office can invite them back; that is a new login."""
+    did = driver["recordid"]
+    run(conn, """
+        UPDATE drivers SET appaccess = 0, passwordhash = NULL, passwordseton = NULL, sessionid = :s
+        WHERE recordid = :d
+    """, s=newid(), d=did)
+    end_devices(conn, did)
+    run(conn, """
+        INSERT INTO driverdeletions (recordid, accountid, driverid, requestedon, ip)
+        VALUES (:id, :a, :d, :now, :ip)
+    """, id=newid(), a=driver["accountid"], d=did, now=utcnow(), ip=client_ip(request))
+    saved(conn)
+    return {"ok": True}
 
 
 # -------------------------------------------------------------------------------------------
@@ -767,9 +845,7 @@ def _before_setting_off(conn: Connection, driver: dict, vehicleid: str | None,
         approved = (row(conn, """SELECT legalreview FROM compliancerules WHERE code = :c
                                  AND accountid IS NULL AND effectiveto IS NULL""", c=out["rule"])
                     or {}).get("legalreview") == "approved"
-        switched = bool((row(conn, "SELECT enforcetripcheck FROM companyprofiles WHERE accountid = :a",
-                             a=acct) or {}).get("enforcetripcheck"))
-        out.update({"vehicleid": vehicleid, "vehiclename": name, "enforced": approved and switched})
+        out.update({"vehicleid": vehicleid, "vehiclename": name, "enforced": approved})
     seen[vehicleid] = out
     return out
 

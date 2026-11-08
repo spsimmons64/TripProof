@@ -1,0 +1,861 @@
+{
+  "as_of": "2026-11-07",
+  "format": "tripproof-requirements/1",
+  "json_schema": "draft/2020-12",
+  "schema_validation": "PASS",
+  "cross_file_ids_unique": true,
+  "total_requirements": 73,
+  "total_waiting_on_needs": 61,
+  "citation_text_verified_against_official_primary_text": "PARTIAL - not fully verified; importer must verify each quote",
+  "historical_effective_dates_fully_verified": false,
+  "comprehensive_federal_regulatory_coverage_certified": false,
+  "files": [
+    {
+      "file": "tripproof-medicaid-requirements.json",
+      "requirements": 13,
+      "schema_errors": 0,
+      "duplicate_ids": [],
+      "subject_counts": {
+        "company": 11,
+        "driver": 2
+      },
+      "block_on_failure": 6,
+      "track_on_failure": 7,
+      "requirements_waiting_on_needs": 13,
+      "needs": [
+        {
+          "id": "MED-CO-001",
+          "name": "Medicaid NEMT provider must not be federally excluded",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.public_transit_authority",
+              "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+            },
+            {
+              "kind": "evidence",
+              "name": "current_federal_program_exclusion_status",
+              "why": "A one-time LEIE screening does not establish current federal health-care-program exclusion status at the trip date; refresh and matching resolution must be demonstrated."
+            }
+          ]
+        },
+        {
+          "id": "MED-DRV-001",
+          "name": "Medicaid NEMT driver must not be federally excluded",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.public_transit_authority",
+              "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+            },
+            {
+              "kind": "evidence",
+              "name": "current_federal_program_exclusion_status",
+              "why": "A one-time LEIE screening does not establish current federal health-care-program exclusion status at the trip date; refresh and matching resolution must be demonstrated."
+            }
+          ]
+        },
+        {
+          "id": "MED-DRV-002",
+          "name": "Medicaid NEMT driver has a valid license",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.public_transit_authority",
+              "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-002",
+          "name": "Process for violations of state drug laws",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.public_transit_authority",
+              "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-003",
+          "name": "Process for driver history disclosure to Medicaid",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.public_transit_authority",
+              "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-004",
+          "name": "Maintain records of Medicaid services furnished",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "medicaid_trip_service_records",
+              "why": "The schema has no service-event or claim documentation evidence type."
+            },
+            {
+              "kind": "fact",
+              "name": "company.medicaid_provider_agreement",
+              "why": "Subcontractor versus state-enrolled provider arrangements must be distinguished."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-005",
+          "name": "Provide Medicaid records on authorized request",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "medicaid_record_production_on_request",
+              "why": "An adopted policy alone does not prove production of specific records when requested."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-006",
+          "name": "State Medicaid provider enrollment and screening",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.medicaid_enrollment_required",
+              "why": "This provision directs the state screening process and does not establish that every transportation subcontractor must be enrolled directly."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-007",
+          "name": "Disclose Medicaid provider ownership and control",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.medicaid_disclosing_entity",
+              "why": "The current facts do not identify entities subject to this disclosure rule."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-008",
+          "name": "Disclose relevant Medicaid program-related convictions",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.medicaid_provider_agreement",
+              "why": "A state Medicaid provider agreement is the trigger; broker-only arrangements must be resolved."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-009",
+          "name": "Accept Medicaid payment according to payment-in-full rule",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "medicaid_billing_compliance",
+              "why": "The engine lacks actual claim, billed charge, cost sharing, and patient charge data."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-010",
+          "name": "Furnish National Provider Identifier when eligible",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.npi_eligible",
+              "why": "Only providers eligible for an NPI must furnish it; not all transportation firms have an NPI."
+            }
+          ]
+        },
+        {
+          "id": "MED-CO-011",
+          "name": "Include NPI on Medicaid claims when required",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.npi_eligible",
+              "why": "NPI eligibility must be known."
+            },
+            {
+              "kind": "evidence",
+              "name": "medicaid_claim_npi",
+              "why": "Claims are outside the current evidence vocabulary."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "file": "tripproof-federal-requirements.json",
+      "requirements": 60,
+      "schema_errors": 0,
+      "duplicate_ids": [],
+      "subject_counts": {
+        "company": 22,
+        "driver": 30,
+        "vehicle": 8
+      },
+      "block_on_failure": 37,
+      "track_on_failure": 23,
+      "requirements_waiting_on_needs": 48,
+      "needs": [
+        {
+          "id": "FED-CO-001",
+          "name": "Proficient disability passenger-assistance training program",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            },
+            {
+              "kind": "evidence",
+              "name": "ada_personnel_proficiency",
+              "why": "A written policy does not demonstrate that relevant staff have actually attained proficiency."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-001",
+          "name": "Driver trained to disability-assistance proficiency",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            },
+            {
+              "kind": "evidence",
+              "name": "driver_ada_demonstrated_proficiency",
+              "why": "A simple completion certificate does not necessarily establish the proficiency demanded by the regulation."
+            }
+          ]
+        },
+        {
+          "id": "FED-VEH-002",
+          "name": "Maintain operative vehicle accessibility features",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            },
+            {
+              "kind": "evidence",
+              "name": "vehicle_accessibility_equipment_status",
+              "why": "No current per-vehicle accessibility equipment operability evidence is defined."
+            }
+          ]
+        },
+        {
+          "id": "FED-VEH-003",
+          "name": "Repair broken accessibility features promptly",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            },
+            {
+              "kind": "evidence",
+              "name": "accessibility_repair_and_accommodation_log",
+              "why": "No defect, repair or accommodation workflow is available."
+            }
+          ]
+        },
+        {
+          "id": "FED-VEH-004",
+          "name": "Use wheelchair securement system",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            },
+            {
+              "kind": "evidence",
+              "name": "vehicle_securement_present_functional",
+              "why": "TripProof lacks a current operational securement-system status and use verification."
+            },
+            {
+              "kind": "fact",
+              "name": "trip.wheelchair_passenger",
+              "why": "The vehicle may have a lift but a particular trip may not involve a wheelchair passenger."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-005",
+          "name": "Do not require wheelchair transfer to regular seat",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-002",
+          "name": "Provide assistance with lifts ramps and restraints",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            },
+            {
+              "kind": "evidence",
+              "name": "driver_ada_assistance_proficiency",
+              "why": "A training document does not prove assistance was provided on an individual trip."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-006",
+          "name": "Allow service animals aboard covered vehicles",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-007",
+          "name": "Permit permissible portable oxygen and respirators",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-008",
+          "name": "Allow adequate time for disability boarding",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            },
+            {
+              "kind": "evidence",
+              "name": "trip_accessibility_boarding_time",
+              "why": "Trip timetable and real service behavior are not represented by an adopted policy."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-009",
+          "name": "Accessible service information and scheduling",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-010",
+          "name": "Use required accessibility equipment",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "operation.ada_part37_covered",
+              "why": "Confirm the NEMT operation is an ADA-covered fixed-route or demand-responsive public/private transportation service (and its actual operator)."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-006",
+          "name": "Not disqualified under Part 391",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "driver_fmcsa_disqualification_status",
+              "why": "The current driver facts do not establish all disqualifications under 49 CFR 391.15."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-013",
+          "name": "FMCSA medical qualification and certification",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "fmcsamedical_certification_or_variance",
+              "why": "The engine must reconcile current medical qualification from driver licensing authority or examiner and any applicable variance."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-014",
+          "name": "FMCSA medical re-examination interval",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "fmcsamedical_actual_expiration",
+              "why": "The driver-specific medical certificate expiry governs, including shortened 12-month intervals and re-examination after impairment."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-015",
+          "name": "FMCSA driver qualification file",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "fmcsa_driver_file_completeness",
+              "why": "A placeholder credential cannot validate all § 391.51 documents and record-retention details."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-016",
+          "name": "CDL required for CDL-classified vehicle",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "cdl_passenger_endorsement_and_restrictions",
+              "why": "The current license evidence definition mentions class but not passenger endorsements and CDL restrictions."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-017",
+          "name": "FMCSA pre-employment controlled substance test",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "driver.part382_prior_testing_exception",
+              "why": "49 CFR 382.301(b) permits a qualifying prior-program exception, not represented by the schema."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-019",
+          "name": "FMCSA Clearinghouse pre-employment query",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "clearinghouse_query_scope_result_and_consent",
+              "why": "The existing credential does not prove a full query, consent, result or prohibited-status resolution."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-020",
+          "name": "FMCSA annual Clearinghouse query",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "clearinghouse_annual_limited_full_resolution",
+              "why": "Limited queries with a record require timely full-query follow-up, which an upload alone cannot establish."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-011",
+          "name": "FMCSA driver drug/alcohol education materials",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "dot_driver_policy_distribution",
+              "why": "Having a policy does not prove its distribution to each covered driver."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-012",
+          "name": "FMCSA random testing program",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "dot_random_program_operation",
+              "why": "A written policy does not demonstrate random selection, testing and required annual percentages."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-013",
+          "name": "FMCSA CMV periodic vehicle inspection program",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "carrier_vehicle_inspection_program_evidence",
+              "why": "Policy alone does not demonstrate each covered vehicle has passed inspection."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-002",
+          "name": "FMCSA systematic vehicle inspection and maintenance",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "fmcsa_vehicle_maintenance_records",
+              "why": "Maintenance schedule and repair records are not represented in the current evidence types."
+            }
+          ]
+        },
+        {
+          "id": "FED-VEH-005",
+          "name": "FMCSA vehicle in safe and proper working condition",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "vehicle_current_safety_and_defect_status",
+              "why": "An annual inspection certificate alone does not establish current safe operating condition."
+            }
+          ]
+        },
+        {
+          "id": "FED-VEH-006",
+          "name": "FMCSA bus emergency-exit inspection",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "vehicle.is_bus_with_pushout_windows_or_emergency_doors",
+              "why": "Not all vehicles classified as CMVs are buses with regulated emergency exit equipment."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-021",
+          "name": "FMCSA passenger-carrier 10-hour driving limit",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "reach.passenger_hos",
+              "why": "Part 395 coverage/exemptions and passenger-carrying category are not available."
+            },
+            {
+              "kind": "evidence",
+              "name": "driver_hos_time_and_trip_projections",
+              "why": "Current evidence types do not include driving time or duty-status history."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-022",
+          "name": "FMCSA passenger-carrier 15-hour on-duty driving cut-off",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "reach.passenger_hos",
+              "why": "Determine HOS exceptions, passenger-carrier category and driver scope."
+            },
+            {
+              "kind": "evidence",
+              "name": "driver_hos_time_and_trip_projections",
+              "why": "The engine cannot currently evaluate duty hours."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-023",
+          "name": "FMCSA passenger-carrier 60/70-hour weekly limit",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.operates_cmv_seven_days",
+              "why": "Determines which weekly passenger carrier limit applies."
+            },
+            {
+              "kind": "fact",
+              "name": "reach.passenger_hos",
+              "why": "Determine coverage and exceptions."
+            },
+            {
+              "kind": "evidence",
+              "name": "driver_hos_time_and_trip_projections",
+              "why": "The engine cannot currently evaluate rolling on-duty hours."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-015",
+          "name": "Annual OSHA bloodborne pathogen plan review",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "bbp_plan_review_date",
+              "why": "Document existence and plan expiration alone do not establish the plan-review date."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-024",
+          "name": "OSHA bloodborne pathogens worker training",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "driver.actual_bbp_occupational_exposure",
+              "why": "company.exposure indicates some positions are exposed, not necessarily this particular driver."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-025",
+          "name": "OSHA hepatitis B vaccination offer",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "driver.actual_bbp_occupational_exposure",
+              "why": "The job-specific occupational exposure determination is needed."
+            },
+            {
+              "kind": "evidence",
+              "name": "bbp_hepatitis_b_offer_status",
+              "why": "No confidential vaccination-offer workflow exists in the schema."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-016",
+          "name": "HIPAA Security Rule risk analysis",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "hipaa_current_risk_analysis_scope",
+              "why": "Document presence alone does not establish accurate, thorough and up-to-date scope of the risk analysis."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-017",
+          "name": "HIPAA covered-entity workforce privacy training",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.hipaa_covered_entity",
+              "why": "The current company.hipaa fact also includes business associates, which are not identically subject to 164.530(b)."
+            },
+            {
+              "kind": "evidence",
+              "name": "hipaa_workforce_training_records",
+              "why": "A written policy alone does not prove training of relevant workforce."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-018",
+          "name": "HIPAA business associate arrangements",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.hipaa_covered_entity",
+              "why": "Covered-entity versus business-associate role must be distinguished."
+            },
+            {
+              "kind": "fact",
+              "name": "company.contracts_business_associates",
+              "why": "Only relevant contracting relationships require these assurances."
+            },
+            {
+              "kind": "evidence",
+              "name": "hipaa_business_associate_agreement",
+              "why": "The existing evidence types do not validate contract terms."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-019",
+          "name": "FCRA background report disclosure and authorization",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.cra_employment_purpose",
+              "why": "This law applies to consumer reports used for employment purposes, including relevant contractor contexts; company.cra alone does not establish use purpose."
+            },
+            {
+              "kind": "evidence",
+              "name": "fcra_standalone_disclosure",
+              "why": "An authorization alone does not prove the required separate disclosure content."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-020",
+          "name": "Verify employee work eligibility under federal I-9 rules",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "i9_completed_verification",
+              "why": "Employee signature alone does not show the employer completed and documented required identity and employment-authorization verification."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-021",
+          "name": "FTA drug and alcohol program for covered transit operations",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.fta_part655_covered",
+              "why": "company.transit is broader than grant/program coverage; Section 5310-only operators do not automatically trigger Part 655."
+            },
+            {
+              "kind": "evidence",
+              "name": "fta_drug_alcohol_program_operations",
+              "why": "The current system cannot prove actual FTA program testing compliance."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-026",
+          "name": "OSHA bloodborne pathogens training at initial assignment",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "driver.actual_bbp_occupational_exposure",
+              "why": "The current company-level exposure designation does not identify the particular driver position."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-027",
+          "name": "CDL passenger endorsement for a passenger vehicle",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "vehicle.passenger_endorsement_required",
+              "why": "Not all CDL uses require a passenger endorsement; identify the vehicle and operation triggering one."
+            },
+            {
+              "kind": "evidence",
+              "name": "driver_current_cdl_endorsements",
+              "why": "The license evidence verifies class but not every relevant endorsement."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-028",
+          "name": "CMV driver inspection of essential equipment before driving",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "driver_cmv_equipment_pretrip_inspection",
+              "why": "Current credential types do not capture equipment-by-equipment inspection and defects."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-029",
+          "name": "CMV driver safe-operating-condition confirmation",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "driver_pretrip_vehicle_safety_attestation",
+              "why": "No current driver-vehicle-specific pre-trip safety confirmation evidence is defined."
+            }
+          ]
+        },
+        {
+          "id": "FED-DRV-030",
+          "name": "CMV alcohol prohibition before duty",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "driver_3925_alcohol_prohibition_status",
+              "why": "The current fact driver.prohibited tracks DOT Part 382 status, not every Part 392.5 violation."
+            }
+          ]
+        },
+        {
+          "id": "FED-VEH-007",
+          "name": "Do not dispatch an unsafe FMCSA regulated vehicle",
+          "missing": [
+            {
+              "kind": "evidence",
+              "name": "vehicle_open_unsafe_defects",
+              "why": "The system must distinguish critical open vehicle defects and clear them after verified repairs."
+            }
+          ]
+        },
+        {
+          "id": "FED-VEH-008",
+          "name": "Emergency equipment on covered buses and trucks",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "vehicle.is_bus_or_truck",
+              "why": "This regulation is not a universal equipment rule for every vehicle qualifying as a CMV by weight or capacity."
+            },
+            {
+              "kind": "evidence",
+              "name": "vehicle_emergency_equipment_checked",
+              "why": "TripProof needs proof of current condition and presence of required emergency equipment."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-022",
+          "name": "FMCSA reasonable suspicion supervisor training",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.part382_designated_supervisors",
+              "why": "Determine designated supervisors and owner-operator exceptions before requiring training."
+            },
+            {
+              "kind": "evidence",
+              "name": "company_supervisors_dot_training_completion",
+              "why": "One company credential does not establish coverage for all designated supervisors."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-023",
+          "name": "Interstate for-hire passenger carrier liability insurance",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.part387_for_hire_covered",
+              "why": "Operating authority reach alone does not establish Part 387 coverage or a particular exemption."
+            },
+            {
+              "kind": "fact",
+              "name": "fleet.highest_passenger_capacity",
+              "why": "The limit depends on the highest seating capacity in the covered fleet; vehicle.seats cannot establish fleet maximum."
+            },
+            {
+              "kind": "fact",
+              "name": "company.part387_exception_or_transit_grant",
+              "why": "49 CFR 387.27(b) and certain grant-funded transit operations have distinct limits."
+            },
+            {
+              "kind": "evidence",
+              "name": "insurance_federal_limit_and_endorsements_verified",
+              "why": "Presence of a certificate is not proof that the applicable liability limit and coverage are correct."
+            }
+          ]
+        },
+        {
+          "id": "FED-CO-024",
+          "name": "FMCSA covered carrier identification report",
+          "missing": [
+            {
+              "kind": "fact",
+              "name": "company.39019T_applicability",
+              "why": "Identify whether the operator is subject to this section and its exceptions."
+            },
+            {
+              "kind": "evidence",
+              "name": "fmCSA_mcs150_status_and_biennial_update",
+              "why": "A document on file does not establish whether the required registration and updates are current."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -292,14 +292,14 @@ def asked_of_driver(conn: Connection, accountid: str, driverid: str) -> dict[str
     A requirement nobody has chased and one the driver was asked for a fortnight ago are not the
     same state, and the mark should not read the same for both."""
     asked = {r["code"]: r for r in rows(conn, """
-        SELECT credentialcode AS code, COALESCE(senton, createdon) AS askedon, sentto
+        SELECT credentialcode AS code, COALESCE(senton, createdon) AS askedon, createdon, sentto
         FROM uploadrequests
         WHERE accountid = :a AND driverid = :d AND uploadedon IS NULL AND cancelledon IS NULL
         ORDER BY createdon
     """, a=accountid, d=driverid)}
     # A document sent out to be signed is the same kind of fact: asked for, not back.
     asked.update({r["code"]: r for r in rows(conn, """
-        SELECT doctype AS code, COALESCE(senton, createdon) AS askedon, sentto
+        SELECT doctype AS code, COALESCE(senton, createdon) AS askedon, createdon, sentto
         FROM signingrequests
         WHERE accountid = :a AND driverid = :d AND signedon IS NULL AND cancelledon IS NULL
         ORDER BY createdon
@@ -475,7 +475,7 @@ def _evidence(conn: Connection, accountid: str, driverid: str, source: str | Non
                              AND COALESCE(c.provenance, 'vendor') = 'vendor' THEN 'noprovenance'
                         WHEN c.result = 'eligible' THEN 'qualified'
                         END AS determination,
-                   c.testedon, c.testedby
+                   c.testedon, c.testedby, c.added AS recordedon
             FROM credentials c JOIN credentialtypes t ON t.recordid = c.credentialtypeid
             WHERE c.accountid = :a AND c.subject = 'driver' AND c.subjectid = :d AND t.code = :code
               AND c.deleted IS NULL AND c.revokedon IS NULL
@@ -1282,7 +1282,7 @@ def ENDORSEMENTS(raw: str | None) -> list[str]:
 def usdot_biennial(number: str | None, after: date | None = None) -> date | None:
     """The last day of the month FMCSA's biennial update is due in, for this USDOT number.
 
-    49 CFR 390.19(b): the LAST digit fixes the month - 1 is January through 9 September, 0 is
+    49 CFR 390.19T(b): the LAST digit fixes the month - 1 is January through 9 September, 0 is
     October - and the parity of the NEXT-TO-LAST digit fixes the year: odd digit, odd-numbered
     years; even digit, even-numbered years. A single-digit number has no next-to-last digit, which
     reads as zero and so as even.
@@ -1305,6 +1305,24 @@ def usdot_biennial(number: str | None, after: date | None = None) -> date | None
             if due >= after:
                 return due
         year += 1
+
+
+# FMCSA suspended enforcement of the biennial update during its move to Motus: registrants whose
+# update was due on or after 1 June 2026 get additional time and will not have their USDOT number
+# inactivated for not filing it ("Temporary Suspension of the Biennial Update Requirement",
+# fmcsa.dot.gov, last updated 10 September 2026). No end date was given; FMCSA said it would share
+# further guidance. Set BIENNIAL_PAUSE_UNTIL when it does.
+BIENNIAL_PAUSE_FROM = date(2026, 6, 1)
+BIENNIAL_PAUSE_UNTIL: date | None = None
+BIENNIAL_PAUSED = ("FMCSA has suspended enforcement of biennial updates due on or after 06/01/2026 "
+                   "while it moves registration to Motus, so this update is not yet overdue. File it "
+                   "when Motus allows.")
+
+
+def biennial_paused(due: date | None, today: date) -> bool:
+    """Whether a missed biennial update falls inside FMCSA's suspension."""
+    return bool(due and due >= BIENNIAL_PAUSE_FROM
+                and (BIENNIAL_PAUSE_UNTIL is None or today <= BIENNIAL_PAUSE_UNTIL))
 
 
 def usdot_next_due(number: str | None, filedon: date) -> date | None:
@@ -1910,6 +1928,91 @@ def _vehicle_evidence(conn: Connection, accountid: str, vehicleid: str,
     """, a=accountid, v=vehicleid, code=which))
 
 
+# ------------------------------------------------------------------------------------------------
+# DOT & CDL Compliance - the paid add-on, switched on for an account by TripProof staff.
+#
+# FMCSA / DOT and CDL rules (authoritycategory FMCSA_DOT) are evaluated only for an account that
+# has the module. Without it they are left out of every list, and a vehicle that DOT rules reach
+# is refused for dispatch instead: what the law owes on that vehicle is not tracked, so it cannot
+# be said to be met. A driver barred from safety-sensitive work stays barred either way.
+# ------------------------------------------------------------------------------------------------
+DOT = "FMCSA_DOT"
+DOT_ALWAYS = ("DA_PROHIBITION",)
+DOT_MODULE = "DOT_MODULE"
+DOT_MODULE_NAME = "DOT & CDL Compliance"
+
+
+def dot_module(conn: Connection, accountid: str) -> bool:
+    return bool((row(conn, "SELECT dotmodule FROM accounts WHERE recordid = :a", a=accountid)
+                 or {}).get("dotmodule"))
+
+
+def require_dot(conn: Connection, accountid: str) -> None:
+    """Refuse a DOT-only screen's call for an account without the module."""
+    if not dot_module(conn, accountid):
+        from fastapi import HTTPException
+        raise HTTPException(403, "DOT & CDL Compliance is not turned on for this account.")
+
+
+# Operations questions that only matter to a DOT-regulated carrier.
+DOT_QUESTIONS = ("MIS_REQUESTED",)
+
+
+def dot_hold(conn: Connection, accountid: str, vehicleid: str) -> str | None:
+    """Why this vehicle is held off dispatch for want of DOT & CDL Compliance, or None. Shown as a
+    note on the vehicle's page rather than as a row among its requirements."""
+    if dot_module(conn, accountid):
+        return None
+    from app import facts as factset
+    gate = _dot_gate(factset.assemble(conn, accountid, vehicleid=vehicleid)["facts"])
+    return gate["why"] if gate else None
+
+
+def _kept(rule: dict, dot: bool) -> bool:
+    return dot or rule.get("authoritycategory") != DOT or rule.get("code") in DOT_ALWAYS
+
+
+def dot_reach(facts: dict) -> bool | None:
+    """Whether DOT rules reach this vehicle, read the way the driver's reach is read (facts._reach):
+    across a state line, a commercial motor vehicle; within Florida, one of 26,001 lb or more
+    (F.S. 316.302(1)(b)); and one that needs a CDL to drive, wherever it goes."""
+    if facts.get("vehicle.cdl_required") is True:
+        return True
+    interstate = facts.get("operation.interstate")
+    federal, florida = facts.get("vehicle.cmv_federal"), facts.get("vehicle.cmv_florida")
+    if interstate is True:
+        return federal
+    if facts.get("company.state") == "FL" and florida is True:
+        return True
+    if interstate is False:
+        return False
+    return None if federal is not False else False
+
+
+def _dot_gate(facts: dict) -> dict | None:
+    # Only a vehicle whose own measurements make it a commercial one. A van with no weight or
+    # seating on file is asked for those on its own page; it is not held as a DOT vehicle.
+    if True not in (facts.get("vehicle.cdl_required"), facts.get("vehicle.cmv_federal"),
+                    facts.get("vehicle.cmv_florida")):
+        return None
+    reached = dot_reach(facts)
+    if reached is False:
+        return None
+    why = ("This vehicle is a CMV and can't be dispatched until DOT & CDL Compliance is added. "
+           "Contact TripProof."
+           if reached else
+           "This vehicle may be DOT-regulated. Answer whether the company crosses state lines "
+           "(Operations), or contact TripProof to add DOT & CDL Compliance.")
+    return {"code": DOT_MODULE, "name": DOT_MODULE_NAME, "description": None,
+            "authoritytype": "platform", "authority": "TripProof", "citation": None,
+            "authoritycategory": DOT, "duestage": None, "duetext": None, "blocking": 1,
+            "gate": "hardstop", "grouping": None, "note": None, "evidencekind": None,
+            "evidencesource": None, "recurrence": None, "recurrencedays": None,
+            "recurrencemonths": None, "program": None, "offered": 0, "legalreview": "approved",
+            "reviewrequired": 0, "scheduled": False, "own": False, "applies": True,
+            "status": "failed", "why": why, "documentid": None, "on": None, "expireson": None}
+
+
 def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
                 today: date | None = None) -> list[dict]:
     """What is asked of one VEHICLE, and where it stands on each of it.
@@ -1920,17 +2023,20 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
     is how a rule becomes a status."""
     today = today or date.today()
     elected = adopted(conn, accountid)
+    dot = dot_module(conn, accountid)
     out = []
     for rule in rows(conn, """
         SELECT recordid, accountid, code, name, description, authoritytype, authority, citation,
-               applieswhen, evidencekind, evidencesource, blocking, gate, grouping, duestage,
-               duetext, recurrence, recurrencedays, recurrencemonths, warndays, note, sortorder,
-               program, offered, legalreview, reviewrequired
+               authoritycategory, applieswhen, evidencekind, evidencesource, blocking, gate,
+               grouping, duestage, duetext, recurrence, recurrencedays, recurrencemonths, warndays,
+               note, sortorder, program, offered, legalreview, reviewrequired
         FROM compliancerules
         WHERE subject = 'vehicle' AND effectiveto IS NULL
           AND (accountid IS NULL OR accountid = :a)
         ORDER BY sortorder, name
     """, a=accountid):
+        if not _kept(rule, dot):
+            continue
         reaches = applies(condition(rule["applieswhen"]), facts)
         # A rule TripProof offers reaches no vehicle until the company adopts it, as for drivers.
         offeredonly = rule["offered"] and rule["code"] not in elected
@@ -1957,7 +2063,8 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
                 status, why = _initial_inspection(conn, accountid, vehicleid, rule, window,
                                                   today, status, why)
         out.append({**{k: rule[k] for k in ("code", "name", "description", "authoritytype",
-                                            "authority", "citation", "duestage", "duetext",
+                                            "authority", "citation", "authoritycategory",
+                                            "duestage", "duetext",
                                             "blocking", "gate", "grouping", "note", "evidencekind",
                                             "evidencesource", "recurrence", "recurrencedays",
                                             "recurrencemonths", "program", "offered",
@@ -1968,6 +2075,10 @@ def for_vehicle(conn: Connection, accountid: str, vehicleid: str, facts: dict,
                     "documentid": (evidence or {}).get("documentid"),
                     "on": (evidence or {}).get("effectiveon"),
                     "expireson": horizon(rule, evidence)})
+    if not dot:
+        gate = _dot_gate(facts)
+        if gate:
+            out.insert(0, gate)
     return out
 
 
@@ -2029,10 +2140,11 @@ def for_company(conn: Connection, accountid: str, facts: dict,
     today = today or date.today()
     usdot = (row(conn, "SELECT usdot FROM accounts WHERE recordid = :a", a=accountid)
              or {}).get("usdot")
+    dot = dot_module(conn, accountid)
     out = []
     for rule in rows(conn, """
         SELECT recordid, accountid, code, name, description, authoritytype, authority, citation,
-               applieswhen, evidencekind, evidencesource, blocking, gate, grouping, duestage,
+               authoritycategory, applieswhen, evidencekind, evidencesource, blocking, gate, grouping, duestage,
                duetext, recurrence, recurrencedays, recurrencemonths, warndays, note, sortorder, offered,
                retentionrule
         FROM compliancerules
@@ -2040,6 +2152,8 @@ def for_company(conn: Connection, accountid: str, facts: dict,
           AND (accountid IS NULL OR accountid = :a)
         ORDER BY sortorder, name
     """, a=accountid):
+        if not _kept(rule, dot):
+            continue
         reaches = applies(condition(rule["applieswhen"]), facts)
         if reaches is False:
             status, why, evidence = "notapplicable", "Does not reach this company.", None
@@ -2052,6 +2166,9 @@ def for_company(conn: Connection, accountid: str, facts: dict,
             evidence = (_company_evidence(conn, accountid, rule["evidencesource"], rule["code"])
                         or _filed(conn, accountid, accountid, rule["recordid"], "company"))
             status, why = stand(rule, evidence, today, usdot=usdot)
+            if (rule.get("recurrence") == "usdotbiennial" and status in ("overdue", "expired", "failed")
+                    and biennial_paused(horizon(rule, evidence, usdot), today)):
+                status, why = "pending", BIENNIAL_PAUSED
             # A schedule read off a number cannot be read without the number. Said plainly rather
             # than letting the requirement sit there looking answered.
             if rule.get("recurrence") == "usdotbiennial" and not usdot:
@@ -2097,7 +2214,8 @@ def for_company(conn: Connection, accountid: str, facts: dict,
                 why = (f"No filing recorded. The next update is due by {falls:%m/%d/%Y}."
                        if falls else why)
         out.append({**{k: rule[k] for k in ("code", "name", "description", "authoritytype",
-                                            "authority", "citation", "duestage", "duetext",
+                                            "authority", "citation", "authoritycategory",
+                                            "duestage", "duetext",
                                             "blocking", "gate", "grouping", "note", "evidencekind",
                                             "evidencesource", "recurrence", "recurrencedays",
                                             "recurrencemonths")},
@@ -2185,6 +2303,7 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                         WHERE accountid = :a AND driverid = :d AND withdrawn IS NULL""",
                 a=accountid, d=driverid)
     violatedon = (worst or {}).get("whenon")
+    dot = dot_module(conn, accountid)
     out = []
     for rule in rows(conn, """
         SELECT recordid, code, name, authoritytype, authority, citation, applieswhen, evidencekind,
@@ -2201,6 +2320,8 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
           AND (accountid IS NULL OR accountid = :acct)
         ORDER BY sortorder, name
     """, acct=accountid) + contract_rules(conn, accountid):
+        if not _kept(rule, dot):
+            continue
         restricted = False          # set only where a driving record was read as restricting
         expr = condition(rule["applieswhen"])
         reaches = applies(expr, facts)
@@ -2328,6 +2449,11 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                 kind_, _, which_ = (rule["evidencesource"] or "").partition(":")
                 code_ = "DRIVER_LICENSE" if kind_ == "licensecopy" else which_
                 waiting_for = chased.get(code_)
+                # Filed in the office after the request went out: the request is answered. What
+                # the office put on the file outranks waiting for the driver to send the same thing.
+                filed = (evidence or {}).get("recordedon")
+                if waiting_for and filed and filed >= waiting_for["createdon"]:
+                    waiting_for = None
                 if waiting_for:
                     asked_on = f'{waiting_for["askedon"]:%m/%d/%Y}'
                     why = (f'{why} Asked of the driver again on {asked_on}, not back yet.'
@@ -2460,6 +2586,15 @@ def for_driver(conn: Connection, accountid: str, driverid: str, facts: dict,
                     # When it falls due, for the stage that counts from the hire date rather than
                     # from the document.
                     "dueon": dueon})
+    # The bar says what put it there and what lifts it - the record's own reason - rather than a
+    # paragraph of regulation that reads the same for every driver.
+    if any(i["code"] == "DA_PROHIBITION" and i["status"] in ("failed", "expired", "overdue") for i in out):
+        from app import eligibility
+        said = eligibility.cause(eligibility.standing(conn, accountid, driverid))
+        if said:
+            for i in out:
+                if i["code"] == "DA_PROHIBITION" and i["status"] in ("failed", "expired", "overdue"):
+                    i["why"] = said
     return _by_qualification(conn, _fold_alternates(_derive_file_rules(out)))
 
 
@@ -2495,14 +2630,14 @@ def contract_rules(conn: Connection, accountid: str) -> list[dict]:
             SELECT * FROM compliancerules
             WHERE subject = 'driver' AND effectiveto IS NULL AND accountid IS NULL
               AND qualificationcode = :q AND evidencesource IS NOT NULL
-            ORDER BY (authoritycategory = 'FEDERAL_GENERAL') DESC, sortorder LIMIT 1
+            ORDER BY (authoritycategory IN ('MEDICAID', 'FEDERAL_NEMT', 'FMCSA_DOT')) DESC, sortorder LIMIT 1
         """, q=c["qualificationcode"])
         if not base:
             continue
         cid = c["contractid"]
         out.append({**base,
                     "code": f'CONTRACT:{c["reqid"]}', "name": base["name"],
-                    "authoritytype": "contract", "authoritycategory": "CONTRACT_COMPANY",
+                    "authoritytype": "contract", "authoritycategory": "BROKER_PAYER",
                     "authority": " ".join(x for x in (c["broker"], c["state"]) if x),
                     "citation": " ".join(x for x in (c["contractref"], c["clause"]) if x) or None,
                     "applieswhen": None if not c["requiresapproval"] else json.dumps({"any": [

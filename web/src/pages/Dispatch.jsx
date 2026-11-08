@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { AlertTriangle, CalendarRange, ChevronLeft, ChevronRight, Loader2, PhoneCall, Plus, Sparkles, UserPlus } from 'lucide-react'
 import { api } from '../lib/api.js'
-import { date, time, tzDateTime } from '../lib/format.js'
+import { date, money, time, tzDateTime } from '../lib/format.js'
 import { Loading, useLoad } from '../components/ui.jsx'
 import { Modal } from '../admin/common.jsx'
 import BookTrip from '../components/BookTrip.jsx'
@@ -70,18 +70,21 @@ export default function Dispatch() {
   const returned = useLocation().state
   const [day, setDay] = useState(() => returned?.day || ymd(new Date()))
   const [data, error, reload] = useLoad(async () => {
-    const [board, roster, attention] = await Promise.all([
+    const [board, roster, attention, requests] = await Promise.all([
       api.get(`/dispatch/board?day=${day}&state=all&pagesize=200&sort=pickupat&dir=asc`),
       api.get(`/shifts?day=${day}`),
       // Whatever will not settle itself, from any day - the board above is one day only.
       api.get('/dispatch/board?state=attention&pagesize=200&sort=pickupat&dir=asc'),
+      // Trips facilities have asked for, from any day, waiting on Accept or Decline.
+      api.get('/dispatch/requests'),
     ])
-    return { ...board, roster, attention: attention.items }
+    return { ...board, roster, attention: attention.items, requests: requests.items }
   }, [day])
   const [assigning, setAssigning] = useState(null)
   const [returning, setReturning] = useState(null)
   const [confirming, setConfirming] = useState(null)   // a returned trip the broker has confirmed
   const [cancelling, setCancelling] = useState(null)
+  const [declining, setDeclining] = useState(null)   // a facility's request being turned down
   const [closing, setClosing] = useState(null)
   const [issue, setIssue] = useState(null)
   const [out, setOut] = useState(false)
@@ -347,6 +350,34 @@ export default function Dispatch() {
     </div>
   )
 
+  // A trip a facility asked for: what it is, whether a driver can take it as things stand, and the
+  // answer. Accept books it through every booking check; Decline asks for the reason they will see.
+  const requestCard = (r) => (
+    <div key={r.recordid} className={['gridcarditem', r.check ? 'rowbad' : 'rowwarn'].join(' ')}>
+      <div className="legbody">
+        <div className="leghead">
+          <span className="legwhen"><b>{r.tripdate !== day ? `${date(r.tripdate)} ` : ''}{time(r.pickupat)}</b></span>
+          <span className="legstatus">Requested</span>
+        </div>
+        <div className="legwho"><b>{r.passenger}</b><span>{r.service}</span></div>
+        <span className="route">
+          <span><b>PAYER:</b> {r.billedto}</span>
+          <span title={r.from}><b>FROM:</b> {local(r.from)}</span>
+          <span title={r.to}><b>TO:</b> {local(r.to)}</span>
+          {r.returns && <span><b>RETURN:</b> {r.returns}</span>}
+          <span><b>BY:</b> {r.requestedby}, {r.place}, {tzDateTime(r.requestedon)}</span>
+        </span>
+        {r.note && <div className="legnote"><b>NOTE:</b> {r.note}</div>}
+        {r.check && <div className="legcritical">{r.check.replace(/^Not booked\. /, '')}</div>}
+      </div>
+      <div className="legfoot">
+        <button type="button" className="primary" disabled={busy}
+          onClick={() => act(() => api.post(`/dispatch/requests/${r.recordid}/accept`))}>Accept</button>
+        <button type="button" disabled={busy} onClick={() => setDeclining(r)}>Decline</button>
+      </div>
+    </div>
+  )
+
   return (
     <div className="fill wide">
       {/* One row for the title, the day and every action, so the day itself gets the height. */}
@@ -379,6 +410,7 @@ export default function Dispatch() {
           {(() => {
             const lists = [['unassigned', 'Unassigned', waiting,
                             data.items.some((l) => l.pickupat) ? 'Every trip this day has a driver.' : 'No trips booked for this day.'],
+                           ['requests', 'Requests', data.requests || [], 'No trip requests from facilities.'],
                            ['willcall', 'Will-Call', willcalls, 'No will-call trips waiting on a call.'],
                            ['attention', 'Attention', attention, 'Nothing from earlier days needs closing.'],
                            ['closed', 'Closed', closed, 'Nothing canceled or returned this day.']]
@@ -390,7 +422,7 @@ export default function Dispatch() {
                 <button key={key} type="button" role="tab" aria-selected={pane === key}
                   className={pane === key ? 'on' : undefined} onClick={() => setPane(key)}>
                   {label}
-                  <span className={`countpill${!items.length ? ' zero' : key === 'attention' ? (problemOpen ? ' bad' : ' hot') : ''}`}>{items.length}</span>
+                  <span className={`countpill${!items.length ? ' zero' : key === 'attention' ? (problemOpen ? ' bad' : ' hot') : key === 'requests' ? ' hot' : ''}`}>{items.length}</span>
                 </button>
               ))}
             </div>
@@ -412,7 +444,8 @@ export default function Dispatch() {
                   <span className={coverageIssues ? 'bad' : ''}><b>{coverageIssues}</b> Coverage Issues</span>
                 </div>
               )}
-              {!list.length ? <div className="hireempty">{none}</div> : list.map((l) => queueCard(l, k === 'unassigned'))}
+              {!list.length ? <div className="hireempty">{none}</div>
+                : k === 'requests' ? list.map(requestCard) : list.map((l) => queueCard(l, k === 'unassigned'))}
             </div>
             {k === 'unassigned' && (
               <footer className="panelfoot">
@@ -453,6 +486,7 @@ export default function Dispatch() {
               <dt>To</dt><dd>{l.dropoffplace}</dd>
               <dt>Driver</dt><dd>{l.drivername || 'None'}</dd>
               <dt>Vehicle</dt><dd>{l.vehiclename || 'None'}</dd>
+              <dt>Cost</dt><dd>{l.billedamount == null ? 'Not priced' : money(l.billedamount)}</dd>
               {l.detail && <><dt>What Went Wrong</dt><dd>{l.detail}</dd></>}
             </div>
           </Modal>
@@ -466,6 +500,8 @@ export default function Dispatch() {
           onReturn={(legid) => { setPlanning(false); setReturning(data.items.find((x) => x.legid === legid)) }}
           onDone={() => { setPlanning(false); setTicked(new Set()); reload() }} />
       )}
+      {declining && <DeclineRequest request={declining} onClose={() => setDeclining(null)}
+        onDone={() => { setDeclining(null); reload() }} />}
       {cancelling && (
         <CancelDialog leg={cancelling} reasons={data?.cancelreasons || {}}
           onClose={() => setCancelling(null)}
@@ -781,7 +817,7 @@ function AutoAssignDialog({ day, legids, assigned = [], onClose, onDone, onRetur
   }
   if (!planning) {
     return (
-      <Modal title="Who's Driving Today?" onClose={onClose} width={620}
+      <Modal title="Who's Driving Today?" onClose={onClose} width={820}
         footer={<>
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="button" className="primary" disabled={busy || !crew || !on.size} onClick={go}>
@@ -799,7 +835,7 @@ function AutoAssignDialog({ day, legids, assigned = [], onClose, onDone, onRetur
                     <td><input type="checkbox" checked={on.has(d.driverid)} disabled={Boolean(d.stopped)}
                       aria-label={`${d.name} is driving today`} onChange={(e) => tick(d.driverid, e.target.checked)} /></td>
                     <td>{d.name}</td>
-                    <td>{d.stopped ? <span className="st-expired">May Not Drive: {d.stopped}</span>
+                    <td>{d.stopped ? <span className="st-expired">May Not Drive: {d.stopped.split('. ')[0]}</span>
                       : d.out ? <span className="st-expired">Out</span> : d.vehiclename || ''}</td>
                   </tr>
                 ))}
@@ -1392,6 +1428,39 @@ function BrokerConfirmedDialog({ leg, onClose, onDone }) {
             <input value={ref} className="upper" onChange={(e) => setRef(e.target.value.toUpperCase())} />
           </label>
         </div>
+      </div>
+    </Modal>
+  )
+}
+
+// Turning down a facility's request: the reason is what the facility sees on its schedule.
+function DeclineRequest({ request, onClose, onDone }) {
+  const [why, setWhy] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const go = async () => {
+    setBusy(true); setErr(null)
+    try { await api.post(`/dispatch/requests/${request.recordid}/decline`, { reason: why }); onDone() }
+    catch (e) { setErr(e.message); setBusy(false) }
+  }
+  return (
+    <Modal title="Decline Request" onClose={onClose} width={520}
+      footer={<>
+        <button type="button" onClick={onClose}>Close</button>
+        <button type="button" className="primary" disabled={busy || !why.trim()} onClick={go}>
+          {busy ? <Loader2 size={15} className="spin" /> : 'Decline'}
+        </button>
+      </>}>
+      <div className="stack">
+        {err && <div className="notice bad">{err}</div>}
+        <div className="kv">
+          <dt>Passenger</dt><dd>{request.passenger}</dd>
+          <dt>Pickup</dt><dd>{date(request.tripdate)} {time(request.pickupat)}</dd>
+          <dt>Facility</dt><dd>{request.place}</dd>
+        </div>
+        <label className="field">Reason The Facility Sees *
+          <textarea className="upper" rows={3} value={why} onChange={(e) => setWhy(e.target.value.toUpperCase())} />
+        </label>
       </div>
     </Modal>
   )

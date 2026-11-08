@@ -1,0 +1,558 @@
+{
+  "format": "tripproof-requirements/1",
+  "title": "Federal Medicaid NEMT requirements",
+  "prepared_on": "2026-11-07",
+  "prepared_by": "OpenAI research draft — requires legal verification prior to production use",
+  "requirements": [
+    {
+      "id": "MED-CO-001",
+      "qualification": "BKG-001",
+      "name": "Medicaid NEMT provider must not be federally excluded",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 U.S.C. 1396a(a)(87)(A)",
+      "citation_url": "https://uscode.house.gov/us/usc/t42/s1396a/",
+      "citation_text": "each such provider and individual driver is not excluded from participation in any Federal health care program",
+      "requirement_text": "The provider furnishing Medicaid-funded NEMT must not be excluded from a federal health care program.",
+      "applies_when": {
+        "fact": "company.medicaid",
+        "is": true
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "exclusion_check",
+        "list": "OIG_LEIE"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2021-12-27",
+      "notes": "CMS recognizes a limited state-legislation effective-date exception. A LEIE-only check does not prove all federal health care program exclusions.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.public_transit_authority",
+          "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+        },
+        {
+          "kind": "evidence",
+          "name": "current_federal_program_exclusion_status",
+          "why": "A one-time LEIE screening does not establish current federal health-care-program exclusion status at the trip date; refresh and matching resolution must be demonstrated."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-001",
+      "qualification": "BKG-001",
+      "name": "Medicaid NEMT driver must not be federally excluded",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "CMS",
+      "citation": "42 U.S.C. 1396a(a)(87)(A)",
+      "citation_url": "https://uscode.house.gov/us/usc/t42/s1396a/",
+      "citation_text": "is not listed on the exclusion list of the Inspector General of the Department of Health and Human Services",
+      "requirement_text": "The driver furnishing Medicaid-funded NEMT must not be excluded from a federal health care program or listed in LEIE.",
+      "applies_when": {
+        "fact": "company.medicaid",
+        "is": true
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "exclusion_check",
+        "list": "OIG_LEIE"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2021-12-27",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.public_transit_authority",
+          "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+        },
+        {
+          "kind": "evidence",
+          "name": "current_federal_program_exclusion_status",
+          "why": "A one-time LEIE screening does not establish current federal health-care-program exclusion status at the trip date; refresh and matching resolution must be demonstrated."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-002",
+      "qualification": "DRV-001",
+      "name": "Medicaid NEMT driver has a valid license",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "driver",
+      "authority": "CMS",
+      "citation": "42 U.S.C. 1396a(a)(87)(B)",
+      "citation_url": "https://uscode.house.gov/us/usc/t42/s1396a/",
+      "citation_text": "each such individual driver has a valid driver's license",
+      "requirement_text": "The driver must have a valid driver license at the time of a Medicaid NEMT trip.",
+      "applies_when": {
+        "fact": "company.medicaid",
+        "is": true
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2021-12-27",
+      "notes": "No universal federal Medicaid CDL, passenger endorsement, or driver age requirement is created by this paragraph.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.public_transit_authority",
+          "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-002",
+      "qualification": "POL-001",
+      "name": "Process for violations of state drug laws",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 U.S.C. 1396a(a)(87)(C)",
+      "citation_url": "https://uscode.house.gov/us/usc/t42/s1396a/",
+      "citation_text": "each such provider has in place a process to address any violation of a State drug law",
+      "requirement_text": "The provider must maintain a process addressing violations of state drug laws.",
+      "applies_when": {
+        "fact": "company.medicaid",
+        "is": true
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "policy",
+        "policy": "STATE_DRUG_LAW_VIOLATIONS"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "block",
+      "effective_from": "2021-12-27",
+      "notes": "This is a process obligation, not a federally imposed drug-test schedule for all NEMT drivers.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.public_transit_authority",
+          "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-003",
+      "qualification": "POL-002",
+      "name": "Process for driver history disclosure to Medicaid",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 U.S.C. 1396a(a)(87)(D)",
+      "citation_url": "https://uscode.house.gov/us/usc/t42/s1396a/",
+      "citation_text": "each such provider has in place a process to disclose to the State Medicaid program the driving history",
+      "requirement_text": "The provider must maintain a process to disclose employed drivers' driving histories including traffic violations to the state Medicaid program.",
+      "applies_when": {
+        "fact": "company.medicaid",
+        "is": true
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "policy",
+        "policy": "DRIVER_HISTORY_DISCLOSURE"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "block",
+      "effective_from": "2021-12-27",
+      "notes": "The statute requires a process; it does not specify a universal annual MVR schedule for all Medicaid NEMT drivers.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.public_transit_authority",
+          "why": "42 U.S.C. 1396a(a)(87) excludes public transit authorities; the current facts cannot distinguish them."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-004",
+      "qualification": "REC-001",
+      "name": "Maintain records of Medicaid services furnished",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 CFR 431.107(b)(1)",
+      "citation_url": "https://www.ecfr.gov/current/title-42/section-431.107",
+      "citation_text": "Keep any records necessary to disclose the extent of services the provider furnishes to beneficiaries;",
+      "requirement_text": "The Medicaid provider must keep records sufficient to establish the extent of transportation services furnished.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.medicaid",
+            "is": true
+          },
+          {
+            "fact": "company.billsdirect",
+            "is": true
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Audit-ready completed trip records with actual service and billed claims."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1979-07-17",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "medicaid_trip_service_records",
+          "why": "The schema has no service-event or claim documentation evidence type."
+        },
+        {
+          "kind": "fact",
+          "name": "company.medicaid_provider_agreement",
+          "why": "Subcontractor versus state-enrolled provider arrangements must be distinguished."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-005",
+      "qualification": "REC-002",
+      "name": "Provide Medicaid records on authorized request",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 CFR 431.107(b)(2)",
+      "citation_url": "https://www.ecfr.gov/current/title-42/section-431.107",
+      "citation_text": "On request, furnish to the Medicaid agency, the Secretary, or the State Medicaid fraud control unit",
+      "requirement_text": "A participating Medicaid provider must supply service and payment documentation when properly requested.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.medicaid",
+            "is": true
+          },
+          {
+            "fact": "company.billsdirect",
+            "is": true
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "policy",
+        "policy": "MEDICAID_RECORD_PRODUCTION"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1979-07-17",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "medicaid_record_production_on_request",
+          "why": "An adopted policy alone does not prove production of specific records when requested."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-006",
+      "qualification": "REG-001",
+      "name": "State Medicaid provider enrollment and screening",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 CFR 455.410(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-42/section-455.410",
+      "citation_text": "The State Medicaid agency must require all enrolled providers to be screened under to this subpart.",
+      "requirement_text": "Where state Medicaid enrollment is required, the provider must maintain valid enrollment and pass the applicable screening requirements.",
+      "applies_when": {
+        "fact": "company.medicaid",
+        "is": true
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "MEDICAID_ENROLLMENT"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2011-02-02",
+      "notes": "Text contains a grammatical peculiarity (“under to this subpart”) in current eCFR; quoted verbatim.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.medicaid_enrollment_required",
+          "why": "This provision directs the state screening process and does not establish that every transportation subcontractor must be enrolled directly."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-007",
+      "qualification": "REG-002",
+      "name": "Disclose Medicaid provider ownership and control",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 CFR 455.104(b)",
+      "citation_url": "https://www.ecfr.gov/current/title-42/section-455.104",
+      "citation_text": "The Medicaid agency must require that disclosing entities, fiscal agents, and managed care entities provide the following disclosures:",
+      "requirement_text": "A provider subject to the disclosure rule must provide required ownership and controlling-person information.",
+      "applies_when": {
+        "fact": "company.medicaid",
+        "is": true
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "MEDICAID_OWNERSHIP_DISCLOSURE",
+        "new": true,
+        "credential_name": "Medicaid ownership and control disclosure"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2011-02-02",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.medicaid_disclosing_entity",
+          "why": "The current facts do not identify entities subject to this disclosure rule."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-008",
+      "qualification": "REG-003",
+      "name": "Disclose relevant Medicaid program-related convictions",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 CFR 455.106(a)",
+      "citation_url": "https://www.ecfr.gov/current/title-42/section-455.106",
+      "citation_text": "the provider must disclose to the Medicaid agency the identity of any person who:",
+      "requirement_text": "A provider must disclose qualifying convictions of its owners, agents, or managing employees before enrollment or renewal and on request.",
+      "applies_when": {
+        "fact": "company.medicaid",
+        "is": true
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "MEDICAID_CONVICTION_DISCLOSURE",
+        "new": true,
+        "credential_name": "Medicaid conviction disclosure"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "1992-01-01",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.medicaid_provider_agreement",
+          "why": "A state Medicaid provider agreement is the trigger; broker-only arrangements must be resolved."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-009",
+      "qualification": "PAY-001",
+      "name": "Accept Medicaid payment according to payment-in-full rule",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 CFR 447.15",
+      "citation_url": "https://www.ecfr.gov/current/title-42/section-447.15",
+      "citation_text": "providers who accept, as payment in full, the amounts paid by the agency plus any deductible, coinsurance or copayment",
+      "requirement_text": "The provider must not impose charges inconsistent with Medicaid payment-in-full limitations.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.medicaid",
+            "is": true
+          },
+          {
+            "fact": "company.billsdirect",
+            "is": true
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "policy",
+        "policy": "MEDICAID_PAYMENT_IN_FULL"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2013-07-15",
+      "notes": "A policy alone does not verify actual amounts charged; a claims/payment validation is required for operational enforcement.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "medicaid_billing_compliance",
+          "why": "The engine lacks actual claim, billed charge, cost sharing, and patient charge data."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-010",
+      "qualification": "REG-004",
+      "name": "Furnish National Provider Identifier when eligible",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 CFR 431.107(b)(5)(i)",
+      "citation_url": "https://www.ecfr.gov/current/title-42/section-431.107",
+      "citation_text": "Furnish to the State agency its National Provider Identifier (NPI) (if eligible for an NPI);",
+      "requirement_text": "An eligible Medicaid provider must supply its NPI to the state agency.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.medicaid",
+            "is": true
+          },
+          {
+            "fact": "company.billsdirect",
+            "is": true
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "NPI_REGISTRATION"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2010-05-05",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.npi_eligible",
+          "why": "Only providers eligible for an NPI must furnish it; not all transportation firms have an NPI."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-011",
+      "qualification": "REG-005",
+      "name": "Include NPI on Medicaid claims when required",
+      "category": "MEDICAID",
+      "jurisdiction": "US",
+      "subject": "company",
+      "authority": "CMS",
+      "citation": "42 CFR 431.107(b)(5)(ii)",
+      "citation_url": "https://www.ecfr.gov/current/title-42/section-431.107",
+      "citation_text": "Include its NPI on all claims submitted under the Medicaid program.",
+      "requirement_text": "An NPI-eligible Medicaid provider must use the NPI on claims it submits.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.medicaid",
+            "is": true
+          },
+          {
+            "fact": "company.billsdirect",
+            "is": true
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Validate the provider NPI on each eligible Medicaid claim."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2010-05-05",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.npi_eligible",
+          "why": "NPI eligibility must be known."
+        },
+        {
+          "kind": "evidence",
+          "name": "medicaid_claim_npi",
+          "why": "Claims are outside the current evidence vocabulary."
+        }
+      ]
+    }
+  ]
+}

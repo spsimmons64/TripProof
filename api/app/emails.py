@@ -82,7 +82,8 @@ def detail_rows(rows: list[tuple[str, str]]) -> str:
       style="margin:18px 0;border-top:1px solid #e6e1dc;border-bottom:1px solid #e6e1dc">{cells}</table>"""
 
 
-def layout(*, preheader: str, heading: str, body: str, footer_note: str) -> str:
+def layout(*, preheader: str, heading: str, body: str, footer_note: str, sign: str | None = None,
+           replies: bool = False) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 <head>
@@ -108,13 +109,13 @@ def layout(*, preheader: str, heading: str, body: str, footer_note: str) -> str:
       <tr><td bgcolor="#ffffff" style="background:#ffffff;padding:36px 32px 30px;border-radius:0 0 14px 14px">
         <h1 style="margin:0 0 18px;font-family:{FONT};font-size:26px;line-height:1.25;font-weight:800;color:{TEAL_DARK}">{escape(heading)}</h1>
         {body}
-        {signature()}
+        {sign if sign is not None else signature()}
       </td></tr>
       <!-- footer -->
       <tr><td style="padding:22px 32px 8px;font-family:{FONT};font-size:12px;line-height:1.6;color:{MUTED};text-align:center">
         {footer_note}<br>
         <strong style="color:{TEAL}">{BRAND}</strong> &middot; Trip-level credential proof for NEMT providers<br>
-        This is an automated message from a no-reply address &mdash; replies aren&rsquo;t monitored.
+        {"Reply to this email to reach us." if replies else "This is an automated message from a no-reply address &mdash; replies aren&rsquo;t monitored."}
       </td></tr>
       <tr><td style="padding:14px 32px 0;font-family:{FONT};font-size:10.5px;line-height:1.55;color:#7d8b8e;text-align:justify">
         {escape(CONFIDENTIALITY)}
@@ -445,6 +446,45 @@ def welcome_aboard(*, name: str, accountname: str, link: str, days: int) -> tupl
         "Bring your identification documents on your first day - the I-9 needs somebody here to "
         "examine them in person.",
     ])
+    return subject, html, text
+
+
+def tester_welcome() -> tuple[str, str, str]:
+    """To a company the moment it signs up on the public site to beta test. Replies reach TripProof."""
+    paras = [
+        "Thank you for your interest in becoming a beta tester for TripProof Online!",
+        "We're excited to introduce a new approach to NEMT management that connects dispatch, scheduling, "
+        "real-time driver monitoring, facility transportation requests, billing, and driver and vehicle "
+        "compliance in one platform.",
+        "One of our biggest focuses is helping transportation providers go beyond simply tracking compliance "
+        "requirements by actively preventing noncompliant drivers and vehicles from being assigned to trips.",
+        "As we begin onboarding beta testers, we'd love to learn more about your transportation operation, "
+        "the software you're currently using, and the challenges you'd like to see addressed.",
+        "We'd also be happy to arrange a demonstration so you can see TripProof in action.",
+        "We're looking for beta participants who are willing to explore the platform, share feedback, and "
+        "help us refine the software before its general release.",
+        "Thank you again for your interest!",
+    ]
+    subject = "Thank you for your interest in TripProof Online"
+    body = p("Hello,") + "".join(p(escape(t)) for t in paras)
+    sign = f"""<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"
+      style="margin-top:26px;border-top:1px solid #e6e1dc">
+  <tr><td style="padding-top:22px;font-family:{FONT};font-size:15px;line-height:1.5;color:{INK}">
+    <strong>Arrowleaf Technologies, LLC</strong><br>Developer of TripProof Online<br>
+    <a href="https://tripproofonline.com" style="color:{TEAL}">https://tripproofonline.com</a><br><br>
+    <em>Every Trip. Proven.</em>
+  </td></tr>
+  <tr><td style="padding-top:14px">
+    <img src="cid:{LOGO_CID}" width="{LOGO_WIDTH}" height="{LOGO_HEIGHT}" alt="TripProof"
+         style="display:block;width:{LOGO_WIDTH}px;height:{LOGO_HEIGHT}px;border:0;outline:none;text-decoration:none">
+  </td></tr>
+</table>"""
+    html = layout(preheader="Thank you for your interest in becoming a beta tester for TripProof Online!",
+                  heading="Thank You For Your Interest", body=body, sign=sign, replies=True,
+                  footer_note="You signed up to beta test on tripproofonline.com.")
+    text = "\n\n".join(["Hello,", *paras,
+                         "Arrowleaf Technologies, LLC\nDeveloper of TripProof Online\nhttps://tripproofonline.com",
+                         "Every Trip. Proven.", CONFIDENTIALITY])
     return subject, html, text
 
 

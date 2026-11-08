@@ -1,0 +1,2046 @@
+{
+  "format": "tripproof-requirements/1",
+  "title": "Florida State Transportation Requirements — Research Draft",
+  "prepared_on": "2026-11-07",
+  "prepared_by": "OpenAI research draft for TripProof Online; legal and source verification required",
+  "requirements": [
+    {
+      "id": "ST-DRV-001",
+      "qualification": "DRV-001",
+      "name": "Valid driving license for Florida roadway operation",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 322.03(1)(a)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/322.03",
+      "citation_text": "a person may not drive any motor vehicle upon a highway in this state unless such person has a valid driver license",
+      "requirement_text": "Driver must have a license recognized as valid for operating the assigned vehicle on Florida highways.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "notes": "Does not require all drivers to hold a Florida-issued license; statutory exemptions and nonresident reciprocity must be handled.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.operates_in_florida",
+          "why": "Only require Florida roadway compliance when assigned trip actually uses Florida highways; exemptions and out-of-state reciprocity must be respected."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-002",
+      "qualification": "DRV-002",
+      "name": "Florida resident CDL where required",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 322.03(4)(b)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/322.03",
+      "citation_text": "A resident of this state who is required by the laws of this state to possess a commercial driver license may not operate a commercial motor vehicle in this state unless he or she possesses a valid commercial driver license issued by this state.",
+      "requirement_text": "A Florida-resident operator who must hold a CDL must have a valid Florida commercial license.",
+      "applies_when": {
+        "fact": "driver.cdl",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.florida_resident",
+          "why": "Law expressly applies to Florida residents and does not universally ban qualified out-of-state CDL holders."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-001",
+      "qualification": "FLV-001",
+      "name": "Florida motor vehicle registration when applicable",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 320.02(1)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/320.02",
+      "citation_text": "every owner or person in charge of a motor vehicle that is operated or driven on the roads of this state shall register the vehicle in this state.",
+      "requirement_text": "Maintain current legal registration or applicable statutory registration exemption for a vehicle used on Florida roads.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_REGISTRATION"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.fl_registration_required",
+          "why": "Some nonresident and statutory exemptions apply, so cannot presume all vehicles must hold Florida registration."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-001",
+      "qualification": "FLS-001",
+      "name": "Adopt transit system safety program plan",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(1)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Each bus transit system shall develop and adopt an SSPP that complies with or exceeds the established safety standards set forth in this rule chapter.",
+      "requirement_text": "A covered bus transit system must maintain and implement its System Safety Program Plan.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "SSPP"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-002",
+      "qualification": "FLS-002",
+      "name": "Adopt transit system security program plan",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(2)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Each bus transit system shall develop and adopt an SPP that meets or exceeds the security requirements set forth in this rule chapter.",
+      "requirement_text": "A covered bus transit system must maintain its separate Security Program Plan.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "TRANSIT_SECURITY_PLAN"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-003",
+      "qualification": "FLS-003",
+      "name": "Transit driver selection and qualification procedures",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Bus transit systems shall establish criteria and procedures for the selection, qualification, and training of all drivers.",
+      "requirement_text": "Covered transit systems must establish driver selection, qualification and training procedures.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "BUS_DRIVER_QUALIFICATION"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-003",
+      "qualification": "BKG-005",
+      "name": "New transit driver's driving and criminal background checks",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)(b)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Driving and criminal background checks for all new drivers.",
+      "requirement_text": "A new covered transit driver must have completed driving and criminal background checks.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "TRANSIT_DRIVER_BACKGROUND_CHECK",
+        "new": true,
+        "credential_name": "Transit Driver Background Check"
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "prehire",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-004",
+      "qualification": "DRV-001",
+      "name": "Bus transit driver's license verification",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)(c)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Verification and documentation of valid driver licenses for all employees who drive buses.",
+      "requirement_text": "Verify and document the valid license of every covered bus transit driver.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-005",
+      "qualification": "TRN-003",
+      "name": "Bus transit driver training and proficiency testing",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)(d)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Training and testing to demonstrate and ensure adequate skills and capabilities to safely operate each type of bus or bus combination before driving on a street or highway unsupervised.",
+      "requirement_text": "Before independent bus operations, driver must complete training and competency testing for the assigned bus type.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "TRANSIT_BUS_PROFICIENCY",
+        "new": true,
+        "credential_name": "Transit Bus Proficiency"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.qualified_bus_vehicle_types",
+          "why": "Qualification must be matched to the bus type rather than treating a generic training attendance as proficiency."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-006",
+      "qualification": "TRN-003",
+      "name": "Bus transit wheelchair lift operations training",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)(d)6",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Operation of wheelchair lifts and other special equipment.",
+      "requirement_text": "Ensure covered bus drivers receive and pass required lift and specialized equipment instruction and testing.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "WHEELCHAIR_SECUREMENT"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "evidence",
+          "name": "lift_operation_training_and_test",
+          "why": "WHEELCHAIR_SECUREMENT alone may not establish lift-operation testing for the assigned bus."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-007",
+      "qualification": "TRN-003",
+      "name": "Bus transit passenger securement training",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)(d)8",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Passenger assistance and securement.",
+      "requirement_text": "Ensure covered transit drivers receive required passenger assistance and securement training and testing.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "PASSENGER_ASSISTANCE"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "evidence",
+          "name": "assistance_proficiency_evaluation",
+          "why": "A course document alone may not verify required testing/proficiency."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-004",
+      "qualification": "FLS-004",
+      "name": "Written safety operating procedures delivered to bus drivers",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)(e)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Bus transit systems shall provide written operational and safety procedures to all bus drivers before driving on streets or highways unsupervised.",
+      "requirement_text": "Provide covered bus drivers written operational and safety procedures before unsupervised driving.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "TRANSIT_DRIVER_WRITTEN_PROCEDURES"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "evidence",
+          "name": "procedure_receipt_by_driver",
+          "why": "Company policy presence does not prove each driver received procedures."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-005",
+      "qualification": "FLS-005",
+      "name": "Retain bus driver qualification and duty records four years",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)(g)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Bus transit systems shall maintain the following records for at least four years:",
+      "requirement_text": "Maintain covered bus transit driver qualification, training and duty-status records for at least four years.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting retain bus driver qualification and duty records four years."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "evidence",
+          "name": "transit_driver_record_retention",
+          "why": "Retention clock and audit preservation are not represented by a document's expiration."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-006",
+      "qualification": "FLS-006",
+      "name": "Transit system substance abuse management/testing program",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(3)(h)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "a substance abuse management and testing program in accordance with 49 C.F.R. Parts 40 and 655",
+      "requirement_text": "Covered transit systems must establish the substance abuse management/testing program specified by the rule.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "TRANSIT_SUBSTANCE_ABUSE_PROGRAM"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "notes": "FDOT references Part 655 in 2010 text; federal Part 655 independent applicability and later federal amendments need separate consideration.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-007",
+      "qualification": "FLS-007",
+      "name": "Transit bus preventive maintenance plan",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(4)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Bus transit systems shall establish a maintenance plan and procedures for preventative and routine maintenance for all buses operated.",
+      "requirement_text": "Maintain required inspection, lubrication and preventive vehicle maintenance plan.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "policy",
+        "policy": "TRANSIT_VEHICLE_MAINTENANCE"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-008",
+      "qualification": "FLS-008",
+      "name": "Transit preemployment driver medical qualification",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.0041(1)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.0041",
+      "citation_text": "The medical examination requirements shall include a pre-employment examination for applicants",
+      "requirement_text": "Covered bus transit driver must complete an appropriate qualifying medical examination before employment.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FL_TRANSIT_MEDICAL_CERT",
+        "new": true,
+        "credential_name": "Fl Transit Medical Cert"
+      },
+      "validity": {
+        "renewal": "perhire"
+      },
+      "due": "prehire",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "notes": "Certificate must comply with FDOT Form 725-030-11 or adopted equivalent; driver medical qualification is different from general non-CDL NEMT.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-009",
+      "qualification": "FLS-009",
+      "name": "Transit driver medical exam within previous 24 months",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.0041(4)(b)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.0041",
+      "citation_text": "Bus Transit Systems shall not allow a driver to operate a transit bus without having on file a completed medical examination certificate or a signed letter from the medical examiner attesting to the completion of a medical examination dated within the past 24 months.",
+      "requirement_text": "Maintain covered transit driver medical examination evidence dated within the past 24 months.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FL_TRANSIT_MEDICAL_CERT",
+        "new": true,
+        "credential_name": "Fl Transit Medical Cert"
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 24
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-010",
+      "qualification": "FLS-010",
+      "name": "Return-to-duty medical evaluation after 30-day medical absence",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.0041(1)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.0041",
+      "citation_text": "a return to duty examination for any driver prior to returning to duty after having been off duty for 30 or more days due to an illness, medical condition, or injury.",
+      "requirement_text": "A covered transit driver returning after 30 or more days off for medical reasons must be reexamined before driving.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting return-to-duty medical evaluation after 30-day medical absence."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.medical_leave_30_or_more_days",
+          "why": "Event-based conditional medical leave and return date not in current schema."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.return-to-duty_medical_evaluation_after_30-day_medical_absen",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-011",
+      "qualification": "FLS-011",
+      "name": "Bus transit suspended-license no-drive rule",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.006(1)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.006",
+      "citation_text": "Bus transit systems shall not permit a driver to drive a bus when such driver's license has been suspended, cancelled, or revoked.",
+      "requirement_text": "Do not assign a bus transit driver whose license is suspended, cancelled or revoked.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-012",
+      "qualification": "FLS-012",
+      "name": "Transit driving hours maximum 12 in 24 hours",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.006(3)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.006",
+      "citation_text": "A driver shall not be permitted or required to drive more than 12 hours in a 24-hour period",
+      "requirement_text": "Do not assign a covered transit driver to service causing driving time to exceed 12 hours in the applicable 24-hour period, subject to regulatory exceptions.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit driving hours maximum 12 in 24 hours."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.projected_24h_driving_hours",
+          "why": "Need driving-hour totals including intended trip and exception classification."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transit_driving_hours_maximum_12_in_24_hours",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-013",
+      "qualification": "FLS-013",
+      "name": "Transit on-duty maximum 16 in 24 hours",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.006(3)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.006",
+      "citation_text": "or drive after having been on duty for 16 hours in a 24-hour period.",
+      "requirement_text": "Do not assign covered transit driving after the driver reaches the on-duty driving restriction in the rule, subject to exceptions.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit on-duty maximum 16 in 24 hours."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.projected_24h_on_duty_hours",
+          "why": "Need on-duty time and projected trip duration."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transit_on-duty_maximum_16_in_24_hours",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-014",
+      "qualification": "FLS-014",
+      "name": "Transit eight consecutive off-duty hours",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.006(3)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.006",
+      "citation_text": "A driver shall not be permitted to drive until the requirement of a minimum eight consecutive hours of off-duty time has been fulfilled.",
+      "requirement_text": "Ensure applicable 8 consecutive off-duty hours before permitting covered bus transit driving.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit eight consecutive off-duty hours."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.last_qualifying_off_duty_period",
+          "why": "Need verified off-duty periods and any permitted exceptions."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transit_eight_consecutive_off-duty_hours",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-015",
+      "qualification": "FLS-015",
+      "name": "Transit 72 on-duty hours in 7 days restriction",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.006(5)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.006",
+      "citation_text": "A driver shall not be permitted or required to be on duty more than 72 hours in any period of seven consecutive days",
+      "requirement_text": "Do not assign covered bus driver beyond 72 on-duty hours in applicable seven-day period unless the qualifying restart applies.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit 72 on-duty hours in 7 days restriction."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.seven_day_duty_hours_and_restart",
+          "why": "Need 7-day rolling work hours and 24h rest reset information."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transit_72_on-duty_hours_in_7_days_restriction",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-016",
+      "qualification": "FLS-016",
+      "name": "Transit impaired or fatigued driver not permitted",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.006(7)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.006",
+      "citation_text": "Bus transit systems shall not permit or require any driver to drive a bus when his or her ability is impaired, or likely to be impaired, by fatigue, illness, or other causes, likely to create an unsafe condition.",
+      "requirement_text": "Do not allow covered bus driver to operate when impairment or fatigue creates an unsafe condition.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit impaired or fatigued driver not permitted."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.fit_for_duty_status",
+          "why": "Need current fitness/safety-disqualification determination; past medical card not enough."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transit_impaired_or_fatigued_driver_not_permitted",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-002",
+      "qualification": "FLV-002",
+      "name": "Daily pre-operational transit bus inspection",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.006(8)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.006",
+      "citation_text": "Bus transit systems shall require pre-operational or daily inspection and reporting of all defects and deficiencies likely to affect safe operation or cause mechanical malfunctions.",
+      "requirement_text": "Perform the required pre-operational or daily safety check of every covered bus.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_INSPECTION"
+      },
+      "validity": {
+        "renewal": "days",
+        "every": 1
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "evidence",
+          "name": "trip_day_bus_inspection_and_defects",
+          "why": "Vehicle inspection document type may not identify that the latest check occurred for the relevant service date or was acceptable."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-003",
+      "qualification": "FLV-003",
+      "name": "Transit unsafe bus defect disqualification",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.006(8)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.006",
+      "citation_text": "reporting of all defects and deficiencies likely to affect safe operation or cause mechanical malfunctions.",
+      "requirement_text": "Do not assign a bus with a known uncorrected safety-critical defect.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit unsafe bus defect disqualification."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "vehicle.active_critical_defects",
+          "why": "Needs defect severity, disposition and clearance, not only an inspection certificate."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transit_unsafe_bus_defect_disqualification",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-004",
+      "qualification": "FLV-004",
+      "name": "Annual bus transit safety inspection",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.009(1)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.009",
+      "citation_text": "Each bus transit system shall require that all buses operated by such bus transit system, and all buses operated by a private contract transit provider, be inspected at least annually",
+      "requirement_text": "Ensure annual safety inspection of all covered transit buses and applicable private contract buses.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "DOT_ANNUAL_INSPECTION"
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 12
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "evidence",
+          "name": "fl_14_90_safety_inspection_compliance",
+          "why": "Generic DOT annual inspection document may not demonstrate Florida Chapter 14-90 specific inspection protocol."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-008",
+      "qualification": "FLS-017",
+      "name": "Transit inspection reports retained four years",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.009(5)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.009",
+      "citation_text": "Records of annual safety inspections and documentation of any required corrective actions shall be retained a minimum of four years",
+      "requirement_text": "Keep covered bus transit annual safety inspection reports and corrective actions for at least four years.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit inspection reports retained four years."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transit_inspection_reports_retained_four_years",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-005",
+      "qualification": "FLV-005",
+      "name": "Transit bus safe load not over GVWR",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.007(1)(a)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.007",
+      "citation_text": "not exceed the manufacturer's gross vehicle weight rating (GVWR), gross axle weighting, or tire rating.",
+      "requirement_text": "Do not assign covered transit bus service that would exceed vehicle, axle, or tire load ratings.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit bus safe load not over gvwr."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.vehicle_actual_projected_weight",
+          "why": "Need projected combined rider, wheelchair, equipment and vehicle load, axle/tire ratings."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.transit_bus_safe_load_not_over_gvwr",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-009",
+      "qualification": "FLS-018",
+      "name": "Transit system annual safety certification",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "FDOT",
+      "citation": "F.A.C. 14-90.004(1)(d)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=14-90.004",
+      "citation_text": "Each bus transit system shall submit an annual safety certification to the Department",
+      "requirement_text": "Submit the annual FDOT bus transit safety certification where required.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting transit system annual safety certification."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2010-09-16",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Chapter 14-90 applies to bus transit systems and covered private contractors under Florida Statute 341.061; company.transit alone cannot safely classify the operation."
+        },
+        {
+          "kind": "evidence",
+          "name": "fdot_annual_safety_cert_submission",
+          "why": "An annual submission receipt must be tracked by the bus transit system; not a per-driver qualification."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-010",
+      "qualification": "FLS-019",
+      "name": "TD coordinated service minimum liability insurance",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(1)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "The Community Transportation Coordinator, shall ensure compliance with the minimum liability insurance requirement of $200,000 per person and $300,000 per incident",
+      "requirement_text": "CTC must ensure covered TD services maintain at least $200,000 per person/$300,000 per incident liability limits.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "AUTO_LIABILITY_COI"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-03",
+      "notes": "Text places ensuring compliance on CTC; provider contractual requirements may implement it; DO NOT substitute for AHCA 100k/200k enrollment rule.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "evidence",
+          "name": "td_liability_limits_verification",
+          "why": "Insurance certificate must be evaluated for actual covered TD insurance limits and status."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-011",
+      "qualification": "FLS-020",
+      "name": "TD funded service Chapter 14-90 safety compliance",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(2)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "shall ensure the purchaser that their operations and services are in compliance with the safety requirements",
+      "requirement_text": "Covered TD-funded operators must provide purchaser assurance of compliance with applicable Chapter 14-90 safety requirements.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td funded service chapter 14-90 safety compliance."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "fact",
+          "name": "operation.fl_14_90_applicable",
+          "why": "Classification must determine whether 14-90 applies to vehicle/operator and which provisions."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_funded_service_chapter_14-90_safety_compliance",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-006",
+      "qualification": "FLV-006",
+      "name": "Coordinated TD vehicle grievance helpline posted",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(f)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "The TD Helpline phone number 1(800)983-2435 shall also be posted inside all vehicles of the coordinated system.",
+      "requirement_text": "Post required TD Helpline and applicable complaint phone information in each coordinated-system vehicle.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting coordinated td vehicle grievance helpline posted."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.coordinated_td_vehicle_grievance_helpline_posted",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-007",
+      "qualification": "FLV-007",
+      "name": "Coordinated TD vehicle interior safe and clean",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(h)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "Interior of all vehicles shall be free from dirt, grime, oil, trash, torn upholstery, damaged or broken seats, protruding metal",
+      "requirement_text": "Maintain coordinated-system vehicle interiors in condition specified for cleanliness and passenger safety.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting coordinated td vehicle interior safe and clean."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.coordinated_td_vehicle_interior_safe_and_clean",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-008",
+      "qualification": "FLV-008",
+      "name": "TD paratransit must not exceed registered seating capacity",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(k)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "no more passengers than the registered passenger seating capacity shall be scheduled or transported in a vehicle at any time.",
+      "requirement_text": "Do not assign TD paratransit vehicle beyond its registered passenger seating capacity.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td paratransit must not exceed registered seating capacity."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.passenger_and_escort_seats_required",
+          "why": "Number of occupied passenger/escort seats is trip-specific and not represented by vehicle.seats alone."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_paratransit_must_not_exceed_registered_seating_capacity",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-017",
+      "qualification": "FLS-021",
+      "name": "TD paratransit driver visible photo ID",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(l)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "Each driver must have photo identification that is in view of the passenger.",
+      "requirement_text": "Display visible driver photo identification for coordinated paratransit service.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td paratransit driver visible photo id."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_paratransit_driver_visible_photo_id",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-018",
+      "qualification": "FLS-022",
+      "name": "TD paratransit driver announces identity at pickup",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(l)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "shall be required to announce and identify themselves by name and company",
+      "requirement_text": "Covered paratransit driver must announce name and company on pickup except recurring rider circumstances allowed by rule.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td paratransit driver announces identity at pickup."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.driver_pickup_identification_exception",
+          "why": "Requires trip events and whether rider is regularly transported by this driver."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_paratransit_driver_announces_identity_at_pickup",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-019",
+      "qualification": "FLS-023",
+      "name": "TD paratransit passenger boarding assistance",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(m)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "The paratransit driver shall provide the passenger with boarding assistance, if necessary or requested",
+      "requirement_text": "Provide necessary/requested assistance including vehicle door, seat belt, wheelchair securement and mobility devices.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td paratransit passenger boarding assistance."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.passenger_needs_boarding_assistance",
+          "why": "Need requested assistance and driver's ability to provide it."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_paratransit_passenger_boarding_assistance",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-009",
+      "qualification": "FLV-009",
+      "name": "Smoking prohibited in TD coordinated vehicles",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(n)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "Smoking is prohibited in any vehicle.",
+      "requirement_text": "Prohibit smoking in vehicles providing coordinated-system transportation.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting smoking prohibited in td coordinated vehicles."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.smoking_prohibited_in_td_coordinated_vehicles",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-010",
+      "qualification": "FLV-010",
+      "name": "Two-way communications for coordinated TD vehicles",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(p)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "All vehicles providing service within the coordinated system, shall be equipped with two-way communications in good working order",
+      "requirement_text": "Each coordinated TD vehicle must have working two-way communication audible to driver and base.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting two-way communications for coordinated td vehicles."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.two-way_communications_for_coordinated_td_vehicles",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-011",
+      "qualification": "FLV-011",
+      "name": "Coordinated TD air conditioner/heater working or repaired",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(q)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "Vehicles that do not have a working air conditioner or heater will be scheduled for repair or replacement as soon as possible;",
+      "requirement_text": "Maintain AC/heater and promptly schedule repair or replacement if nonfunctional.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting coordinated td air conditioner/heater working or repaired."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-09-03",
+      "notes": "Regulation requires prompt scheduling of repair/replacement, rather than saying every AC malfunction immediately blocks all trips.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.coordinated_td_air_conditioner_heater_working_or_repaired",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-012",
+      "qualification": "FLS-024",
+      "name": "TD local first aid policy applies",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(r)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "First Aid policy shall be determined locally and provided in the local Transportation Disadvantaged Service Plan;",
+      "requirement_text": "Apply the local TD Service Plan first-aid policy when transporting within a covered coordinated system.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td local first aid policy applies."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "fact",
+          "name": "company.fl_local_td_service_plan",
+          "why": "Cannot infer uniform first aid certificate requirement from this provision; the local plan determines it."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_local_first_aid_policy_applies",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-013",
+      "qualification": "FLS-025",
+      "name": "TD local CPR policy applies",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(s)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "Cardiopulmonary Resuscitation policy shall be determined locally and provided in the local Transportation Disadvantaged Service Plan;",
+      "requirement_text": "Apply locally specified CPR requirements, if any, from the applicable TD Service Plan.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td local cpr policy applies."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "fact",
+          "name": "company.fl_local_td_service_plan",
+          "why": "There is no statewide universal two-year CPR certification mandate in this provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_local_cpr_policy_applies",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-014",
+      "qualification": "FLS-026",
+      "name": "TD local driver background screening policy applies",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(t)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "Driver background screening shall be determined locally, dependent upon purchasing agencies' requirements, and provided in the local Transportation Disadvantaged Service Plan;",
+      "requirement_text": "Apply locally selected screening requirements for covered TD coordinated transportation drivers.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td local driver background screening policy applies."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "fact",
+          "name": "company.fl_local_td_service_plan",
+          "why": "Local service plan and purchasers determine additional screening conditions; cannot be universalized."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_local_driver_background_screening_policy_applies",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-015",
+      "qualification": "FLS-027",
+      "name": "TD passenger/trip database accessible to coordinator",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "Commission for the Transportation Disadvantaged",
+      "citation": "F.A.C. 41-2.006(4)(j)",
+      "citation_url": "https://flrules.org/gateway/ruleno.asp?id=41-2.006",
+      "citation_text": "Passenger/trip data base must be maintained or accessible by the Community Transportation Coordinator on each rider being transported within the system;",
+      "requirement_text": "Ensure required passenger and trip data are maintained or accessible to the coordinator.",
+      "applies_when": {
+        "fact": "company.transit",
+        "is": true
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting td passenger/trip database accessible to coordinator."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-09-03",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "operation.fl_ctc_coordinated",
+          "why": "Chapter 41-2 requirements apply only to transportation purchased or arranged in the covered coordinated transportation-disadvantaged system; company.transit is broader."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.td_passenger_trip_database_accessible_to_coordinator",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-016",
+      "qualification": "FLS-028",
+      "name": "TNC classification excludes designated medical transportation arrangers",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "company",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 627.748(1)(e)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/627.748",
+      "citation_text": "An individual, corporation, partnership, sole proprietorship, or other entity that arranges medical transportation for individuals qualifying for Medicaid or Medicare pursuant to a contract with the state or a managed care organization is not a TNC.",
+      "requirement_text": "Classify a provider as a TNC only when Florida statute definition is satisfied; exempt medical transportation arrangers must not be assigned TNC-only requirements.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting tnc classification excludes designated medical transportation arrangers."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2026-11-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.is_tnc_under_627748",
+          "why": "Digital medical dispatch alone does not establish TNC classification; Medicaid contracting may expressly exclude it."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.tnc_classification_excludes_designated_medical_transportatio",
+          "why": "No evaluator exists for this obligation. The free-text evidence placeholder cannot be auto-validated."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-012",
+      "qualification": "FLV-012",
+      "name": "Florida vehicle property damage financial security",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 324.022(1)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/324.022",
+      "citation_text": "Every owner or operator of a motor vehicle required to be registered in this state shall establish and maintain the ability to respond in damages",
+      "requirement_text": "Maintain legally sufficient property-damage financial security for a motor vehicle required to be registered in Florida.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_INSURANCE"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.fl_registration_required",
+          "why": "Statute is tied to vehicles required to register in Florida."
+        },
+        {
+          "kind": "evidence",
+          "name": "vehicle_property_damage_security",
+          "why": "Need validate applicable financial-security method and $10,000 coverage or an expressly authorized alternative."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-013",
+      "qualification": "FLV-013",
+      "name": "Florida covered motor vehicle continuous PIP/security",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 627.733(1)(a)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/627.733",
+      "citation_text": "shall maintain security as required by subsection (3) in effect continuously throughout the registration or licensing period.",
+      "requirement_text": "Covered Florida-registered vehicle must maintain continuous no-fault security, except vehicle classes treated separately by the statute.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_INSURANCE"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.fl_pip_security_required",
+          "why": "School buses, limousines, taxicabs, nonresidents and other categories have different or additional treatment."
+        },
+        {
+          "kind": "evidence",
+          "name": "vehicle_pip_security_verification",
+          "why": "Need proof of active PIP or legally accepted alternate financial security."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-014",
+      "qualification": "FLV-014",
+      "name": "Florida taxicab financial security under for-hire law",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 627.733(1)(b)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/627.733",
+      "citation_text": "shall maintain security as required under s. 324.032(1)",
+      "requirement_text": "An actual Florida taxicab operator must maintain applicable for-hire financial security required by law.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_INSURANCE"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.is_taxicab",
+          "why": "Cannot treat every NEMT passenger van as a taxicab."
+        },
+        {
+          "kind": "evidence",
+          "name": "for_hire_financial_security_proof",
+          "why": "Must evaluate legally permitted financial responsibility methods, not assume standard PIP amount applies."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-015",
+      "qualification": "FLV-015",
+      "name": "Florida nonpublic-sector bus additional liability coverage",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "vehicle",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 627.742(1)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/627.742",
+      "citation_text": "In addition to any other insurance requirements, each nonpublic sector bus must carry:",
+      "requirement_text": "A covered nonpublic-sector bus must carry the additional statutory liability coverage or permissible alternative limit.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "AUTO_LIABILITY_COI"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.is_nonpublic_sector_bus",
+          "why": "Applies to nonpublic-sector bus defined by law and excludes specified school buses."
+        },
+        {
+          "kind": "evidence",
+          "name": "nonpublic_bus_liability_limits",
+          "why": "Must check $100k/$300k/$50k or $300k combined alternative, not merely certificate presence."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-020",
+      "qualification": "FLS-029",
+      "name": "Proof of required Florida vehicle insurance in possession",
+      "category": "STATE",
+      "jurisdiction": "FL",
+      "subject": "driver",
+      "authority": "Florida Legislature",
+      "citation": "F.S. 316.646(1)",
+      "citation_url": "https://www.flsenate.gov/Laws/Statutes/2026/316.646",
+      "citation_text": "shall have in his or her immediate possession at all times while operating such motor vehicle proper proof of maintenance of the required security.",
+      "requirement_text": "Carry required proof of legally mandated financial security when operating a covered motor vehicle.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "A verified compliance record supporting proof of required florida vehicle insurance in possession."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-11-07",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.fl_insurance_proof_statute_applies",
+          "why": "Requires identifying which financial security mandates apply to this vehicle and driver."
+        },
+        {
+          "kind": "evidence",
+          "name": "driver_possession_of_vehicle_insurance_proof",
+          "why": "Company insurance file does not establish that the operating driver has legally acceptable proof on hand."
+        }
+      ]
+    }
+  ]
+}

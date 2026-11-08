@@ -21,12 +21,13 @@ const FIELDS = ['name', 'address1', 'address2', 'city', 'county', 'state', 'zip'
 // profile without letting it be saved.
 export default function CustomerProfileForm({ account, onClose, onSaved, detailsLink, readOnly }) {
   const editing = !!account
-  const f = useForm({ ...Object.fromEntries(FIELDS.map((k) => [k, account?.[k] ?? (k === 'state' ? 'FL' : '')])), status: account?.status || 'active' },
+  const f = useForm({ ...Object.fromEntries(FIELDS.map((k) => [k, account?.[k] ?? (k === 'state' ? 'FL' : '')])), status: account?.status || 'active',
+    dotmodule: account?.dotmodule ? 'yes' : 'no' },
     async (v) => {
       // Going inactive signs every one of the customer's users out, so it is confirmed first.
       if (editing && account.status !== 'inactive' && v.status === 'inactive' &&
           !confirm(`Make ${account.name} inactive? Every user is signed out and cannot sign in until it is made active again.`)) return
-      const body = clean(v)
+      const body = { ...clean(v), dotmodule: v.dotmodule === 'yes' }
       onSaved(editing ? await api.patch(`/admin/accounts/${account.recordid}`, body) : await api.post('/admin/accounts', body))
     })
   const v = f.values
@@ -98,6 +99,16 @@ export default function CustomerProfileForm({ account, onClose, onSaved, details
           <div className="profileform">
             <label className="field span-3">Admin Name *<input required value={v.adminname} onChange={f.set('adminname')} /></label>
             <label className="field span-3">Admin Email *<input type="email" required value={v.adminemail} onChange={f.set('adminemail')} /></label>
+          </div>
+        </section>
+        <section>
+          <h3 className="formsection">Add-Ons</h3>
+          <div className="profileform">
+            <label className="field span-2">DOT &amp; CDL Compliance
+              <select value={v.dotmodule} onChange={f.set('dotmodule')}>
+                <option value="no">No</option><option value="yes">Yes</option>
+              </select>
+            </label>
           </div>
         </section>
       </form>

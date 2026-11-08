@@ -93,11 +93,13 @@ class AccountIn(BaseModel):
     npi: str | None = None
     timezone: str = "America/New_York"
     status: str = "active"                  # staff create customers active (or inactive); never setup
+    dotmodule: bool = False                 # DOT & CDL Compliance, the paid add-on
     adminname: str
     adminemail: str
 
 
 class AccountPatch(BaseModel):
+    dotmodule: bool | None = None           # DOT & CDL Compliance, the paid add-on
     name: str | None = None
     address1: str | None = None
     address2: str | None = None
@@ -187,6 +189,8 @@ def create_account(body: AccountIn, request: Request, background: BackgroundTask
         id=acct, num=number, tz=body.timezone, **profile)
     admin = _create_user(conn, acct, email, body.adminname.strip(), "owner", None)
     run(conn, "UPDATE accounts SET primaryuserid = :u WHERE recordid = :id", u=admin["recordid"], id=acct)
+    if body.dotmodule:
+        _set_dot(conn, user, acct, True, request)
     invite = _invite(conn, background, admin["recordid"], "invite", user)
     _audit(conn, user, "admin-create-account", "account", acct, {"name": profile["name"], "accountnumber": number}, request)
     return {"recordid": acct, "accountnumber": number, "invitation": invite}
@@ -232,7 +236,34 @@ def get_account(accountid: str, user: dict = Depends(platform_viewer), conn: Con
         FROM invoices WHERE accountid = :id AND status <> 'draft' ORDER BY invoicedon DESC, added DESC LIMIT 200
     """, id=accountid)
     a["stripedashboard"] = billing.dashboard_url(a["stripecustomerid"]) if a.get("stripecustomerid") else None
+    dotdrivers = billingsync.dot_drivers(conn, accountid)
+    a["dot"] = {"on": bool(a["dotmodule"]), "since": a["dotmodulesince"], "drivers": dotdrivers,
+                "monthly": plans.dot_fee(dotdrivers)}
     return a
+
+
+class DotModuleIn(BaseModel):
+    on: bool
+
+
+@router.put("/accounts/{accountid}/dot-module")
+def set_dot_module(accountid: str, body: DotModuleIn, request: Request,
+                   user: dict = Depends(platform_admin), conn: Connection = Depends(get_conn)):
+    """Turn DOT & CDL Compliance on or off for a customer. Set up by TripProof, not by the customer.
+    Records kept under it stay on file either way."""
+    a = row(conn, "SELECT platform FROM accounts WHERE recordid = :id AND deleted IS NULL", id=accountid)
+    if not a or a["platform"]:
+        raise HTTPException(404, "Account not found")
+    _set_dot(conn, user, accountid, body.on, request)
+    return {"ok": True}
+
+
+def _set_dot(conn, user, accountid: str, on: bool, request: Request) -> None:
+    run(conn, """UPDATE accounts SET dotmodule = :on,
+                 dotmodulesince = CASE WHEN :on = 1 THEN :now ELSE NULL END, updated = :now
+                 WHERE recordid = :id""", on=int(on), now=utcnow(), id=accountid)
+    _audit(conn, user, "dot-module-on" if on else "dot-module-off", "account", accountid,
+           {"dotmodule": on}, request)
 
 
 @router.patch("/accounts/{accountid}")
@@ -260,6 +291,10 @@ def patch_account(accountid: str, body: AccountPatch, request: Request, user: di
     if fields:
         sets = ", ".join(f"{k} = :{k}" for k in fields)
         run(conn, f"UPDATE accounts SET {sets}, updated = :now WHERE recordid = :id", now=utcnow(), id=accountid, **fields)
+    if sent.get("dotmodule") is not None and not a["platform"]:
+        held = bool(row(conn, "SELECT dotmodule FROM accounts WHERE recordid = :id", id=accountid)["dotmodule"])
+        if held != sent["dotmodule"]:
+            _set_dot(conn, user, accountid, sent["dotmodule"], request)
     admin = {}
     if a["primaryuserid"] and ("adminname" in sent or "adminemail" in sent):
         if sent.get("adminname") is not None:
@@ -867,8 +902,7 @@ RULE_SORTS = {
     "source": "CONCAT_WS(' ', r.authority, r.citation)", "version": "version",
     "reviewed": "r.legalreviewedon", "status": "FIELD(r.legalreview, 'draft', 'reviewed', 'approved', 'retired')",
 }
-CATEGORIES = ("FEDERAL_GENERAL", "STATE_GENERAL", "FEDERAL_MEDICAID", "STATE_MEDICAID",
-              "CONTRACT_COMPANY")
+CATEGORIES = ("MEDICAID", "FEDERAL_NEMT", "STATE_NEMT", "COMPANY", "BROKER_PAYER", "FMCSA_DOT")
 
 
 @router.get("/rules")
@@ -883,7 +917,8 @@ def rules_for_review(q: str | None = None, status: str | None = None, category: 
     page = max(page, 1)
     direction = "DESC" if dir.lower() == "desc" else "ASC"
     order_by = f"{RULE_SORTS.get(sort, 'r.qualificationcode')} {direction}, q.sortorder, r.code"
-    base = "r.subject = 'driver' AND r.accountid IS NULL AND r.effectiveto IS NULL"
+    # Every platform rule in force, and every one staged from a requirements file and waiting here.
+    base = "r.accountid IS NULL AND (r.effectiveto IS NULL OR r.staged = 1)"
     where = [base, "(:q IS NULL OR CONCAT_WS(' ', q.name, r.qualificationcode, r.authority, "
                    "r.citation, r.code) LIKE CONCAT('%', :q, '%'))"]
     params = {"q": q or None}
@@ -897,7 +932,10 @@ def rules_for_review(q: str | None = None, status: str | None = None, category: 
     joins = "FROM compliancerules r LEFT JOIN qualificationcatalog q ON q.code = r.qualificationcode"
     total = row(conn, f"SELECT COUNT(*) AS n {joins} WHERE {clause}", **params)["n"]
     items = rows(conn, f"""
-        SELECT r.code, r.qualificationcode, q.name AS qualification, r.authoritycategory,
+        SELECT r.code, r.qualificationcode, COALESCE(q.name, r.name) AS qualification,
+               r.subject, r.staged, r.sourceref,
+               (SELECT o.code FROM compliancerules o WHERE o.recordid = r.supersedes) AS replaces,
+               r.authoritycategory,
                r.authority, r.citation, r.sourceurl, r.jurisdiction, r.enforcement, r.legalreview,
                r.legalreviewedon,
                u.name AS legalreviewedby,
@@ -933,12 +971,21 @@ def review_rule(code: str, body: RuleReviewIn, request: Request,
                 user: dict = Depends(platform_admin), conn: Connection = Depends(get_conn)):
     if body.legalreview not in REVIEW_STATES:
         raise HTTPException(400, "Unknown review state")
-    n = run(conn, """
-        UPDATE compliancerules SET legalreview = :s, legalreviewedby = :u, legalreviewedon = :now
-        WHERE code = :c AND subject = 'driver' AND accountid IS NULL AND effectiveto IS NULL
-    """, s=body.legalreview, u=user["recordid"], now=utcnow(), c=code).rowcount
-    if not n:
+    target = row(conn, """
+        SELECT recordid, staged FROM compliancerules
+        WHERE code = :c AND accountid IS NULL AND (effectiveto IS NULL OR staged = 1)
+        ORDER BY staged LIMIT 1
+    """, c=code)
+    if not target:
         raise HTTPException(404, "No such rule")
+    run(conn, """
+        UPDATE compliancerules SET legalreview = :s, legalreviewedby = :u, legalreviewedon = :now
+        WHERE recordid = :i
+    """, s=body.legalreview, u=user["recordid"], now=utcnow(), i=target["recordid"])
+    # A staged rule approved comes into force now, and the rule it replaces ends with it.
+    if target["staged"] and body.legalreview == "approved":
+        from app import catalogimport
+        catalogimport.go_live(conn, target["recordid"])
     from app import ruleversions
     ruleversions.capture(conn, userid=user["recordid"], reason=f"review: {body.legalreview}")
     log(conn, user, "rule-review", "compliancerule", code, {"legalreview": body.legalreview},

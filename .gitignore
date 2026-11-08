@@ -9,3 +9,12 @@ __pycache__/
 .storage/
 twilio.md
 bandwidth.md
+dist-app/
+web/release/
+
+# Store app secrets - never committed (signing key lives in ~/Android/keys)
+*.jks
+*.keystore
+keystore.properties
+google-services.json
+GoogleService-Info.plist

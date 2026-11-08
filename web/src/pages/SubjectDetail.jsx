@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, ClipboardCheck, History, Pencil, Printer, Undo2, UserX, X } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, ClipboardCheck, History, Pencil, Printer, Undo2, UserX, X } from 'lucide-react'
 import { api, auth } from '../lib/api.js'
 import { count, date, money } from '../lib/format.js'
 import { Badge, Loading, useLoad } from '../components/ui.jsx'
@@ -8,6 +8,7 @@ import Credentials from '../components/Credentials.jsx'
 import { APPLYING, DriverForm } from './Drivers.jsx'
 import DriverReview, { Requirements } from './DriverReview.jsx'
 import { VehicleForm } from './Vehicles.jsx'
+import { DotSetupButton } from '../components/DotSetup.jsx'
 import { VehicleBrokerApprovals, VehicleRequirements } from './VehicleCompliance.jsx'
 import { properName } from '../lib/names.js'
 
@@ -255,6 +256,7 @@ export default function SubjectDetail({ kind }) {
           )}
         </div>
         <div className="row headactions">
+          {kind === 'vehicle' && <DotSetupButton kind="vehicle" id={id} record={s} onSaved={reload} />}
           <Link className="btn back" to={`/${path}`}>
             <ChevronLeft size={14} /> Back to {kind === 'driver' ? 'drivers' : 'vehicles'} list
           </Link>
@@ -268,6 +270,11 @@ export default function SubjectDetail({ kind }) {
           </div>
         )}
       </div>}
+      {/* A CMV on an account without DOT & CDL Compliance: held off dispatch. The same banner the
+          Billing page uses for a failed payment, across the page under the header. */}
+      {!applied && !reviewing && kind === 'vehicle' && s.dothold && (
+        <div className="notice bad"><AlertTriangle size={16} /><div>{s.dothold}</div></div>
+      )}
       {reviewing && (
         <DriverReview id={id} driver={properName(s.firstname, s.lastname)} record={s} onDone={reload} />
       )}

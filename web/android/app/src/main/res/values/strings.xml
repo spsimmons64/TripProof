@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TripProofDriver</string>
+    <string name="title_activity_main">TripProofDriver</string>
+    <string name="package_name">com.tripproofonline.driver</string>
+    <string name="custom_url_scheme">com.tripproofonline.driver</string>
+    <string name="capacitor_background_geolocation_notification_channel_name">Location While Signed In</string>
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_stat_tripproof</string>
+</resources>

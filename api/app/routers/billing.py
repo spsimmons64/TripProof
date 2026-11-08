@@ -72,7 +72,7 @@ def card_changer(user: dict = Depends(billing_user)) -> dict:
 def billing_state(conn: Connection, accountid: str) -> dict:
     a = row(conn, """
         SELECT a.status, a.holdreason, a.fleetsize, a.stripecustomerid, a.cardbrand, a.cardlast4, a.cardexp,
-               p.name AS planname, p.monthlyprice AS planprice
+               a.dotmodule, a.dotmodulesince, p.name AS planname, p.monthlyprice AS planprice
         FROM accounts a LEFT JOIN plans p ON p.recordid = a.planid WHERE a.recordid = :a
     """, a=accountid)
     sub = billingsync.current_subscription(conn, accountid)
@@ -88,7 +88,11 @@ def billing_state(conn: Connection, accountid: str) -> dict:
     # What the next renewal will be billed on, from the vehicles on file today.
     fleet = billingsync.billable_fleet(conn, accountid)
     upcoming = plans.plan_for_fleet(conn, fleet)
-    return {"plan": {"name": a["planname"], "monthlyprice": a["planprice"], "fleetsize": a["fleetsize"]} if a["planname"] else None,
+    dotdrivers = billingsync.dot_drivers(conn, accountid)
+    return {"dot": {"on": bool(a["dotmodule"]), "since": a["dotmodulesince"], "drivers": dotdrivers,
+                    "monthly": plans.dot_fee(dotdrivers), "base": plans.DOT_BASE,
+                    "included": plans.DOT_INCLUDED, "each": plans.DOT_EACH},
+            "plan": {"name": a["planname"], "monthlyprice": a["planprice"], "fleetsize": a["fleetsize"]} if a["planname"] else None,
             "billablefleet": fleet,
             "nextplan": {"name": upcoming["name"], "monthlyprice": upcoming["monthlyprice"], "contact": upcoming["contact"]} if upcoming else None,
             "subscription": sub, "hold": a["holdreason"] == "billing" and a["status"] == "inactive",

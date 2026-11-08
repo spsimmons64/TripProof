@@ -8,6 +8,7 @@ import SearchSelect from './SearchSelect.jsx'
 import AddressCheck from './AddressCheck.jsx'
 import { EmailInput, PhoneInput, ZipInput } from './MaskedInput.jsx'
 import { US_STATES } from '../admin/CustomerProfile.jsx'
+import FacilityPortal from './FacilityPortal.jsx'
 
 // Booking a trip by hand - the telephone and private pay case. Who drives it is decided on
 // Dispatch, where every trip of the day is assigned: booking only writes the trip down.
@@ -350,6 +351,7 @@ export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const [asking, setAsking] = useState(false)
+  const [portal, setPortal] = useState(false)
   const passenger = kind === 'passengers'
   const save = async () => {
     setBusy(true); setErr(null)
@@ -361,6 +363,7 @@ export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved })
     catch (e) { setErr(e.message); setBusy(false) }
   }
   const noun = passenger ? 'Passenger' : 'Location'
+  if (portal) return <FacilityPortal place={entry} onClose={() => setPortal(false)} />
   if (asking) {
     return (
       <Modal title={`Remove ${noun}`} onClose={() => setAsking(false)} width={520}
@@ -384,6 +387,7 @@ export function EntryDialog({ kind, entry = null, onClose, onAdded, onRemoved })
         {entry && onRemoved && (
           <div className="footactions">
             <button type="button" className="danger" onClick={() => setAsking(true)}>Remove {noun}</button>
+            {!passenger && <button type="button" onClick={() => setPortal(true)}>Facility Portal</button>}
           </div>
         )}
         <button type="button" onClick={onClose}>Cancel</button>

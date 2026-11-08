@@ -1,0 +1,22 @@
+{
+  "appId": "com.tripproofonline.driver",
+  "appName": "TripProofDriver",
+  "webDir": "dist-app",
+  "android": {
+    "useLegacyBridge": true
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "SplashScreen": { "launchShowDuration": 600, "backgroundColor": "#ffffff", "showSpinner": false },
+    "FirebaseMessaging": { "presentationOptions": ["badge", "sound", "alert"] }
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "packageOptions": {
+          "@capacitor-firebase/messaging": { "symlink": true }
+        }
+      }
+    }
+  }
+}

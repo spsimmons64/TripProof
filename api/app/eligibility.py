@@ -157,7 +157,7 @@ def da_status(conn: Connection, accountid: str, driverid: str, driver: dict,
     started = bool(held.get("sapname") or held.get("sapevaluatedon") or held.get("sapcompliedon")
                    or held.get("decision") == "continue")
     return {"status": "rtdinprogress" if started else "prohibited", "program": under,
-            "why": held["reason"], "since": held["startedon"], "prohibition": held["recordid"]}
+            "why": cause(held), "since": held["startedon"], "prohibition": held["recordid"]}
 
 
 # The Clearinghouse answers two questions and they are not the same question. A query that is
@@ -202,6 +202,22 @@ def clearinghouse(conn: Connection, accountid: str, driverid: str, driver: dict,
                        else "notprohibited" if latest else "unknown"),
             "queriedon": latest["issuedon"] if latest else None,
             "why": None}
+
+
+def cause(held: dict | None) -> str | None:
+    """Why the driver is barred and the one thing that moves it on, in a sentence a dispatcher can
+    act on without looking anything up."""
+    if not held:
+        return None
+    if not (held.get("sapname") or held.get("sapevaluatedon")):
+        step = "an evaluation by a substance abuse professional (SAP)"
+    elif not held.get("sapcompliedon"):
+        step = "the SAP confirming the driver completed what was prescribed"
+    elif not held.get("rtdtestid"):
+        step = "a negative return-to-duty test"
+    else:
+        step = "the decision to return the driver to duty"
+    return f"{held['reason']}. Next: {step}, recorded in D&A Testing History."
 
 
 def standing(conn: Connection, accountid: str, driverid: str) -> dict | None:

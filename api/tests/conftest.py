@@ -64,6 +64,11 @@ def db():
             conn.exec_driver_sql(f"DROP {'VIEW' if kind == 'VIEW' else 'TABLE'} `{name}`")
         conn.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 1")
     migrate()
+    # DOT & CDL Compliance is a paid add-on and a new account starts without it. The suite was
+    # written against the whole catalog, so its accounts start with it on; the test that is about
+    # the add-on (test_6aj) switches it off for itself.
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE accounts ALTER COLUMN dotmodule SET DEFAULT 1")
     # Production starts with no rules; tests load the original Florida set to exercise the engine.
     from pathlib import Path
     from app.cli import split_sql

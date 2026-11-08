@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.engine import Connection
 
-from app import payerlines
+from app import payerlines, rules
 from app.activity import log
 from app.db import get_conn, newid, row, rows, run, saved, utcnow
 from app.security import account_admin, client_ip, current_user
@@ -52,7 +52,7 @@ CATEGORY_PROGRAM = {k: v[0] for k, v in CATEGORY_PROGRAMS.items()}
 
 
 def _open_questions(profile: dict, contracts: list[dict], vehicles: list[dict],
-                    transit: list[dict]) -> list[str]:
+                    transit: list[dict], dot: bool = True) -> list[str]:
     """What has not been decided. Each one leaves some rule unable to say whether it applies."""
     out = []
     if not profile.get("operatingstates"):
@@ -76,16 +76,17 @@ def _open_questions(profile: dict, contracts: list[dict], vehicles: list[dict],
             out.append(f'The {c["broker"]}{" " + c["state"] if c["state"] else ""} contract has not '
                        f'been reviewed for its driver requirements.')
     undecided = [v for v in vehicles if not v.get("fmcsa") or v["fmcsa"] == "review"]
-    if undecided:
-        out.append(f"{len(undecided)} vehicle{'' if len(undecided) == 1 else 's'} without an FMCSA "
-                   f"coverage determination.")
+    if dot and undecided:
+        names = ", ".join(v["externalid"] or "unnumbered" for v in undecided)
+        out.append(f"No FMCSA determination on vehicle{'' if len(undecided) == 1 else 's'} {names} "
+                   f"(set on each vehicle).")
     return out
 
 
 def _profile(conn: Connection, acct: str) -> dict:
     return row(conn, """
         SELECT p.operatingstates, p.employmentmodel, p.fdot1490, p.compliancecontact,
-               p.enforcetripcheck, p.updated, u.name AS updatedbyname
+               p.updated, u.name AS updatedbyname
         FROM companyprofiles p LEFT JOIN users u ON u.recordid = p.updatedby
         WHERE p.accountid = :a
     """, a=acct) or {}
@@ -189,19 +190,6 @@ def operating_profile(user: dict = Depends(current_user), conn: Connection = Dep
         h["snapshot"] = json.loads(h["snapshot"]) if isinstance(h["snapshot"], str) else h["snapshot"]
     users = rows(conn, "SELECT recordid, name FROM users WHERE accountid = :a AND deleted IS NULL "
                        "ORDER BY name", a=acct)
-    # What the trip check would have refused had it been on - the comparison that has to come out
-    # clean before enforcement is switched on.
-    shadow = rows(conn, """
-        SELECT e.recordid, e.evaluatedon, e.evaluatedfor, e.decision, e.program, e.blockers,
-               e.warnings, d.firstname, d.lastname, e.legid
-        FROM tripeligibility e LEFT JOIN drivers d ON d.recordid = e.driverid
-        WHERE e.accountid = :a AND e.shadow = 1 AND e.decision <> 'eligible'
-          AND e.evaluatedon >= UTC_TIMESTAMP() - INTERVAL 30 DAY
-        ORDER BY e.evaluatedon DESC LIMIT 100
-    """, a=acct)
-    for e in shadow:
-        e["blockers"] = json.loads(e["blockers"] or "[]")
-        e["warnings"] = json.loads(e["warnings"] or "[]")
     transit = _transit(conn, acct, profile)
     # Each vehicle's determination under every program that governs vehicles and touches the
     # company - one column each, so a Georgia company is not asked Florida's question.
@@ -212,8 +200,8 @@ def operating_profile(user: dict = Depends(current_user), conn: Connection = Dep
     for v in vehicles:
         v["transit"] = held.get(v["recordid"], {})
     return {"profile": profile, "vehicles": vehicles, "history": history, "users": users,
-            "shadow": shadow,
-            "open": _open_questions(profile, contracts, vehicles, transit),
+            "open": _open_questions(profile, contracts, vehicles, transit,
+                                    rules.dot_module(conn, acct)),
             "transit": transit,
             "vehicleprograms": [t for t in transit if t["vehicles"]],
             "choices": {"programs": PROGRAMS, "employment": EMPLOYMENT,
@@ -225,7 +213,6 @@ class ProfileIn(BaseModel):
     employmentmodel: str | None = None
     fdot1490: str | None = None
     compliancecontact: str | None = None
-    enforcetripcheck: bool = False
 
 
 @router.put("")
@@ -239,13 +226,12 @@ def save_profile(body: ProfileIn, request: Request, user: dict = Depends(manager
     states = ",".join(sorted({s.strip().upper()[:2] for s in body.operatingstates if s.strip()}))
     run(conn, """
         INSERT INTO companyprofiles (accountid, operatingstates, employmentmodel, fdot1490,
-                                     compliancecontact, enforcetripcheck, updated, updatedby)
-        VALUES (:a, :s, :m, :f, :c, :e, :now, :u)
+                                     compliancecontact, updated, updatedby)
+        VALUES (:a, :s, :m, :f, :c, :now, :u)
         ON DUPLICATE KEY UPDATE operatingstates = :s, employmentmodel = :m, fdot1490 = :f,
-                                compliancecontact = :c, enforcetripcheck = :e, updated = :now,
-                                updatedby = :u
+                                compliancecontact = :c, updated = :now, updatedby = :u
     """, a=acct, s=states or None, m=body.employmentmodel or None, f=body.fdot1490 or None,
-        c=body.compliancecontact or None, e=int(body.enforcetripcheck), now=utcnow(),
+        c=body.compliancecontact or None, now=utcnow(),
         u=user["recordid"])
     # Every version kept. A determination made last month is read against last month's profile.
     run(conn, """
@@ -253,8 +239,7 @@ def save_profile(body: ProfileIn, request: Request, user: dict = Depends(manager
         VALUES (:id, :a, :snap, :now, :u)
     """, id=newid(), a=acct, now=utcnow(), u=user["recordid"], snap=json.dumps({
         "operatingstates": states, "employmentmodel": body.employmentmodel,
-        "fdot1490": body.fdot1490, "compliancecontact": body.compliancecontact,
-        "enforcetripcheck": body.enforcetripcheck}))
+        "fdot1490": body.fdot1490, "compliancecontact": body.compliancecontact}))
     log(conn, user, "update", "operatingprofile", acct, ip=client_ip(request))
     saved(conn)
     return {"ok": True}
@@ -380,6 +365,24 @@ def remove_contract(contractid: str, request: Request, user: dict = Depends(mana
     log(conn, user, "delete", "companycontract", contractid, ip=client_ip(request))
     saved(conn)
     return {"ok": True}
+
+
+@router.get("/vehicles/{vehicleid}")
+def vehicle_determinations(vehicleid: str, user: dict = Depends(current_user),
+                           conn: Connection = Depends(get_conn)):
+    """One vehicle's determinations, for its own form: FMCSA (only with DOT & CDL Compliance) and
+    each transit safety program that governs vehicles and touches this company. A vehicle not yet
+    saved (vehicleid "new") gets the programs with nothing determined."""
+    acct = user["accountid"]
+    held = row(conn, "SELECT fmcsa FROM vehicleassessments WHERE vehicleid = :v AND accountid = :a",
+               v=vehicleid, a=acct) or {}
+    transit = {r["programcode"]: r["determination"] for r in rows(conn, """
+        SELECT programcode, determination FROM vehicletransitprograms
+        WHERE vehicleid = :v AND accountid = :a""", v=vehicleid, a=acct)}
+    programs = [{"code": t["code"], "name": t["name"], "state": t["state"], "citation": t["citation"]}
+                for t in _transit(conn, acct, _profile(conn, acct)) if t["vehicles"]]
+    return {"dot": rules.dot_module(conn, acct), "fmcsa": held.get("fmcsa"), "transit": transit,
+            "programs": programs, "choices": DETERMINATION}
 
 
 class AssessmentIn(BaseModel):

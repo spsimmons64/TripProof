@@ -78,7 +78,7 @@ const COMPLETED_AGAIN = new Set(['W4'])
 const GROUPS = [
   ['consent', 'Driver Consents And Acknowledgements', null],
   ['regulatory', 'Federal And State Requirements (Pre-Hire)', ['prehire', 'predrive']],
-  ['regulatory', 'Federal And State Requirements (Post Hire)', ['athire', 'ongoing']],
+  // Nothing owed once hired is shown before then. Pending first, then hired.
   ['company', 'Company Requirements', null],
   ['hr', 'Employment Onboarding', null],
 ]
@@ -134,6 +134,50 @@ const STAGE = { prehire: 'Before hiring', predrive: 'Before driving', athire: 'O
 
 const STAGE_ORDER = ['prehire', 'predrive', 'athire', 'ongoing']
 
+// Four answers, each to its own question: hired, onboarding, and qualified for each program.
+// Only a program whose every requirement is met reads Qualified; unknown never does.
+const toneOf = (x) => ({ Qualified: 'st-active', Complete: 'st-active', 'Not Applicable': 'st-inactive',
+  'Not Qualified': 'st-expired', Overdue: 'st-expired' }[x] || 'st-ordered')
+
+function OverviewCard({ ov, className = '', banded }) {
+  const facts = (
+      <dl className="askfacts overviewfacts">
+        <div><dt>Employment</dt><dd>{ov.employment}</dd></div>
+        <div><dt>Employment Onboarding</dt>
+          <dd className={toneOf(ov.onboarding.status)}>{ov.onboarding.status}</dd></div>
+        {/* The program and its standing on one line, what stands in the way listed beneath. */}
+        {ov.programs.map((pg) => (
+          <div key={pg.program} className="ovprogram"><dt>{pg.label}</dt>
+            <dd className={toneOf(pg.status)}>{pg.status}</dd>
+            {pg.reasons.length > 0 && (
+              <ul className="ovreasons">{pg.reasons.map((x) => <li key={x}>{x}</li>)}</ul>
+            )}
+          </div>
+        ))}
+      </dl>
+  )
+  // On the dashboard it wears the same heading band as the panels beneath it.
+  return banded ? (
+    <div className={`card qualcard hirepanel ${className}`.trim()}>
+      <h3 className="stagehead">Qualification Overview</h3>
+      <div className="panelbody">{facts}</div>
+    </div>
+  ) : (
+    <div className={`card factpanel ${className}`.trim()}>
+      <h3 className="reqhead">Qualification Overview</h3>
+      {facts}
+    </div>
+  )
+}
+
+// The same overview, loaded on its own - for the dashboard, which does not otherwise read the
+// requirements list.
+export function QualificationOverview({ id, className }) {
+  const [data, error] = useLoad(() => api.get(`/drivers/${id}/requirements`), [id])
+  if (!data) return <div className={`card qualcard hirepanel ${className || ''}`}><h3 className="stagehead">Qualification Overview</h3><Loading error={error} /></div>
+  return data.overview ? <OverviewCard ov={data.overview} className={className} banded /> : null
+}
+
 export function Requirements({ id, onChanged, focus, onGoSection }) {
   const [data, error, reload] = useLoad(() => api.get(`/drivers/${id}/requirements`), [id])
   const [open, setOpen] = useState(null)
@@ -184,7 +228,10 @@ export function Requirements({ id, onChanged, focus, onGoSection }) {
   // anything is being held back until hire. Reading it rather than working it out again keeps
   // the two from drifting.
   const onbooks = Boolean(data.hired)
-  const live = data.items.filter((i) => i.applies === true)
+  // The removal from safety-sensitive work is not a requirement to work through here: the overview
+  // above already says the driver may not drive and why, and the return-to-duty steps are kept in
+  // D&A Testing History.
+  const live = data.items.filter((i) => i.applies === true && i.code !== 'DA_PROHIBITION')
   const undecided = data.items.filter((i) => i.applies === null)
   // Who the open question is for: the driver - their answer to a question only they can give, asked
   // of them by link - or the company, on its own settings.
@@ -249,30 +296,10 @@ export function Requirements({ id, onChanged, focus, onGoSection }) {
   // Four answers, each to its own question: hired, onboarding, and qualified for each program.
   // Only a program whose every requirement is met reads Qualified; unknown never does.
   const ov = data.overview
-  const toneOf = (x) => ({ Qualified: 'st-active', Complete: 'st-active', 'Not Applicable': 'st-inactive',
-    'Not Qualified': 'st-expired', Overdue: 'st-expired' }[x] || 'st-ordered')
 
   return (
     <>
-      {ov && (
-        <div className="card factpanel">
-          <h3 className="reqhead">Qualification Overview</h3>
-          <dl className="askfacts overviewfacts">
-            <div><dt>Employment</dt><dd>{ov.employment}</dd></div>
-            <div><dt>Employment Onboarding</dt>
-              <dd className={toneOf(ov.onboarding.status)}>{ov.onboarding.status}</dd></div>
-            {/* The program and its standing on one line, what stands in the way listed beneath. */}
-            {ov.programs.map((pg) => (
-              <div key={pg.program} className="ovprogram"><dt>{pg.label}</dt>
-                <dd className={toneOf(pg.status)}>{pg.status}</dd>
-                {pg.reasons.length > 0 && (
-                  <ul className="ovreasons">{pg.reasons.map((x) => <li key={x}>{x}</li>)}</ul>
-                )}
-              </div>
-            ))}
-          </dl>
-        </div>
-      )}
+      {ov && <OverviewCard ov={ov} />}
       {(onbooks ? HIRED_GROUPS : GROUPS).map(([key, title, stages]) => {
         const list = grouped(key, stages)
         if (!list.length) return null
@@ -947,6 +974,10 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
     // Signed down a link and not yet read by anybody here. The same state, and the same two words,
     // as a document the driver uploaded or a report that came back from an order.
     const unread = unchecked2.has(source.which)
+    // Signed inside the driver's own application rather than down a separate link: there is no
+    // signing request to mark, so the reading is recorded against the signature itself - the same
+    // act, through the same door every other record uses.
+    const readsig = !unread && shown.find((x) => x.sourcetable === 'documentsignatures' && x.needsreading)
     if (signedDoc) {
       return (
         <>
@@ -960,7 +991,7 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
           <SignedDocViewer doc={signedDoc} onClose={onClose}
             asPdf={`/drivers/${id}/signed/${source.which}/pdf`}
             brief={undefined}
-            action={unread && (
+            action={(unread || readsig) && (
               /* Reading it is the last thing anybody does here, so this closes rather than
                  dropping back into a view that would set about re-opening the same document.
 
@@ -976,7 +1007,7 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
                   </button>
                 ) : (
                   <button type="button" className="primary" disabled={busy}
-                    onClick={async () => { await markSignedRead(); onClose() }}>
+                    onClick={async () => { await (unread ? markSignedRead() : readRecord(readsig)); onClose() }}>
                     {busy ? <Loader2 size={15} className="spin" /> : 'Mark As Reviewed'}
                   </button>
                 )
@@ -1021,7 +1052,7 @@ function RequirementDetail({ id, code, onClose, onChanged, onOpen, onGoSection }
       return (
         <>
         <SingleDocumentDialog title={r.name} brief={r?.description} err={err}
-          notice={COMPLETED_AGAIN.has(source.which) ? asked : null} unread={unread}
+          notice={COMPLETED_AGAIN.has(source.which) ? asked : null} unread={unread || Boolean(readsig)}
           // Signed here, or a copy somebody filed - the row says which, because they are not the
           // same evidence.
           row={{ on: x.effectiveon || x.recordedon,

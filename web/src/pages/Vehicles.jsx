@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { money } from '../lib/format.js'
 import { Badge, useLoad } from '../components/ui.jsx'
+import { useUser } from '../App.jsx'
 import DataGrid, { useGridParams } from '../components/DataGrid.jsx'
 
 // The same seven columns the fleet always had, now in the grid every other list on the site uses.
@@ -85,10 +86,26 @@ function FleetStanding({ owed }) {
 // there is nothing to cancel into and no Cancel button is drawn.
 export function VehicleForm({ initial = {}, id, onDone, onCancel }) {
   const [f, setF] = useState({ externalid: '', vin: '', plate: '', make: '', model: '', modelyear: '',
-    seats: '', gvwr: '', gcwr: '', forcompensation: false, lift: false, odometer: '',
+    seats: '', gvwr: '', gcwr: '', lift: false, odometer: '',
     odometerasof: '', ...initial })
   const [error, setError] = useState(null)
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
+  // The vehicle's transit safety program determinations, set here on the vehicle rather than in a
+  // table on the company's page. Owners and admins decide them. FMCSA is in DOT & CDL Setup.
+  const decides = ['owner', 'admin'].includes(useUser()?.role)
+  const [det] = useLoad(() => (decides ? api.get(`/company/operating-profile/vehicles/${id || 'new'}`)
+    : Promise.resolve(null)), [id])
+  const [picked, setPicked] = useState({})
+  const transitOf = (code) => (picked[code] !== undefined ? picked[code] : (det?.transit[code] || ''))
+  const saveDeterminations = async (vehicleid) => {
+    if (!det) return
+    for (const p of det.programs) {
+      if (picked[p.code] !== undefined && picked[p.code] !== (det.transit[p.code] || '')) {
+        await api.put(`/company/operating-profile/vehicles/${vehicleid}/transit/${p.code}`,
+          { determination: picked[p.code] || null })
+      }
+    }
+  }
   const submit = async (e) => {
     e.preventDefault()
     const keys = ['externalid', 'vin', 'plate', 'make', 'model', 'modelyear', 'seats', 'gvwr',
@@ -98,12 +115,15 @@ export function VehicleForm({ initial = {}, id, onDone, onCancel }) {
     body.seats = body.seats ? Number(body.seats) : null
     body.gvwr = body.gvwr ? Number(body.gvwr) : null
     body.gcwr = body.gcwr ? Number(body.gcwr) : null
-    body.forcompensation = Boolean(f.forcompensation)
     body.lift = Boolean(f.lift)
     body.odometer = body.odometer ? Number(body.odometer) : null
     try {
-      if (id) { await api.put(`/vehicles/${id}`, body); onDone() }
-      else onDone((await api.post('/vehicles', body)).recordid)
+      if (id) { await api.put(`/vehicles/${id}`, body); await saveDeterminations(id); onDone() }
+      else {
+        const made = (await api.post('/vehicles', body)).recordid
+        await saveDeterminations(made)
+        onDone(made)
+      }
     } catch (err) { setError(err.message) }
   }
   return (
@@ -117,36 +137,55 @@ export function VehicleForm({ initial = {}, id, onDone, onCancel }) {
           <button className="primary">Save</button>
         </div>
       </div>
-      <div className="form infoform">
-        {/* The unit number is how the office says this vehicle out loud, so it is read first and
-            alone. The identifiers printed on the machine itself follow, on their own row. */}
-        <label className="field">Unit Number (Dispatch)<input value={f.externalid || ''} onChange={set('externalid')} /></label>
-        <label className="field startrow">VIN<input maxLength={17} value={f.vin || ''} onChange={set('vin')} /></label>
-        <label className="field">Plate<input value={f.plate || ''} onChange={set('plate')} /></label>
-        <label className="field">Model Year<input type="number" min="1980" max="2100" value={f.modelyear || ''} onChange={set('modelyear')} /></label>
-        <label className="field">Make<input value={f.make || ''} onChange={set('make')} /></label>
-        <label className="field">Model<input value={f.model || ''} onChange={set('model')} /></label>
-        {/* These four decide what the vehicle is, and everything downstream follows from them:
-            whether it is a commercial motor vehicle federally, whether it is one under Florida law,
-            and what license its driver needs. They are measurements, not judgements - what they add
-            up to is worked out and shown on the vehicle, never typed in. */}
-        <label className="field startrow">Seats, Including The Driver
-          <input type="number" min="1" max="99" value={f.seats || ''} onChange={set('seats')} /></label>
-        <label className="field">GVWR (lb)
-          <input type="number" min="0" max="120000" value={f.gvwr || ''} onChange={set('gvwr')} /></label>
-        <label className="field">GCWR (lb), If It Tows
-          <input type="number" min="0" max="120000" value={f.gcwr || ''} onChange={set('gcwr')} /></label>
-        <label className="field">Odometer (Miles)<input type="number" min="0" value={f.odometer || ''} onChange={set('odometer')} /></label>
-        <label className="field">Odometer Read On<input type="date" value={f.odometerasof || ''} onChange={set('odometerasof')} /></label>
-        <label className="field check sharerow">
-          <input type="checkbox" checked={Boolean(f.forcompensation)}
-            onChange={(e) => setF({ ...f, forcompensation: e.target.checked })} />
-          Passengers are carried for compensation
-        </label>
-        <label className="field check sharerow">
-          <input type="checkbox" checked={Boolean(f.lift)}
-            onChange={(e) => setF({ ...f, lift: e.target.checked })} /> Wheelchair lift or ramp
-        </label>
+      {/* Three sections, one kind of thing to a row: what the vehicle is, what it carries, and what
+          has been determined about it. */}
+      <div className="infoform stack">
+        <div>
+          <h3 className="formsection">Identification</h3>
+          <div className="profileform">
+            <label className="field">Unit Number (Dispatch)<input value={f.externalid || ''} onChange={set('externalid')} /></label>
+            <label className="field">VIN<input maxLength={17} value={f.vin || ''} onChange={set('vin')} /></label>
+            <label className="field">Plate<input value={f.plate || ''} onChange={set('plate')} /></label>
+            <label className="field">Model Year<input type="number" min="1980" max="2100" value={f.modelyear || ''} onChange={set('modelyear')} /></label>
+            <label className="field">Make<input value={f.make || ''} onChange={set('make')} /></label>
+            <label className="field">Model<input value={f.model || ''} onChange={set('model')} /></label>
+          </div>
+        </div>
+        {/* Seats and the weight ratings decide what the vehicle is - a commercial motor vehicle
+            federally or under Florida law, and what license its driver needs. They are measurements,
+            not judgements; what they add up to is worked out and shown on the vehicle. */}
+        <div>
+          <h3 className="formsection">Capacity And Equipment</h3>
+          <div className="profileform">
+            <label className="field">Seats, Including The Driver
+              <input type="number" min="1" max="99" value={f.seats || ''} onChange={set('seats')} /></label>
+            <label className="field">GVWR (lb)
+              <input type="number" min="0" max="120000" value={f.gvwr || ''} onChange={set('gvwr')} /></label>
+            <label className="field">GCWR (lb), If It Tows
+              <input type="number" min="0" max="120000" value={f.gcwr || ''} onChange={set('gcwr')} /></label>
+            <label className="field">Wheelchair Lift Or Ramp
+              <select value={f.lift ? 'yes' : 'no'} onChange={(e) => setF({ ...f, lift: e.target.value === 'yes' })}>
+                <option value="yes">Yes</option><option value="no">No</option>
+              </select></label>
+            <label className="field">Odometer (Miles)<input type="number" min="0" value={f.odometer || ''} onChange={set('odometer')} /></label>
+            <label className="field">Odometer Read On<input type="date" value={f.odometerasof || ''} onChange={set('odometerasof')} /></label>
+          </div>
+        </div>
+        {det && det.programs.length > 0 && (
+          <div>
+            <h3 className="formsection">Determinations</h3>
+            <div className="profileform">
+              {det.programs.map((p) => (
+                <label key={p.code} className="field span-2">
+                  {`${p.name} (${p.state} ${(p.citation || '').split(' ').pop()})`}
+                  <select value={transitOf(p.code)} onChange={(e) => setPicked({ ...picked, [p.code]: e.target.value })}>
+                    <option value="">Not determined</option>
+                    {Object.entries(det.choices).map(([c, l]) => <option key={c} value={c}>{l}</option>)}
+                  </select></label>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       {error && <div className="error">{error}</div>}
     </form>

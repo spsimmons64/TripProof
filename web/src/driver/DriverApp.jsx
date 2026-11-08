@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, Check, Clock, LogOut, ClipboardCheck, ListChecks, MapPin, Navigation, Navigation2, Phone, RefreshCw,
-  Loader2, UserCheck } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, Clock, ClipboardCheck, ListChecks, MapPin, Navigation, Navigation2, Phone, RefreshCw,
+  Loader2, UserCheck, UserCircle } from 'lucide-react'
 import { date, time } from '../lib/format.js'
+import { API, forgetPhone, keepAwake, listenForTrips, native, openLocationSettings, watchInBackground } from './native.js'
 
 // The driver's app.
 //
@@ -28,7 +29,7 @@ const held = {
 }
 
 async function call(path, body, method) {
-  const r = await fetch(`/api/driver${path}`, {
+  const r = await fetch(`${API}/api/driver${path}`, {
     method: method || (body ? 'POST' : 'GET'),
     headers: { 'Content-Type': 'application/json',
                ...(held.get() ? { Authorization: `Bearer ${held.get()}` } : {}) },
@@ -141,11 +142,18 @@ function useReporting(on, driving) {
       queue.write([...queue.read(), fix])
       setState('reporting')
     }
-    const watch = navigator.geolocation.watchPosition(
-      keep,
-      (e) => setState(e.code === e.PERMISSION_DENIED ? 'denied' : 'nofix'),
-      { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 },
-    )
+    // In the store app the watch is the phone's own location service, which carries on with the
+    // screen off; in a browser it is the page's, which does not.
+    const unwatch = native
+      ? watchInBackground(keep, setState)
+      : (() => {
+          const watch = navigator.geolocation.watchPosition(
+            keep,
+            (e) => setState(e.code === e.PERMISSION_DENIED ? 'denied' : 'nofix'),
+            { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 },
+          )
+          return () => navigator.geolocation.clearWatch(watch)
+        })()
 
     // The heartbeat, and the reason this cannot be left to `watchPosition` alone: a watch fires
     // when the position CHANGES, so a phone sitting still in a yard fires nothing, queues
@@ -205,7 +213,7 @@ function useReporting(on, driving) {
     window.addEventListener('online', flush)
     flush()
     return () => {
-      navigator.geolocation.clearWatch(watch)
+      unwatch()
       clearInterval(timer)
       clearInterval(heart)
       clearInterval(repace)
@@ -221,6 +229,11 @@ function useReporting(on, driving) {
 // phone belongs in a cradle on the dash.
 function useAwake(on) {
   useEffect(() => {
+    if (native) {
+      if (!on) return undefined
+      keepAwake(true)
+      return () => { keepAwake(false) }
+    }
     if (!on || !navigator.wakeLock) return undefined
     let held = null, dropped = false
     const take = async () => {
@@ -256,7 +269,14 @@ export default function DriverApp() {
   if (window.location.pathname.startsWith('/drive/password')) return <SetPassword onIn={setMe} />
   if (!ready) return <div className="dvapp"><div className="dvwait">One moment…</div></div>
   if (!me) return <SignIn onIn={setMe} />
-  return <Work me={me} onOut={() => { held.set(null); setMe(null) }} />
+  // Signing out ends the session at the server too, so this phone stops being told about trips.
+  const out = async () => {
+    await call('/signout', {}).catch(() => {})
+    await forgetPhone()
+    held.set(null); setMe(null)
+  }
+  const gone = () => { held.set(null); setMe(null) }
+  return <Work me={me} onOut={out} onDeleted={gone} />
 }
 
 function Shell({ children, title, right, menu }) {
@@ -496,7 +516,7 @@ function chime() {
   } catch { /* no sound */ }
 }
 
-function Work({ me, onOut }) {
+function Work({ me, onOut, onDeleted }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
   const [open, setOpen] = useState(null)      // the legid being worked
@@ -529,6 +549,17 @@ function Work({ me, onOut }) {
     document.addEventListener('visibilitychange', wake)
     return () => { clearInterval(t); document.removeEventListener('visibilitychange', wake) }
   }, [load, driving])
+  // In the store app, the office's changes arrive as notifications: one heard with the app open
+  // re-reads the list, and one tapped opens the trip it is about.
+  useEffect(() => {
+    let stop = () => {}, live = true
+    listenForTrips((b) => call('/device', b), load, async (legid) => {
+      await load()
+      if (legid) setOpen(legid)
+    }).then((s) => { if (live) stop = s; else s() })
+    return () => { live = false; stop() }
+  }, [load])
+  const [asking, setAsking] = useState(null)   // the account sheet: 'menu' | 'delete'
   const reporting = useReporting(true, driving)
   // The screen is kept awake only while a trip is actually under way. All day would be a flat
   // battery by two o'clock.
@@ -551,6 +582,29 @@ function Work({ me, onOut }) {
       onCheck={() => { setOpen(null); setCheckFor({ legid: leg.legid, vehicleid: leg.vehicleid }) }} />
   }
 
+  // Signing out and deleting the login, behind one button. The stores require the second to be in
+  // the app; it is asked twice because it cannot be undone from the phone.
+  // The button sits in the header; its sheet goes in the page body, out of the header's colours.
+  const account = <button className="dvicon" onClick={() => setAsking('menu')} aria-label="Account"><UserCircle size={22} /></button>
+  const sheet = (
+    <>
+      {asking === 'menu' && (
+        <Choose title={me.name} onClose={() => setAsking(null)} options={{
+          out: ['Sign Out', () => { setAsking(null); onOut() }],
+          delete: ['Delete My Login', () => setAsking('delete')],
+        }} />
+      )}
+      {asking === 'delete' && (
+        <Choose title="Delete your login?" onClose={() => setAsking(null)} options={{
+          yes: ['Yes', async () => {
+            try { await call('/delete-login', {}); await forgetPhone(); onDeleted() } catch (x) { setErr(x.message); setAsking(null) }
+          }],
+          no: ['No', () => setAsking(null)],
+        }} />
+      )}
+    </>
+  )
+
   const menu = (
     <nav className="dvmenu">
       <button type="button" className={where === 'trips' ? 'on' : ''} onClick={() => go('trips')}>
@@ -565,15 +619,16 @@ function Work({ me, onOut }) {
   if (where === 'check') {
     return (
       <Shell title="Vehicle Check" menu={menu}
-        right={<button className="dvicon" onClick={onOut} aria-label="Sign out"><LogOut size={20} /></button>}>
+        right={account}>
         <VehicleCheck me={me} reporting={reporting} />
+        {sheet}
       </Shell>
     )
   }
 
   return (
     <Shell title={me.name} menu={menu}
-      right={<button className="dvicon" onClick={onOut} aria-label="Sign out"><LogOut size={20} /></button>}>
+      right={account}>
       {err && <div className="dverr">{err}</div>}
       <Reporting {...reporting} />
       {/* On call, after closing: the will-calls nobody is in the office to send out. */}
@@ -601,6 +656,7 @@ function Work({ me, onOut }) {
       {!items.length && !err && !data?.oncall && (
         <p className="dvempty">Nothing is assigned to you right now.</p>
       )}
+      {sheet}
     </Shell>
   )
 }
@@ -688,6 +744,14 @@ function Standing({ leg }) {
 // A clock, not a claim. "The office can see your location" is a promise the app cannot keep in a
 // dead spot; the time of the last position that actually arrived is a fact the driver can act on.
 function Reporting({ state, sentat }) {
+  if (state === 'denied' && native) {
+    return (
+      <div className="dvgps off">
+        <Navigation size={14} /> Location is switched off, so the office cannot see where you are.
+        <button type="button" className="dvsecond" onClick={openLocationSettings}>Open Settings</button>
+      </div>
+    )
+  }
   if (state === 'reporting') {
     return (
       <div className="dvgps on">
@@ -955,6 +1019,21 @@ function SignatureSheet({ passenger, reasons, busy, onFinish, onClose }) {
         <button className="dvsecond" disabled={!drawn} onClick={clear}>Clear</button>
         <button className="dvsecond" onClick={() => setCannot(true)}>Passenger Cannot Sign</button>
         <button className="dvsecond" onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+// A short list of choices and nothing to type: the account sheet and its one question.
+function Choose({ title, options, onClose }) {
+  return (
+    <div className="dvsheet" role="dialog" aria-label={title}>
+      <div className="dvsheetbody">
+        <h2>{title}</h2>
+        {Object.entries(options).map(([k, [label, act]]) => (
+          <button key={k} className="dvoption" onClick={act}>{label}</button>
+        ))}
+        {!options.no && <button className="dvsecond" onClick={onClose}>Cancel</button>}
       </div>
     </div>
   )

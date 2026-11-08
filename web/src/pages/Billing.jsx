@@ -30,7 +30,7 @@ export default function Billing({ hold }) {
     : sub.cancelatperiodend ? `Ends ${tzDate(sub.currentperiodend)}`
     : `Next bill ${tzDate(sub.currentperiodend)}`
   const planChanges = plan && nextplan && nextplan.name !== plan.name
-
+  const dot = data.dot
   return (
     <div className="stack">
       <div className="pagehead"><h1>Billing</h1></div>
@@ -75,6 +75,23 @@ export default function Billing({ hold }) {
       {!planChanges && plan && (
         <p className="muted small" style={{ margin: 0 }}>Plans are priced by fleet size and checked against the vehicles on file before each bill. You have {data.billablefleet} vehicles on file.</p>
       )}
+
+      {dot.on && <div className="card qualcard">
+        <div className="infotabs"><h3>DOT &amp; CDL Compliance</h3></div>
+        <div className="panelbody">
+        <table className="residencetable recordtable">
+          <thead><tr><th>Status</th><th>Active DOT Drivers</th><th>Price</th><th className="num">Monthly</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>{`On since ${tzDate(dot.since)}`}</td>
+              <td>{dot.drivers}</td>
+              <td>{`${money(dot.base)} up to ${dot.included} drivers, ${money(dot.each)} each after`}</td>
+              <td className="num">{money(dot.monthly)}</td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+      </div>}
 
       <div className="card gridcard" style={{ flex: 'none' }}>
         <div className="tablewrap"><table>

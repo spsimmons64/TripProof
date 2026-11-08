@@ -65,7 +65,9 @@ class VehicleIn(BaseModel):
     gvwr: int | None = None
     gcwr: int | None = None             # combination rating; 390.5 reads the greater of the two
     seats: int | None = None            # designed occupancy including the driver
-    forcompensation: bool = False       # passengers carried for hire - the 390.5(2) prong
+    # Passengers carried for hire - the 390.5(2) prong. Every vehicle in an NEMT fleet carries
+    # paying passengers, so it is always yes; still accepted from older clients and ignored.
+    forcompensation: bool = True
     lift: bool | None = None
 
 
@@ -120,6 +122,8 @@ def vehicle_requirements(vehicleid: str, user: dict = Depends(current_user),
     gathered = factset.assemble(conn, acct, vehicleid=vehicleid)
     items = rules.for_vehicle(conn, acct, vehicleid, gathered["facts"],
                               today=localnow(user["timezone"]).date())
+    # The DOT & CDL Compliance hold is not a requirement; the vehicle's page shows it as a note.
+    items = [i for i in items if i["code"] != rules.DOT_MODULE]
     counted: dict[str, int] = {}
     for i in items:
         counted[i["status"]] = counted.get(i["status"], 0) + 1
@@ -447,7 +451,7 @@ def create_vehicle(body: VehicleIn, user: dict = Depends(editor), conn: Connecti
     """, id=vid, a=user["accountid"], ext=body.externalid or None, vin=(body.vin or "").upper() or None,
         plate=body.plate, make=body.make, model=body.model, yr=body.modelyear, seats=body.seats,
         lift=int(bool(body.lift)), odo=body.odometer, odoasof=body.odometerasof, gvwr=body.gvwr,
-        gcwr=body.gcwr, hire=int(bool(body.forcompensation)))
+        gcwr=body.gcwr, hire=1)
     log(conn, user, "create", "vehicle", vid)
     return {"recordid": vid}
 
@@ -465,6 +469,7 @@ def get_vehicle(vehicleid: str, user: dict = Depends(current_user), conn: Connec
     today = localnow(user["timezone"])
     v["credentials"] = _mark_replaced([_status_today(c, today) for c in _credentials(conn, acct, "vehicle", vehicleid)])
     v["exposure"] = _exposure_by(conn, acct, "vehicle").get(vehicleid, {"trips": 0, "amount": 0})
+    v["dothold"] = rules.dot_hold(conn, acct, vehicleid)
     return v
 
 
@@ -478,7 +483,7 @@ def update_vehicle(vehicleid: str, body: VehicleIn, user: dict = Depends(editor)
     """, id=vehicleid, a=user["accountid"], ext=body.externalid or None, vin=(body.vin or "").upper() or None,
         plate=body.plate, make=body.make, model=body.model, yr=body.modelyear, seats=body.seats,
         lift=int(bool(body.lift)), odo=body.odometer, odoasof=body.odometerasof, gvwr=body.gvwr,
-        gcwr=body.gcwr, hire=int(bool(body.forcompensation)), now=utcnow())
+        gcwr=body.gcwr, hire=1, now=utcnow())
     if not r.rowcount:
         raise HTTPException(404, "Vehicle not found")
     log(conn, user, "update", "vehicle", vehicleid, body.model_dump(mode="json"))

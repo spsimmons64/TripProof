@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     storage_path: str = "/data/storage"
 
     cors_origins: str = "http://localhost:5173"
+    # The Firebase service account key (JSON) the server sends app notifications with. Empty: no
+    # notifications, and every driver is texted.
+    fcm_credentials: str = ""
     # Where a tester sign-up from the public site is emailed.
     tester_notify: str = "support@tripproofonline.com"
 

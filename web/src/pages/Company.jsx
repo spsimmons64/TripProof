@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../lib/api.js'
+import { DotSetupButton } from '../components/DotSetup.jsx'
 import { Loading, useLoad } from '../components/ui.jsx'
 import { EinInput, EmailInput, PhoneInput, ZipInput } from '../components/MaskedInput.jsx'
 import { US_STATES } from '../admin/CustomerProfile.jsx'
@@ -99,7 +100,8 @@ function Operations() {
   const [err, setErr] = useState(null)
 
   if (!data) return <Loading error={error} page />
-  const questions = data.questions
+  // FMCSA's MIS question is asked in DOT & CDL Setup.
+  const questions = data.questions.filter((q) => q.code !== 'MIS_REQUESTED')
   const now = answers ?? Object.fromEntries(questions.map((q) => [q.code, asChoice(q.answer)]))
   const open = questions.filter((q) => now[q.code] === '').length
 
@@ -191,7 +193,10 @@ function CompanyForm({ company, onSaved }) {
     <div className="stack stickypage">
       <div className="pagehead">
         <h1>Company</h1>
-        {canEdit && <button className="primary" onClick={f.onSubmit} disabled={f.busy}>Save</button>}
+        <div className="row headactions">
+          {canEdit && <DotSetupButton kind="company" />}
+          {canEdit && <button className="primary" onClick={f.onSubmit} disabled={f.busy}>Save</button>}
+        </div>
       </div>
       {f.error && <div className="notice bad">{f.error}</div>}
       {saved && <div className="notice good">Saved.</div>}
@@ -234,8 +239,6 @@ function CompanyForm({ company, onSaved }) {
                 <label className="field">EIN<EinInput value={v.ein} onChange={set('ein')} /></label>
                 {/* The biennial update's month comes off the last digit of this number and its
                     year off the digit before it, so it is not a reference field. */}
-                <label className="field">USDOT #<input value={v.usdot} onChange={set('usdot')} inputMode="numeric" /></label>
-                <label className="field">MC #<input value={v.mcnumber} onChange={set('mcnumber')} /></label>
                 <label className="field">Medicaid ID<input value={v.medicaidid} onChange={set('medicaidid')} /></label>
                 <label className="field">NPI<input value={v.npi} onChange={set('npi')} inputMode="numeric" /></label>
               </div>

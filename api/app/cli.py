@@ -235,6 +235,14 @@ def main():
     ca.add_argument("--state", default="FL")
     ca.add_argument("--timezone", default="America/New_York")
     ca.add_argument("--password", help="omit to be prompted")
+    imp = sub.add_parser("import-requirements")
+    imp.add_argument("files", nargs="+")
+    mode = imp.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--dry-run", action="store_true", help="report only; nothing changes")
+    mode.add_argument("--load", action="store_true",
+                      help="stage every ready requirement for approval in Rule Review")
+    imp.add_argument("--report", default="requirements-import-report.json")
+    imp.add_argument("--no-verify", action="store_true", help="skip fetching the official texts")
     rp = sub.add_parser("reprice")
     rp.add_argument("--days", type=int, default=3)
     args = p.parse_args()
@@ -248,6 +256,19 @@ def main():
         daily_compliance()
     elif args.cmd == "collect-screenings":
         collect_screenings()
+    elif args.cmd == "import-requirements":
+        import json
+        from app import catalogimport
+        from app.db import engine
+        with engine.begin() as conn:
+            report = catalogimport.run_import(conn, args.files, verify=not args.no_verify)
+            if args.load:
+                report["loaded"] = catalogimport.load(conn, report, report["sources"])
+        with open(args.report, "w") as f:
+            json.dump({k: v for k, v in report.items() if k != "sources"}, f, indent=1, default=str)
+        print(json.dumps({**report["totals"], **({"staged": len(report["loaded"]["staged"]),
+                                                  "already_staged": len(report["loaded"]["already_staged"])}
+                                                 if args.load else {})}))
     elif args.cmd == "reprice":
         reprice(args.days)
     elif args.cmd == "create-admin":

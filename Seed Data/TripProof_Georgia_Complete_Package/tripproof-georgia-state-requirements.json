@@ -1,0 +1,714 @@
+{
+  "format": "tripproof-requirements/1",
+  "title": "Georgia State NEMT Requirements — Research Draft",
+  "prepared_on": "2026-11-07",
+  "prepared_by": "OpenAI research draft for TripProof Online — citations and 2026 revision review required",
+  "requirements": [
+    {
+      "id": "ST-CO-001",
+      "qualification": "GAC-001",
+      "name": "Georgia passenger-carrier certificate when required",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-4-.03(1)",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-4",
+      "citation_text": "No person or entity to whom or to which this Subchapter applies shall operate as or hold itself out to be a passenger carrier without first obtaining a passenger carrier certificate from the Department in accordance with Subchapter 2 of this Chapter.",
+      "requirement_text": "Maintain the Georgia DPS passenger carrier certificate if the operation is not statutorily exempt and is within the intrastate passenger-carrier rules.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.state",
+            "eq": "GA"
+          },
+          {
+            "fact": "operation.interstate",
+            "is": false
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "GA_DPS_PASSENGER_CERTIFICATE",
+        "new": true,
+        "credential_name": "Ga Dps Passenger Certificate"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "notes": "Critical exception: O.C.G.A. 40-1-100(12)(B)(vii) for vehicles capable of no more than ten persons used exclusively for elderly or disabled transportation to/from care/prescriptions. Do not require DPS certificate for every NEMT van.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-002",
+      "qualification": "GAI-001",
+      "name": "Georgia DPS passenger carrier insurance",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-4-.04(1)(b)",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-4",
+      "citation_text": "Securing and having in effect a policy of insurance by an insurance company licensed to do business in this state",
+      "requirement_text": "An operator subject to the Georgia passenger-carrier subchapter must maintain the capacity-dependent liability insurance required by that subchapter.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.state",
+            "eq": "GA"
+          },
+          {
+            "fact": "operation.interstate",
+            "is": false
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "AUTO_LIABILITY_COI"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        },
+        {
+          "kind": "evidence",
+          "name": "carrier_insurance_limits",
+          "why": "Validate active insurer authorization, exact limits of $100k/$300k/$50k at <=12 seats or $100k/$500k/$50k at >12 seats, and any lawful self-insurance waiver."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-003",
+      "qualification": "GAC-003",
+      "name": "Georgia DPS carrier insurance in carrier name",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-2-.05(2)",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-2",
+      "citation_text": "No certificate shall be issued or remain in effect under this Subchapter unless the applicant or holder obtains and maintains adequate insurance solely in the name of the applicant or holder",
+      "requirement_text": "Carrier-required insurance must be maintained in the name of the authorized carrier.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.state",
+            "eq": "GA"
+          },
+          {
+            "fact": "operation.interstate",
+            "is": false
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "AUTO_LIABILITY_COI"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        },
+        {
+          "kind": "evidence",
+          "name": "insurance_named_insured",
+          "why": "Confirm the issued policy is in the carrier legal name and remains active."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-004",
+      "qualification": "GAC-004",
+      "name": "Georgia DPS insurance certificates remain updated",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-2-.05(3)",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-2",
+      "citation_text": "Applicants and certificate holders shall update their certificate or certificates of insurance filed with the Department to reflect their ongoing compliance with this Rule and any updates or changes to the policy or policies of insurance held",
+      "requirement_text": "Keep DPS insurance filings updated when carrier insurance changes.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.state",
+            "eq": "GA"
+          },
+          {
+            "fact": "operation.interstate",
+            "is": false
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "DPS insurance filing acknowledgement for the current policy."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2020-05-11",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_dps_insurance_certificates_remain_updated",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-005",
+      "qualification": "GAC-005",
+      "name": "Georgia DPS carrier certificate remains active",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-2-.13(1)",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-2",
+      "citation_text": "A certificate issued pursuant to this Subchapter may be suspended or revoked by the Department for any reason authorized by law and as required to ensure compliance with this Chapter.",
+      "requirement_text": "Do not conduct certificate-required transportation when the relevant DPS certificate is suspended, revoked, void, or expired.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.state",
+            "eq": "GA"
+          },
+          {
+            "fact": "operation.interstate",
+            "is": false
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "GA_DPS_PASSENGER_CERTIFICATE",
+        "new": true,
+        "credential_name": "Ga Dps Passenger Certificate"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        },
+        {
+          "kind": "evidence",
+          "name": "dps_certificate_current_status",
+          "why": "Certificate document is insufficient to determine suspension, revocation or interim validity."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-006",
+      "qualification": "GAC-006",
+      "name": "Georgia authorized passenger-carrier vehicle",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-4-.09(2)",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-4",
+      "citation_text": "a passenger carrier performing transportation regulated by this Subchapter shall only be authorized to utilize vehicles that are owned or leased by the carrier itself or a person or entity with ownership interest in the carrier.",
+      "requirement_text": "Use only vehicles meeting the passenger-carrier ownership or lease conditions, subject to authorized exceptions.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.state",
+            "eq": "GA"
+          },
+          {
+            "fact": "operation.interstate",
+            "is": false
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Verified vehicle owner, lease and legal carrier relationships."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        },
+        {
+          "kind": "fact",
+          "name": "vehicle.owned_or_legally_leased_by_carrier",
+          "why": "Vehicle ownership, ownership-interest, qualifying lease, and regulatory exceptions are not supported facts."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_authorized_passenger_carrier_vehicle",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-001",
+      "qualification": "GAD-001",
+      "name": "Authorized operator of Georgia passenger carrier",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-4-.09(2)",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-4",
+      "citation_text": "Such vehicles shall only be operated by persons who (a) are specifically authorized to do so by the carrier;",
+      "requirement_text": "A driver must be specifically authorized by a DPS-regulated carrier to operate its assigned vehicle.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.state",
+            "eq": "GA"
+          },
+          {
+            "fact": "operation.interstate",
+            "is": false
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Carrier-approved driver to vehicle operator authorization."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.authorized_for_vehicle_by_carrier",
+          "why": "Driver-specific authorization for each carrier/vehicle is not a supported fact."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.authorized_operator_of_georgia_passenger_carrier",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-001",
+      "qualification": "GAV-001",
+      "name": "Georgia automobile insurance minimum",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia Insurance Commissioner",
+      "citation": "Georgia automobile liability minimums",
+      "citation_url": "https://oci.georgia.gov/insurance-resources/auto",
+      "citation_text": "The minimum limits of liability insurance required under Georgia law are:",
+      "requirement_text": "A motor vehicle operated on Georgia roads must have applicable mandatory liability insurance; more stringent carrier or program insurance requirements may supersede ordinary minimums.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_INSURANCE"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "notes": "Official insurer guidance, not standalone statutory text; align to applicable Georgia insurance statute when moving into production.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.uses_georgia_roads",
+          "why": "Apply road-operation requirements when the actual trip includes travel on Georgia roads, including nonresident/other-state providers."
+        },
+        {
+          "kind": "evidence",
+          "name": "vehicle_ga_insurance_limit_check",
+          "why": "Vehicle coverage must be active and meet at least $25k/$50k/$25k for ordinary coverage, or higher applicable carrier/program minimums."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-002",
+      "qualification": "GAV-002",
+      "name": "Georgia vehicle registration when required",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia Department of Revenue",
+      "citation": "Georgia annual vehicle registration",
+      "citation_url": "https://dor.georgia.gov/motor-vehicles/vehicle-registration-license-plates",
+      "citation_text": "After vehicle registration, you will receive a license plate with a decal which must be renewed each year.",
+      "requirement_text": "Assigned vehicle must maintain valid registration under the jurisdiction that is legally required for that vehicle and operation.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_REGISTRATION"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "notes": "General registration guidance rather than the exact text of the Georgia statute; review nonresident exemption.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.uses_georgia_roads",
+          "why": "Apply road-operation requirements when the actual trip includes travel on Georgia roads, including nonresident/other-state providers."
+        },
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_registration_applicability",
+          "why": "A Georgia road trip does not automatically require Georgia tags on a legally registered out-of-state vehicle."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-002",
+      "qualification": "GAD-002",
+      "name": "Georgia hands-free device operation",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DDS",
+      "citation": "O.C.G.A. 40-6-241(c)",
+      "citation_url": "https://dds.georgia.gov/chapter-2-traffic-laws-safe-driving",
+      "citation_text": "The Hands-Free Georgia Act (O.C.G.A. §40-6-241) requires drivers (any age, any license type) to refrain from physically holding or supporting a wireless telecommunications device for any reason while operating a vehicle.",
+      "requirement_text": "While driving on Georgia roads, the driver must comply with the Georgia hands-free device restrictions.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "Driving conduct incident report or compliance acknowledgement."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2018-07-01",
+      "notes": "Operational conduct requirement; not a periodic eligibility document. A blanket pre-drive block would be inappropriate.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.uses_georgia_roads",
+          "why": "Apply road-operation requirements when the actual trip includes travel on Georgia roads, including nonresident/other-state providers."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_hands_free_device_operation",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-007",
+      "qualification": "GAC-007",
+      "name": "Georgia Medicaid-regulated passenger carrier compliance",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-4-.06",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-4",
+      "citation_text": "Non-Emergency Medical Passenger Carriers that are required to be regulated as transportation providers in accordance with Georgia Department of Community Health (\"GDCH\") rules and regulations, including but not limited to the GDCH Division of Medicaid Policies and Procedures for Non-Emergency Medical Transportation shall comply with all rules, regulations, requirements, and restrictions applicable to such carrier.",
+      "requirement_text": "If the operator is a DPS-regulated non-emergency medical passenger carrier, satisfy applicable DCH NEMT rules.",
+      "applies_when": {
+        "all": [
+          {
+            "all": [
+              {
+                "fact": "company.state",
+                "eq": "GA"
+              },
+              {
+                "fact": "operation.interstate",
+                "is": false
+              }
+            ]
+          },
+          {
+            "fact": "company.medicaidstates",
+            "has": "GA"
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Cross-regulator qualification summary showing DCH compliance."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2020-05-11",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_regulated_passenger_carrier_compliance",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-008",
+      "qualification": "GAC-008",
+      "name": "Keep DPS carrier information current",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DPS",
+      "citation": "Ga. Comp. R. & Regs. 570-38-2-.12(1)",
+      "citation_url": "https://rules.sos.ga.gov/gac/570-38-2",
+      "citation_text": "if any such information becomes incomplete, the applicant or certificate holder shall notify the Department in writing of the change or supplement the incomplete information as soon as feasible",
+      "requirement_text": "Notify Georgia DPS of changes to certificate application or holder information within the time required by the rule.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.state",
+            "eq": "GA"
+          },
+          {
+            "fact": "operation.interstate",
+            "is": false
+          }
+        ]
+      },
+      "programs": null,
+      "evidence": {
+        "type": "other",
+        "describe": "DPS change notification record."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2020-05-11",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_passenger_carrier_certificate_required",
+          "why": "Determine Georgia DPS for-hire passenger-carrier coverage: O.C.G.A. 40-1-100(12)(B)(vii) excludes qualifying <=10-person dedicated elderly/disabled medical vehicles; also consider other statutory exclusions and interstate operations."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.keep_dps_carrier_information_current",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-004",
+      "qualification": "DRV-001",
+      "name": "Georgia roadway driver license qualification",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia Legislature",
+      "citation": "O.C.G.A. 40-5-20(a)",
+      "citation_url": "https://law.justia.com/codes/georgia/title-40/chapter-5/article-2/section-40-5-20/",
+      "citation_text": "No person, except those expressly exempted in this chapter or in Chapter 6 of this title, shall drive any motor vehicle upon a highway in this state unless such person has a valid driver’s license under this chapter for the type or class of vehicle being driven.",
+      "requirement_text": "Any driver operating the assigned vehicle on a Georgia road must possess a legally valid and correct-class license, subject to statutory exemptions and reciprocity.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2024-07-01",
+      "notes": "Text reflected in code version revised 2024; not claimed as original enactment date. Source is secondary codification; verify official Georgia code before production.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.uses_georgia_roads",
+          "why": "Apply road-operation requirements when the actual trip includes travel on Georgia roads, including nonresident/other-state providers."
+        }
+      ]
+    },
+    {
+      "id": "ST-CO-009",
+      "qualification": "GAC-009",
+      "name": "Do not knowingly authorize unlicensed Georgia vehicle operator",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia Legislature",
+      "citation": "O.C.G.A. 40-5-122",
+      "citation_url": "https://law.justia.com/codes/georgia/title-40/chapter-5/article-6/section-40-5-122/",
+      "citation_text": "No person shall knowingly authorize or permit a motor vehicle owned by him or under his control to be driven upon any highway by any person who is not authorized under this chapter",
+      "requirement_text": "Provider must not knowingly permit an unlicensed or improperly licensed driver to operate a vehicle under its control on Georgia roads.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "notes": "2020-05-11 is an administrative source-version placeholder, not known statutory effective date; must resolve actual legislative effective date. Source is secondary codification; provider knowing authorization is distinct from driver licensing.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.uses_georgia_roads",
+          "why": "Apply road-operation requirements when the actual trip includes travel on Georgia roads, including nonresident/other-state providers."
+        },
+        {
+          "kind": "fact",
+          "name": "rule.ga_40_5_122_effective_date_verified",
+          "why": "Exact enactment/effective date of O.C.G.A. 40-5-122 has not been independently verified."
+        }
+      ]
+    },
+    {
+      "id": "ST-VEH-003",
+      "qualification": "GAV-022",
+      "name": "Georgia annual vehicle registration as applicable",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia Legislature",
+      "citation": "O.C.G.A. 40-2-20(a)(1)(A)",
+      "citation_url": "https://law.justia.com/codes/georgia/title-40/chapter-2/article-2/section-40-2-20/",
+      "citation_text": "every owner of a motor vehicle, including a tractor or motorcycle, and every owner of a trailer shall, during the owner’s registration period in each year, register such vehicle as provided in this chapter",
+      "requirement_text": "Maintain valid vehicle registration under applicable Georgia registration law including statutory exclusions and nonresident exceptions.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_REGISTRATION"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2023-07-01",
+      "notes": "Registration subsection revised July 1, 2023; not original enactment date. 2026 text effective until July 1, 2027 per secondary codification; official verification outstanding.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_registration_required",
+          "why": "Need owner residency, state of registration and statutory exceptions before requiring Georgia registration."
+        }
+      ]
+    },
+    {
+      "id": "ST-DRV-003",
+      "qualification": "GAD-009",
+      "name": "Georgia DHS contracted driver national criminal check",
+      "category": "STATE",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DHS",
+      "citation": "DHS Transportation Manual §5 — DHS Contractors",
+      "citation_url": "https://pamms.dhs.ga.gov/ofss/man1425/vehicle-management/driver-requirements-programs-and-recordkeeping/",
+      "citation_text": "All drivers and monitors must have a national criminal history records check, regardless of the date of original employment.",
+      "requirement_text": "For DHS-contract transportation to which this policy applies, maintain the required national criminal history check.",
+      "applies_when": null,
+      "programs": null,
+      "evidence": {
+        "type": "credential",
+        "credential": "FBI_FINGERPRINT"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2020-05-11",
+      "notes": "Do not treat as a statewide NEMT fingerprint requirement; policy recommends (not mandates) repeat check every 3 years.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_dhs_direct_transport_contract",
+          "why": "DHS contractor rules do not automatically apply to ordinary Medicaid NEMT providers."
+        },
+        {
+          "kind": "evidence",
+          "name": "ga_dhs_fitness_adjudication",
+          "why": "Background check itself is not proof of required fitness determination."
+        }
+      ]
+    }
+  ]
+}

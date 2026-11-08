@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NEMT Management Software | TripProof Online</title>
+<meta name="description" content="TripProof Online is NEMT management software for dispatch and scheduling, driver and vehicle compliance, proof of service and billing, built compliance-first. In beta, recruiting testers nationwide.">
+<link rel="canonical" href="https://tripproofonline.com/nemt-software/">
+<link rel="icon" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap">
+<style>
+/* Layout: the page is a carbonless NEMT trip ticket - numbered form fields, typed entries, a rubber
+   stamp - set in steel blue and safety orange. Each section is a copy of the form, labelled as one. */
+:root {
+  --page: #c8d0d7;        /* the desk the forms lie on */
+  --copy-white: #eceff2;  /* office copy */
+  --copy-2: #e6e6df;      /* driver copy */
+  --copy-3: #dfe5ea;      /* broker copy */
+  --copy-4: #d6d3c9;      /* billing copy */
+  --steel: #2e4a63;       /* preprinted header, buttons */
+  --orange: #e3641c;      /* safety orange: the one accent */
+  --ink: #1f3346;         /* printed and typed text */
+  --ink-2: #53636f;
+  --stamp: #b8322a;
+  --check: #1f7a4a;
+  --head: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif;
+  --typed: 'Courier Prime', 'Courier New', monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 17px/1.55 var(--head);
+       background-image: repeating-linear-gradient(0deg, transparent 0 31px, rgb(31 51 70 / 6%) 31px 32px); }
+.in { max-width: 1160px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3, p { margin: 0; }
+a { color: var(--steel); }
+:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+
+/* Coming soon banner */
+.banner { background: var(--orange); color: #1b0c02; }
+.banner .in { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; padding-block: 11px; text-align: center; }
+.banner p { font: 700 15px/1.3 var(--head); letter-spacing: .02em; }
+.banner p b { font-weight: 700; text-transform: uppercase; letter-spacing: .12em; margin-right: 8px; }
+.banner a { display: inline-block; background: #1b0c02; color: #fff; padding: 9px 14px 8px; font: 700 13px/1 var(--head); letter-spacing: .1em;
+            text-transform: uppercase; text-decoration: none; }
+
+/* Preprinted header */
+.top { background: var(--steel); color: #fff; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; }
+.top .in { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-block: 14px; }
+.mark { color: #fff; text-decoration: none; font: 700 22px/1 var(--head); letter-spacing: .02em; text-transform: uppercase; }
+.mark small { display: block; font: 400 11px/1.4 var(--typed); letter-spacing: .03em; text-transform: none; color: rgb(255 255 255 / 75%); margin-top: 3px; }
+
+/* Form parts */
+.lbl { display: block; font: 700 10.5px/1 var(--head); letter-spacing: .13em; text-transform: uppercase; color: var(--steel); margin-bottom: 9px; }
+.typed { font: 400 15.5px/1.4 var(--typed); }
+.copytag { position: absolute; right: -2px; top: -28px; background: var(--ink); color: #fff; font: 700 10.5px/1 var(--head); letter-spacing: .14em;
+           text-transform: uppercase; padding: 7px 10px 6px; }
+.form-sheet { position: relative; border: 2px solid var(--ink); }
+.perf::before, .perf::after { content: ""; position: absolute; left: -2px; right: -2px; height: 10px;
+           background: radial-gradient(circle at 6px 5px, var(--page) 3.5px, transparent 4px) 0 0 / 14px 10px repeat-x; }
+.perf::before { top: -11px; } .perf::after { bottom: -11px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 22px; border: 2px solid var(--steel); background: var(--steel);
+       color: #fff; font: 700 14px/1 var(--head); letter-spacing: .1em; text-transform: uppercase; text-decoration: none; cursor: pointer; }
+.btn.out { background: transparent; color: var(--ink); border-color: var(--ink); }
+.btn.go { background: var(--orange); border-color: var(--orange); color: #1b0c02; }
+.btn:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .6; cursor: default; }
+
+/* The ticket */
+.hero { padding-block: 70px 64px; }
+.ticket { background: var(--copy-2); }
+.row { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); border-bottom: 1px solid var(--ink); }
+.row:last-child { border-bottom: 0; }
+.cell { padding: 14px 18px 16px; border-right: 1px solid var(--ink); min-width: 0; }
+.cell:last-child { border-right: 0; }
+.s8 { grid-column: span 8; } .s4 { grid-column: span 4; } .s3 { grid-column: span 3; }
+.ticket h1 { font: 700 clamp(50px, 8.6vw, 116px)/.88 var(--head); letter-spacing: -.02em; text-transform: uppercase; }
+.ticket h1 span { display: block; width: fit-content; margin-top: .04em; padding: 0 .06em;
+                  background: linear-gradient(transparent 52%, color-mix(in srgb, var(--orange) 55%, transparent) 52% 92%, transparent 92%); }
+.lede { font-size: 19px; max-width: 36em; margin-top: 18px; }
+.btns { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+.checks { display: grid; gap: 7px; }
+.checks div { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; font: 400 14.5px/1.35 var(--typed); align-items: baseline; }
+.checks .tk { color: var(--check); font-weight: 700; }
+.checks em { font-style: normal; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+.stamp { position: absolute; right: 4%; bottom: 14px; border: 5px solid var(--stamp); color: var(--stamp); padding: 12px 18px 8px; transform: rotate(-11deg);
+         font: 700 46px/1 var(--head); letter-spacing: .08em; opacity: .86; mix-blend-mode: multiply; pointer-events: none;
+         mask-image: radial-gradient(circle at 30% 40%, #000 55%, rgb(0 0 0 / 55%) 80%); }
+.stamp small { display: block; font: 700 12px/1.3 var(--typed); letter-spacing: 0; margin-top: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .stamp { animation: slam .5s cubic-bezier(.2, 1.7, .5, 1) .7s both; }
+  @keyframes slam { from { transform: rotate(-11deg) scale(2.2); opacity: 0; } }
+}
+
+/* Sections */
+section { padding-block: 40px 76px; }
+.sh { display: grid; gap: 12px; max-width: 46rem; margin-bottom: 40px; }
+.sh .no { font: 700 13px/1 var(--typed); color: var(--orange); }
+.sh h2 { font: 700 clamp(34px, 5vw, 62px)/.95 var(--head); text-transform: uppercase; letter-spacing: -.01em; }
+.sh h2 em { font-style: normal; color: var(--steel); }
+.sh p { font-size: 18.5px; color: var(--ink-2); }
+
+/* Four jobs, four copies */
+.jobs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.job { position: relative; border: 2px solid var(--ink); padding: 40px 20px 22px; display: grid; gap: 10px; align-content: start; }
+.job::before { content: attr(data-copy); position: absolute; left: 0; right: 0; top: 0; background: var(--ink); color: #fff; font: 700 10.5px/1 var(--head);
+               letter-spacing: .14em; text-transform: uppercase; padding: 7px 20px 6px; }
+.job:nth-child(1) { background: var(--copy-white); } .job:nth-child(2) { background: var(--copy-2); }
+.job:nth-child(3) { background: var(--copy-3); } .job:nth-child(4) { background: var(--copy-4); }
+.job b { font: 700 13px/1 var(--typed); color: var(--orange); }
+.job h3 { font: 700 26px/1 var(--head); text-transform: uppercase; }
+.job p { font-size: 15.5px; color: var(--ink-2); }
+.job ul { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 7px; font: 400 14px/1.35 var(--typed); }
+.job li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; }
+.job li::before { content: "■"; color: var(--orange); font-size: 10px; line-height: 1.9; }
+
+/* Notice of stop */
+.stopwrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+.points { display: grid; gap: 20px; }
+.points h3 { font: 700 20px/1.15 var(--head); text-transform: uppercase; margin-bottom: 6px; }
+.points p { color: var(--ink-2); font-size: 16px; }
+.notice { background: var(--copy-white); }
+.notice .bar { background: var(--stamp); color: #fff; padding: 10px 18px 9px; font: 700 13px/1 var(--head); letter-spacing: .16em; text-transform: uppercase;
+               display: flex; justify-content: space-between; gap: 12px; }
+.notice .cell { border-right: 0; }
+.notice .cell + .cell { border-top: 1px solid var(--ink); }
+.leg { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 12px; padding: 9px 0; border-bottom: 1px dotted var(--ink); font: 400 14.5px/1.3 var(--typed); align-items: baseline; }
+.leg:last-child { border-bottom: 0; }
+.leg .x { color: var(--stamp); font-weight: 700; letter-spacing: .06em; }
+
+/* Before, during, after - a real sequence, so the parts are lettered */
+.parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--copy-white); }
+.part { padding: 22px 22px 24px; border-right: 1px solid var(--ink); display: grid; gap: 10px; align-content: start; min-width: 0; }
+.part:last-child { border-right: 0; }
+.part h3 { font: 700 23px/1.1 var(--head); text-transform: uppercase; }
+.part ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; color: var(--ink-2); font-size: 15.5px; }
+
+/* Beta tester form */
+.apply { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 48px; align-items: start; }
+.deal { display: grid; gap: 24px; }
+.deal h3 { font: 700 14px/1 var(--head); letter-spacing: .14em; text-transform: uppercase; color: var(--steel); margin-bottom: 10px; }
+.deal ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; font: 400 15px/1.4 var(--typed); }
+.deal li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
+.deal li::before { content: "✓"; color: var(--check); font-weight: 700; }
+form { background: var(--copy-3); display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 28px; }
+form label { padding: 11px 14px 13px; border-right: 1px solid var(--ink); border-bottom: 1px solid var(--ink); display: grid; gap: 6px; min-width: 0;
+             font: 700 10.5px/1 var(--head); letter-spacing: .12em; text-transform: uppercase; color: var(--steel); }
+form label.end { border-right: 0; }
+form input, form select, form textarea { width: 100%; border: 0; border-bottom: 1px dotted var(--ink); background: transparent; color: var(--ink);
+             font: 400 17px/1.4 var(--typed); padding: 4px 0; min-height: 36px; border-radius: 0; }
+form textarea { min-height: 70px; resize: vertical; }
+form input:focus, form select:focus, form textarea:focus { outline: none; background: rgb(255 255 255 / 45%); }
+.f3 { grid-column: span 3; } .f2 { grid-column: span 2; } .f6 { grid-column: span 6; }
+.trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.sendrow { grid-column: span 6; display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 14px; flex-wrap: wrap; }
+.sendrow span { font: 400 13px/1.35 var(--typed); color: var(--ink-2); max-width: 26em; }
+.said { grid-column: span 6; padding: 12px 14px; border-bottom: 1px solid var(--ink); background: color-mix(in srgb, var(--stamp) 14%, transparent);
+        font: 700 15px/1.35 var(--head); }
+.done { grid-column: span 6; padding: 28px 22px; display: grid; gap: 10px; position: relative; min-height: 180px; }
+.done b { font: 700 34px/1 var(--head); text-transform: uppercase; }
+.done p { font: 400 15.5px/1.45 var(--typed); max-width: 30em; }
+.done .stamp { bottom: 22px; font-size: 34px; }
+
+
+/* Exhibits: real screens from the app, stapled to the form they illustrate. */
+.exhibits { display: grid; gap: 18px; margin-top: 34px; }
+.ex-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, .5fr); gap: 18px; align-items: start; }
+.exhibit { position: relative; margin: 0; background: #fff; border: 2px solid var(--ink); padding: 8px; box-shadow: 6px 6px 0 rgb(31 51 70 / 14%); }
+.exhibit a { display: block; }
+.exhibit img { display: block; width: 100%; height: auto; border: 1px solid rgb(31 51 70 / 20%); }
+.exhibit .tab { position: absolute; left: -2px; top: -26px; background: var(--steel); color: #fff; font: 700 10.5px/1 var(--head); letter-spacing: .14em;
+                text-transform: uppercase; padding: 7px 10px 6px; }
+.exhibit figcaption { font: 400 12.5px/1.35 var(--typed); color: var(--ink-2); padding: 8px 2px 0; }
+.exhibit.phone { max-width: 300px; justify-self: center; }
+
+
+/* Each box beside the screen that shows it, alternating sides. */
+.pairs { display: grid; gap: 56px; }
+.pair { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.5fr); gap: 32px; align-items: center; }
+.pair.flip { grid-template-columns: minmax(0, 1.5fr) minmax(0, .8fr); }
+.pair.flip > :first-child { order: 2; }
+.pair.phone { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); justify-content: center; }
+.pair.phone .job { max-width: 420px; justify-self: end; }
+.job.c1 { background: var(--copy-white); } .job.c2 { background: var(--copy-2); } .job.c3 { background: var(--copy-3); } .job.c4 { background: var(--copy-4); }
+.stoptop { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: end; margin-bottom: 40px; }
+.proofpair { grid-template-columns: minmax(0, .8fr) minmax(0, 1.5fr); align-items: start; }
+.proofpair .parts { grid-template-columns: minmax(0, 1fr); }
+.proofpair .part { border-right: 0; border-bottom: 1px solid var(--ink); padding: 16px 18px 18px; }
+.proofpair .part:last-child { border-bottom: 0; }
+.proofpair .part h3 { font-size: 19px; }
+.proofpair .part ul { font-size: 14.5px; }
+
+/* Each box the same size as the screen beside it. */
+.pair, .pair.flip, .proofpair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; }
+.pair.phone { grid-template-columns: 340px 340px; justify-content: center; }
+.pair.phone .job { max-width: none; justify-self: stretch; }
+.pair > .job, .pair > .form-sheet { height: 100%; }
+.pair > .exhibit { display: flex; flex-direction: column; }
+.pair > .exhibit figcaption { margin-top: auto; }
+.pair .job { align-content: start; }
+
+/* The driver app: the box full width, its screens in a row beneath it. */
+.appstrip { display: grid; gap: 44px; }
+.appstrip .job { padding-bottom: 20px; }
+.appstrip .job ul { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.phones { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
+.phones .exhibit.phone { max-width: none; display: flex; flex-direction: column; }
+.phones .exhibit figcaption { margin-top: auto; }
+
+footer { background: var(--steel); color: #fff; }
+footer .in { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; padding-block: 26px 30px; font: 400 14px/1.4 var(--typed); }
+footer b { font-weight: 700; user-select: all; }
+
+@media (max-width: 960px) {
+  .row { grid-template-columns: minmax(0, 1fr); }
+  .row .cell { grid-column: auto; border-right: 0; border-bottom: 1px solid var(--ink); }
+  .row .cell:last-child { border-bottom: 0; }
+  .jobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stopwrap, .apply { grid-template-columns: minmax(0, 1fr); }
+  .parts { grid-template-columns: minmax(0, 1fr); }
+  .ex-row, .pair, .pair.flip, .pair.phone, .proofpair, .stoptop { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+  .pair > .job, .pair > .form-sheet { height: auto; }
+  .phones { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 14px; }
+  .appstrip .job ul { grid-template-columns: minmax(0, 1fr); }
+  .pair.flip > :first-child { order: 0; }
+  .pair.phone .job { max-width: none; justify-self: stretch; }
+  .part { border-right: 0; border-bottom: 1px solid var(--ink); }
+  .part:last-child { border-bottom: 0; }
+  .stamp { font-size: 30px; }
+}
+@media (max-width: 560px) {
+  .jobs { grid-template-columns: minmax(0, 1fr); }
+  .f3, .f2 { grid-column: span 6; }
+  form label { border-right: 0; }
+  .leg { grid-template-columns: minmax(0, 1fr) auto; } .leg .t { grid-column: 1 / -1; }
+  .hero { padding-block: 48px 52px; }
+}
+
+/* This page: a long heading on the ticket, a two-by-two sheet, and the status sheet. */
+.ticket h1.long { font: 700 clamp(36px, 5.4vw, 70px)/.95 var(--head); letter-spacing: -.01em; text-transform: uppercase; }
+.parts.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.parts.two .part:nth-child(even) { border-right: 0; }
+.parts.two .part:nth-child(-n+2) { border-bottom: 1px solid var(--ink); }
+.s12 { grid-column: span 12; }
+.more { display: grid; gap: 12px; padding-block: 22px 24px; }
+.more .lbl { margin-bottom: 0; }
+.more h2 { font: 700 clamp(26px, 3.4vw, 40px)/1 var(--head); text-transform: uppercase; }
+.more p { font-size: 18px; max-width: 46em; }
+.more p.typed { font-size: 15.5px; color: var(--orange); font-weight: 700; }
+.parts.one { grid-template-columns: minmax(0, 1fr); }
+.caps + .portalsheet, .portalsheet + .caps { margin-top: 24px; }
+.portalsheet { background: var(--copy-2); padding: 26px 28px 28px; display: grid; gap: 10px; }
+.portalsheet h2 { font: 700 clamp(26px, 3.4vw, 40px)/1 var(--head); text-transform: uppercase; }
+.portalsheet .portalsub { font: 700 clamp(18px, 2vw, 22px)/1.25 var(--head); color: var(--steel); text-transform: uppercase; }
+.portalsheet p, .portalsheet li { font-size: 16.5px; color: var(--ink-2); max-width: 52rem; }
+.portalsheet .portalbold { font-weight: 700; color: var(--ink); margin-top: 6px; }
+.portalsheet ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.portalsheet .portalmotto { font: 700 15px/1.4 var(--typed); color: var(--orange); text-transform: uppercase; margin-top: 8px; }
+#capabilities { padding-block: 0 76px; }
+.caps .part h2 { font: 700 23px/1.1 var(--head); text-transform: uppercase; }
+.caps .part p { color: var(--ink-2); font-size: 15.5px; }
+.launch { margin-top: 18px; color: var(--orange); font-weight: 700; }
+.pair.cbd, .pair.flip.cbd { margin-bottom: 40px; align-items: start; }
+.cbdparts { grid-template-columns: minmax(0, 1fr); }
+.cbdparts .part { border-right: 0; border-bottom: 1px solid var(--ink); }
+.cbdparts .part:last-child { border-bottom: 0; }
+.cbdparts .part p, .cbdparts .part li { color: var(--ink-2); font-size: 16px; }
+.cbdparts .part ul { margin: 0; }
+.sh p b { color: var(--ink); }
+.sh .cbd-sub { font: 700 clamp(19px, 2.2vw, 24px)/1.25 var(--head); color: var(--steel); text-transform: uppercase; }
+.cbd-motto { font: 700 15px/1.4 var(--typed); color: var(--orange); text-transform: uppercase; letter-spacing: .04em; }
+.faq { background: var(--copy-white); display: grid; max-width: 60rem; }
+.faq .qa { padding: 20px 24px 22px; border-bottom: 1px solid var(--ink); display: grid; gap: 8px; }
+.faq h3 { font: 700 21px/1.15 var(--head); text-transform: uppercase; color: var(--ink); }
+.faq p { color: var(--ink-2); font-size: 16.5px; }
+.faq .more-link { padding: 18px 24px 20px; color: var(--ink); }
+.cta { background: var(--copy-2); padding: 26px 24px; display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+.cta h2 { font: 700 clamp(26px, 3.4vw, 40px)/1 var(--head); text-transform: uppercase; }
+.cta p { color: var(--ink-2); margin-top: 8px; }
+@media (max-width: 960px) {
+  .parts.two,   .parts.two .part { border-right: 0; border-bottom: 1px solid var(--ink); }
+  .parts.two .part:last-child { border-bottom: 0; }
+  }
+.top nav { display: flex; align-items: center; gap: 20px; }
+.top nav a { color: #fff; text-decoration: none; font: 700 13px/1 var(--head); letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; }
+@media (max-width: 960px) { .top nav a:not(.login) { display: none; } }
+footer a.social { display: inline-flex; color: rgb(255 255 255 / 85%); transition: color .15s; }
+footer a.social:hover, footer a.social:focus-visible { color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <div class="in">
+    <p><b>Coming Soon</b>Click "Become A Tester" to sign up for beta testing our product.</p>
+    <a href="/#apply">Become A Tester</a>
+  </div>
+</div>
+
+<header class="top">
+  <div class="in">
+    <a class="mark" href="/">TripProof Online<small>NEMT Dispatch, Compliance &amp; Billing Software.</small></a>
+    <nav aria-label="Site">
+      <a href="/nemt-software/">NEMT Software</a>
+      <a href="/facility-portal/">Facility Portal</a>
+      <a href="/broker/">For Brokers</a>
+      <a href="/pricing/">Pricing</a>
+      <a href="/about/">About</a>
+      <a href="/contact/">Contact</a>
+      <a class="login" href="https://dev.tripproofonline.com/login">Log In</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+<div class="hero">
+  <div class="in">
+    <div class="form-sheet ticket">
+      <div class="row">
+        <div class="cell s8"><span class="lbl">NEMT Management Software</span>
+          <h1 class="long">NEMT Management Software for Dispatch, Compliance &amp; Billing</h1>
+          <p class="lede">TripProof Online brings non-emergency medical transportation operations together in one system. From scheduling trips and managing driver qualifications to vehicle compliance, proof of service, and billing, TripProof is designed to help transportation providers operate efficiently while maintaining defensible records.</p>
+          <div class="btns"><a class="btn go" href="/#apply">Become A Tester</a><a class="btn out" href="/#proof">See How A Trip Is Proven</a></div>
+        </div>
+        <div class="cell s4"><span class="lbl">Status</span>
+          <p class="typed">IN BETA.<br>RECRUITING BETA TESTERS NATIONWIDE.</p>
+          <span class="lbl" style="margin-top:24px">Built For</span>
+          <div class="checks">
+            <div><span class="tk">✓</span><span>NEMT transportation companies</span></div>
+            <div><span class="tk">✓</span><span>Dispatchers and office staff</span></div>
+            <div><span class="tk">✓</span><span>Drivers, on their phones</span></div>
+            <div><span class="tk">✓</span><span>Medicaid brokers and payers</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="cell s12 more">
+          <h2>More Than Dispatch Software</h2>
+          <p>Unlike systems focused primarily on scheduling and routing, TripProof is being built around a compliance-first approach.</p>
+          <p>Before a trip is assigned, the system is designed to evaluate whether the driver and vehicle meet applicable requirements. From there, trip documentation and billing records are connected to the same operational workflow.</p>
+          <p class="typed">Currently recruiting beta testers nationwide.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section id="capabilities">
+  <div class="in">
+    <div class="form-sheet parts one caps">
+      <div class="part">
+        <h2>NEMT Dispatch &amp; Trip Scheduling</h2>
+        <p>Manage scheduled trips, driver assignments, vehicle availability, and transportation requests from one centralized system.</p>
+        <p>TripProof Online is being designed to help NEMT providers coordinate daily transportation operations, manage return trips and will-call requests, and maintain accurate trip records throughout the transportation process.</p>
+      </div>
+    </div>
+    <div class="form-sheet portalsheet" id="facility-portal">
+      <h2>Facility Scheduling Portal</h2>
+      <h3 class="portalsub">Your Facilities Request the Trips. Your Dispatch Team Makes the Decisions.</h3>
+      <p>Give nursing homes, assisted living facilities, dialysis centers, rehabilitation centers, and other healthcare facilities a convenient way to request transportation directly through TripProof Online.</p>
+      <p>Authorized facility users can securely log into their own portal, access only their facility's permitted information, and submit transportation requests with pickup and drop-off details.</p>
+      <p class="portalbold">Every request goes through dispatch.</p>
+      <p>Just like broker-submitted trips, facility transportation requests enter the provider's dispatch workflow and must be explicitly accepted or rejected.</p>
+      <p>A submitted request is not automatically a confirmed trip.</p>
+      <p class="portalbold">Designed for NEMT Providers and Their Facility Partners</p>
+      <ul>
+        <li>Give facilities their own secure transportation request portal.</li>
+        <li>Reduce phone calls, emails, and manual trip entry.</li>
+        <li>Keep each facility's information separated from other facilities.</li>
+        <li>Review, accept, or reject requests from dispatch.</li>
+        <li>Manage facility requests alongside broker and other transportation trips.</li>
+      </ul>
+      <p class="portalmotto">Facilities submit. Dispatch approves. TripProof keeps everything connected.</p>
+    </div>
+    <div class="form-sheet parts caps">
+      <div class="part">
+        <h2>Driver Qualification &amp; Compliance Management</h2>
+        <p>Driver compliance is at the center of TripProof Online.</p>
+        <p>The platform is designed to track driver qualifications, license expirations, medical certifications where applicable, background screening records, required training, and other documentation.</p>
+        <p>TripProof's compliance-first assignment process is intended to help prevent drivers from being assigned to trips when they do not meet applicable federal, state, or payer-specific requirements.</p>
+      </div>
+      <div class="part">
+        <h2>Vehicle Compliance &amp; Inspection Tracking</h2>
+        <p>TripProof connects vehicle records and inspection information with the dispatch process.</p>
+        <p>Transportation providers will be able to manage vehicle documentation, inspection records, maintenance-related restrictions, and other applicable vehicle compliance requirements.</p>
+        <p>The objective is to help ensure that vehicles meet the relevant requirements before being assigned to passenger transportation.</p>
+      </div>
+      <div class="part">
+        <h2>NEMT Proof of Service &amp; Billing</h2>
+        <p>TripProof is being developed to connect transportation activities with the documentation needed to support billing.</p>
+        <p>The system is designed to capture trip information such as pickup and drop-off activity, timestamps, location records, and passenger signatures when required.</p>
+        <p>By connecting dispatch, trip documentation, and billing, TripProof aims to reduce disconnected workflows and make transportation records easier to review, reconcile, and audit.</p>
+      </div>
+    </div>
+    <p class="typed launch">TripProof Online is currently preparing for launch and recruiting beta testers nationwide.</p>
+  </div>
+</section>
+
+<section id="who">
+  <div class="in">
+    <div class="sh">
+      <span class="no">Who It Is For</span>
+      <h2>Made for the people <em>who run the trips.</em></h2>
+      <p>TripProof is built for NEMT providers doing Medicaid broker trips, private-pay trips or both, from a few vehicles to a full fleet, and is run by dispatchers rather than compliance specialists.</p>
+    </div>
+    <div class="form-sheet parts">
+      <div class="part"><span class="lbl">The Owner</span><h3>One system instead of three</h3>
+        <ul><li>Dispatch, driver files and billing in one place, sharing one record of each trip.</li><li>Know which drivers and vehicles can work today, and why any cannot.</li><li>Ready for a broker audit without assembling the file afterwards.</li></ul></div>
+      <div class="part"><span class="lbl">The Dispatcher</span><h3>A board that will not let a mistake through</h3>
+        <ul><li>Book trips, auto assign the day and handle will-calls and on-call cover.</li><li>A driver who may not drive is never offered for the trip.</li><li>Problems from the road arrive on the board as they happen.</li></ul></div>
+      <div class="part"><span class="lbl">The Driver</span><h3>The day's trips on the phone</h3>
+        <ul><li>Each trip in order, with navigation handed to the phone's own maps.</li><li>On the way, arrived, aboard and dropped off, one tap each.</li><li>Passenger signature, waiting time and vehicle checks on the same screen.</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="in">
+    <div class="sh">
+      <span class="no">What It Does</span>
+      <h2>Four jobs. <em>One record.</em></h2>
+    </div>
+    <div class="form-sheet parts two">
+      <div class="part"><span class="lbl">Dispatch And Scheduling</span><h3>Book, assign and run the day</h3>
+        <ul><li>Trip booking with one or more legs, and will-calls.</li><li>Auto Assign for the day's trips across the drivers working that day.</li><li>Wheelchair trips matched to lift vehicles and trained drivers.</li><li>On-call cover for pickups outside office hours.</li><li>A driver out sick taken off their trips in one action.</li></ul></div>
+      <div class="part"><span class="lbl">Driver And Vehicle Compliance</span><h3>Every file, checked the day of the trip</h3>
+        <ul><li>Licenses, driving records, screenings, training and vehicle documents, with expiry dates tracked.</li><li>OIG and SAM federal exclusion lists screened every day.</li><li>A disqualifying driving record stops that driver's trips until it is cleared.</li><li>An online driver application with electronic signatures.</li></ul></div>
+      <div class="part"><span class="lbl">Driver App And Proof Of Service</span><h3>The trip recorded as it happens</h3>
+        <ul><li>Each step of the trip with its time and GPS position.</li><li>The route driven and the miles, shown on a map in the trip record.</li><li>The passenger's signature at drop-off, or the driver's reason why not.</li><li>Pre-trip vehicle inspections filed from the phone.</li></ul></div>
+      <div class="part"><span class="lbl">NEMT Billing</span><h3>From a driven trip to payment</h3>
+        <ul><li>Trips priced from your own fee schedules, including no-shows and late cancels.</li><li>Each broker's rules applied before a trip is billed: mileage caps, wait limits, billing deadlines, trip numbers and signatures.</li><li>Broker batches and private-pay invoices with reminders.</li><li>Payments, short pays, denials and write-downs tracked until settled.</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="difference">
+  <div class="in">
+    <div class="sh">
+      <span class="no">Compliance First</span>
+      <h2>Checked before the trip, <em>not after the audit.</em></h2>
+      <p>In traditional NEMT dispatch software the trip is scheduled in one place and the driver's qualifications live somewhere else, usually a spreadsheet or a filing cabinet. Nobody connects the two until an auditor asks. TripProof makes the check part of the assignment.</p>
+    </div>
+    <div class="form-sheet parts">
+      <div class="part"><span class="lbl">A. A Stop Is A Stop</span><h3>Refused, not warned</h3>
+        <ul><li>An assignment that breaks a rule is refused with the reason named, not shown as a warning someone can click past.</li></ul></div>
+      <div class="part"><span class="lbl">B. Caught When It Changes</span><h3>Rechecked on the spot</h3>
+        <ul><li>When a license lapses or a driving record comes back disqualifying, every trip that driver holds in the next month is checked again and flagged for dispatch.</li></ul></div>
+      <div class="part"><span class="lbl">C. The Proof Is The Record</span><h3>Nothing to assemble later</h3>
+        <ul><li>Each trip keeps the checks it passed, its timeline, its route and its signature, added to and never quietly changed.</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="compliance-before-dispatch">
+  <div class="in">
+    <div class="sh">
+      <span class="no">Enforcement</span>
+      <h2>Compliance Before Dispatch</h2>
+      <h3 class="cbd-sub">Don't Just Track Compliance. Enforce It.</h3>
+      <p>Knowing that a driver is disqualified isn't enough. Transportation management software should help prevent that driver from being assigned to a trip.</p>
+      <p><b>TripProof Online connects driver qualification decisions directly to dispatch.</b></p>
+    </div>
+    <div class="pair cbd">
+      <div class="form-sheet parts cbdparts">
+        <div class="part"><h3>Identify the Problem</h3>
+          <p>TripProof evaluates driver qualifications against applicable federal, state, and payer-specific requirements configured in the platform.</p>
+          <p>When a driver fails a required qualification, TripProof identifies the issue and explains the reason.</p></div>
+      </div>
+      <figure class="exhibit"><span class="tab">Exhibit 1</span><a href="../img/driver-disqualified-record.jpg" target="_blank" rel="noopener"><img src="../img/driver-disqualified-record.jpg" alt="A driver's qualification record in TripProof showing a disqualifying driving record and the reason" loading="lazy"></a><figcaption>DRIVER RECORD · DISQUALIFIED, WITH THE REASON · ACTUAL SCREEN, TEST DATA</figcaption></figure>
+    </div>
+    <div class="pair flip cbd">
+      <div class="form-sheet parts cbdparts">
+        <div class="part"><h3>Automatically Restrict Assignments</h3>
+          <p>TripProof does more than display compliance warnings.</p>
+          <p>When a driver is disqualified, the platform prevents that driver from being scheduled or assigned through:</p>
+          <ul>
+            <li>Daily driver and on-call scheduling</li>
+            <li>Manual trip assignments</li>
+            <li>Automatic trip assignments</li>
+          </ul>
+          <p>These restrictions are enforced by the backend, not simply by disabling a button in the user interface.</p></div>
+        <div class="part"><h3>Know Why a Driver Cannot Be Assigned</h3>
+          <p>Dispatchers can see the disqualifying condition, while the driver's qualification records provide additional details and supporting documentation.</p>
+          <p>This helps transportation providers understand why an assignment was rejected and what needs to be addressed.</p></div>
+      </div>
+      <figure class="exhibit"><span class="tab">Exhibit 2</span><a href="../img/whos-driving-today.jpg" target="_blank" rel="noopener"><img src="../img/whos-driving-today.jpg" alt="The Who's Driving Today list in TripProof with disqualified drivers unavailable and the reason shown" loading="lazy"></a><figcaption>WHO'S DRIVING TODAY · DISQUALIFIED DRIVERS CANNOT BE CHOSEN · ACTUAL SCREEN, TEST DATA</figcaption></figure>
+    </div>
+    <div class="form-sheet cta cbdclose">
+      <div><h2>Compliance That Works With Dispatch</h2>
+        <p>By connecting driver qualification records with scheduling and assignment decisions, TripProof helps transportation providers prevent prohibited assignments before they happen.</p>
+        <p class="cbd-motto">Every Trip. Proven.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="in">
+    <div class="sh">
+      <span class="no">FAQ</span>
+      <h2>Frequently Asked Questions About TripProof Online</h2>
+    </div>
+    <div class="form-sheet faq">
+      <div class="qa">
+        <h3>What is TripProof Online?</h3>
+        <p>TripProof Online is cloud-based non-emergency medical transportation (NEMT) management software that combines trip scheduling, dispatch, driver and vehicle compliance, GPS-supported proof of service, and billing in one system. It is developed by Arrowleaf Technologies, LLC.</p>
+      </div>
+      <div class="qa">
+        <h3>How is TripProof different from traditional NEMT dispatch software?</h3>
+        <p>TripProof takes a compliance-first approach. Rather than treating driver qualifications and vehicle requirements as separate administrative records, TripProof connects eligibility checks directly to trip assignments. The goal is to prevent assignments that violate configured requirements and maintain supporting documentation for each trip.</p>
+      </div>
+      <div class="qa">
+        <h3>Does TripProof check driver and vehicle compliance before dispatch?</h3>
+        <p>Yes. TripProof's beta platform includes qualification and expiration tracking, exclusion screening, and driver and vehicle assignment restrictions. Compliance coverage depends on the applicable requirements and configured rule sets. Additional state-specific NEMT requirements are being developed.</p>
+      </div>
+      <div class="qa">
+        <h3>Does TripProof integrate with NEMT brokers such as Modivcare and MTM?</h3>
+        <p>TripProof currently supports entering trips directly and importing trips from files. Direct connections to broker trip feeds are under development. Availability of individual broker integrations will depend on the broker and supported integration methods.</p>
+      </div>
+      <div class="qa">
+        <h3>Does TripProof have a mobile app for drivers?</h3>
+        <p>TripProof currently offers a mobile-friendly driver application accessed through a phone's web browser. Dedicated Android and iPhone applications are in development.</p>
+      </div>
+      <div class="qa">
+        <h3>Is TripProof Online available for purchase?</h3>
+        <p>TripProof Online is currently in beta testing and is not yet generally available for commercial purchase. Selected NEMT transportation providers can apply to participate in the beta program and help shape the platform's development.</p>
+      </div>
+      <p class="more-link">Visit <a href="https://tripproofonline.com/">https://tripproofonline.com</a> to learn more.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="in">
+    <div class="form-sheet cta">
+      <div><h2>Run your trips on TripProof.</h2>
+        <p>Beta testers get the full system and a direct line to the people building it.</p></div>
+      <a class="btn go" href="/#apply">Become A Tester</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="in">
+    <span><b>TripProof Online</b> · Every trip. Proven.</span>
+    <span>Email <b>support@tripproofonline.com</b> · Phone <b>(727) 207-5512</b></span>
+    <a class="social" href="https://www.linkedin.com/company/tripproofonline/"
+       target="_blank"
+       rel="noopener noreferrer"
+       aria-label="Follow TripProof Online on LinkedIn">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+    </a>
+  </div>
+</footer>
+</body>
+</html>

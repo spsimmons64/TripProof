@@ -2,7 +2,7 @@ import { Printer } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { auth } from '../lib/api.js'
 import { Modal } from '../admin/common.jsx'
-import { printFile } from '../lib/printing.js'
+import { inertHtml, printFile, printInertHtml } from '../lib/printing.js'
 import { useUser } from '../App.jsx'
 
 // Any stored file, read on screen rather than thrown into a browser tab.
@@ -19,6 +19,23 @@ import { useUser } from '../App.jsx'
 // The document itself, with no dialog around it - for a screen that reads one in place rather than
 // opening it. The fetching is the same: the session is a bearer token rather than a cookie, so the
 // file is pulled with the header on and shown from memory.
+// What was fetched, ready to show: a PDF, an HTML document made inert, or anything else as an image.
+async function readBlob(blob, name) {
+  if ((blob.type || '').startsWith('text/html')) {
+    return { html: inertHtml(await blob.text()), name }
+  }
+  return { url: URL.createObjectURL(blob), pdf: blob.type === 'application/pdf', name }
+}
+
+// One document on screen. HTML is shown in a frame that may not run scripts or reach this page.
+function Shown({ file, className }) {
+  if (file.html) return <iframe className={className} sandbox="" srcDoc={file.html} title={file.name} />
+  return file.pdf
+    ? <embed className={className} src={`${file.url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+        type="application/pdf" />
+    : <img className={className} src={file.url} alt={file.name} />
+}
+
 export function DocumentPane({ id, name, className = 'docview' }) {
   const [file, setFile] = useState(null)
   const [err, setErr] = useState(null)
@@ -29,9 +46,9 @@ export function DocumentPane({ id, name, className = 'docview' }) {
     fetch(`/api/documents/${id}`, { headers: { Authorization: `Bearer ${auth.get()}` } })
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail || 'That file could not be opened')
-        const blob = await r.blob()
-        url = URL.createObjectURL(blob)
-        if (live) setFile({ url, pdf: blob.type === 'application/pdf', name: name || 'Document' })
+        const got = await readBlob(await r.blob(), name || 'Document')
+        url = got.url || null
+        if (live) setFile(got)
       })
       .catch((e) => live && setErr(e.message))
     return () => { live = false; if (url) URL.revokeObjectURL(url) }
@@ -39,10 +56,7 @@ export function DocumentPane({ id, name, className = 'docview' }) {
 
   if (err) return <div className="notice bad">{err}</div>
   if (!file) return <p className="muted">Opening…</p>
-  return file.pdf
-    ? <embed className={className} src={`${file.url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-        type="application/pdf" />
-    : <img className={className} src={file.url} alt={file.name} />
+  return <Shown file={file} className={className} />
 }
 
 // `id` reads a stored document. `path` reads anything else the API will hand back as a
@@ -62,10 +76,10 @@ export default function DocumentViewer({ id, path, name, action, panel, onClose,
           { headers: { Authorization: `Bearer ${auth.get()}` } })
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail || 'That file could not be opened')
-        const blob = await r.blob()
         const filename = /filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '')?.[1]
-        url = URL.createObjectURL(blob)
-        if (live) setFile({ url, pdf: blob.type === 'application/pdf', name: name || filename || 'Document' })
+        const got = await readBlob(await r.blob(), name || filename || 'Document')
+        url = got.url || null
+        if (live) setFile(got)
       })
       .catch((e) => live && setErr(e.message))
     return () => { live = false; if (url) URL.revokeObjectURL(url) }
@@ -80,7 +94,7 @@ export default function DocumentViewer({ id, path, name, action, panel, onClose,
       footer={<>
         {/* The file itself goes to the printer, not the page around it. */}
         {file && (
-          <button type="button" onClick={() => printFile(file.url, file.name)}>
+          <button type="button" onClick={() => (file.html ? printInertHtml(file.html) : printFile(file.url, file.name))}>
             <Printer size={14} /> Print
           </button>
         )}
@@ -94,11 +108,8 @@ export default function DocumentViewer({ id, path, name, action, panel, onClose,
         {brief && <p className="dialogbrief docbrief">{brief}</p>}
         {err && <div className="notice bad readstamp">{err}</div>}
         {!err && !file && <p className="muted readstamp">Opening…</p>}
-        {file && (file.pdf
-          // Something to read, not to operate: the reader's own furniture is turned off.
-          ? <embed className="docview docfill" src={`${file.url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
-              type="application/pdf" />
-          : <img className="docview docfill" src={file.url} alt={file.name} />)}
+        {/* Something to read, not to operate: the reader's own furniture is turned off. */}
+        {file && <Shown file={file} className="docview docfill" />}
         {panel && <div className="docpanel"><hr />{panel}</div>}
       </div>
     </Modal>

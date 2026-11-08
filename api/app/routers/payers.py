@@ -575,6 +575,7 @@ def mis_report(year: int | None = None, user: dict = Depends(current_user),
     The preceding calendar year by default, because that is the year the form asks about: it is
     due by 15 March for the year before it, so somebody opening this in March wants last year
     and would have to think to ask for it."""
+    rules.require_dot(conn, user["accountid"])
     acct = user["accountid"]
     today = localnow(user["timezone"]).date()
     return misreport.collect(conn, acct, year or (today.year - 1))
@@ -583,6 +584,7 @@ def mis_report(year: int | None = None, user: dict = Depends(current_user),
 @router.get("/company/random-pool")
 def random_pool_members(user: dict = Depends(current_user), conn: Connection = Depends(get_conn)):
     """Who is in the pool right now - the only names a draw may produce."""
+    rules.require_dot(conn, user["accountid"])
     acct = user["accountid"]
     return {"drivers": rows(conn, """
         SELECT d.recordid,
@@ -615,6 +617,7 @@ async def record_random_selection(
     conn: Connection = Depends(get_conn),
 ):
     """Record a draw: the day, what it was for, the pool it came from and who made it."""
+    rules.require_dot(conn, user["accountid"])
     acct = user["accountid"]
     if testtype not in RANDOM_RATES:
         raise HTTPException(400, "Say whether the draw was for controlled substances or alcohol")
@@ -656,6 +659,7 @@ async def record_random_selection(
 @router.delete("/company/random-selections/{recordid}")
 def remove_random_selection(recordid: str, request: Request, user: dict = Depends(account_admin),
                             conn: Connection = Depends(get_conn)):
+    rules.require_dot(conn, user["accountid"])
     acct = user["accountid"]
     n = run(conn, """
         UPDATE randomselections SET deleted = :now

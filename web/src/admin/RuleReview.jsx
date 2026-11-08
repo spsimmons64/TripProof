@@ -8,10 +8,9 @@ import { useCanEdit } from './common.jsx'
 
 // Every platform rule, by the qualification it proves, and whether somebody qualified has signed it
 // off as a correct statement of what it cites. Only an approved rule may ever be enforced against
-// a trip; a draft is recorded in shadow and nothing more. Each decision is kept as a new version.
-const CATEGORY = { FEDERAL_GENERAL: 'Federal General', STATE_GENERAL: 'State General',
-  FEDERAL_MEDICAID: 'Federal Medicaid', STATE_MEDICAID: 'State Medicaid',
-  CONTRACT_COMPANY: 'Contract / Company' }
+// a trip; a draft is recorded and nothing more. Each decision is kept as a new version.
+const CATEGORY = { MEDICAID: 'Medicaid', FEDERAL_NEMT: 'Federal NEMT', STATE_NEMT: 'State NEMT', COMPANY: 'Company',
+  BROKER_PAYER: 'Broker & Payer', FMCSA_DOT: 'FMCSA / DOT & CDL' }
 const LABEL = { draft: 'Draft', reviewed: 'Reviewed', approved: 'Approved', retired: 'Retired' }
 
 const COLUMNS = [
@@ -104,7 +103,14 @@ export default function RuleReview() {
                       onClick={(e) => e.stopPropagation()}>{text}</a>
                   : text
               })()}
-            </span></>,
+            </span>
+            {/* Loaded from a requirements file and not in force: approving it brings it in and
+                ends the rule it replaces. */}
+            {r.staged ? (
+              <span className="rowemail keepcase rowsource">
+                {`Staged ${r.sourceref || ''}${r.replaces ? ` - replaces ${r.replaces} when approved` : ' - new'}`}
+              </span>
+            ) : null}</>,
           r.jurisdiction || '-',
           CATEGORY[r.authoritycategory] || '-',
           r.version ?? '-',

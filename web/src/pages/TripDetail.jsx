@@ -237,14 +237,15 @@ export default function TripDetail() {
       })}
       {(trip.texts || []).length > 0 && (
         <div className="card qualcard">
-          <div className="infotabs"><h3>Texts To Drivers</h3></div>
+          <div className="infotabs"><h3>Messages To Drivers</h3></div>
           <div className="panelbody">
             <table className="residencetable recordtable textstable">
-              <thead><tr><th>Sent</th><th>Driver</th><th>Message</th><th>Status</th></tr></thead>
+              <thead><tr><th>Sent</th><th>Driver</th><th>By</th><th>Message</th><th>Status</th></tr></thead>
               <tbody>{trip.texts.map((x) => (
                 <tr key={x.recordid}>
                   <td>{tzDateTime(x.added)}</td>
                   <td>{x.drivername || '-'}</td>
+                  <td>{x.channel === 'push' ? 'App' : 'Text'}</td>
                   <td>{x.body}</td>
                   <td className={x.status === 'delivered' ? 'st-active' : ['sent', 'queued'].includes(x.status) ? undefined : 'st-expired'}>
                     {TEXTSTATUS[x.status] || x.status}{x.status === 'failed' && x.error ? `: ${x.error}` : ''}</td>

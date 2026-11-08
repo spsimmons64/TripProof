@@ -1,0 +1,2394 @@
+{
+  "format": "tripproof-requirements/1",
+  "title": "Georgia Medicaid NEMT Requirements — Research Draft",
+  "prepared_on": "2026-11-07",
+  "prepared_by": "OpenAI research draft for TripProof Online — citations and 2026 revision review required",
+  "requirements": [
+    {
+      "id": "MED-CO-001",
+      "qualification": "GAM-001",
+      "name": "Georgia broker-authorized trip",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Program; Section 100.4",
+      "citation_url": "https://medicaid.georgia.gov/programs/all-programs/non-emergency-medical-transportation/non-emergency-medical-transportation",
+      "citation_text": "All transportation must be scheduled and authorized by the NEMT broker.",
+      "requirement_text": "Before providing a Georgia DCH NEMT trip, confirm assignment/authorization by the designated Medicaid broker.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Trip-level broker authorization and assignment identifier."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-04-01",
+      "notes": "April 2026 statewide broker is Verida; the quote is from DCH NEMT FAQ, not the 2022 manual.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "trip_broker_authorization",
+          "why": "Trip approval and broker assignment must be verifiable."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_broker_authorized_trip",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-002",
+      "qualification": "GAM-002",
+      "name": "Georgia NEMT contracted provider",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Program; Provider Participation",
+      "citation_url": "https://medicaid.georgia.gov/programs/all-programs/non-emergency-medical-transportation/non-emergency-medical-transportation",
+      "citation_text": "Starting April 1, 2026, transportation providers must contact Verida (formerly Southeastrans) to provide NEMT services to our members.",
+      "requirement_text": "Verify the provider has the applicable Verida provider authorization/service agreement to furnish Georgia brokered Medicaid trips.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Current executed Georgia Medicaid broker provider service agreement."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2026-04-01",
+      "notes": "The DCH site names one statewide broker since April 1, 2026.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "ga_broker_provider_authorization",
+          "why": "Contacting Verida is not sufficient evidence of acceptance; must verify active signed authorization."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_nemt_contracted_provider",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-003",
+      "qualification": "GAM-003",
+      "name": "Georgia Medicaid member eligibility",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 100.3",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "verifying the member’s current eligibility status for Medicaid",
+      "requirement_text": "For brokered Georgia NEMT, confirm the Medicaid member eligibility as authorized by the broker for the requested trip.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Broker-verified Medicaid beneficiary eligibility at service date."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.ga_medicaid_member_eligible",
+          "why": "Member eligibility on trip date is not in current facts."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_member_eligibility",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-004",
+      "qualification": "GAM-004",
+      "name": "Georgia Medicaid covered medical purpose",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Program",
+      "citation_url": "https://medicaid.georgia.gov/programs/all-programs/non-emergency-medical-transportation",
+      "citation_text": "members must have no other means of transportation available and are only transported to those medical services covered under the Medicaid program.",
+      "requirement_text": "A Georgia Medicaid NEMT trip must be for a Medicaid-covered purpose when approved by the broker.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Broker determination of Medicaid covered destination/service."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.ga_medicaid_covered_service",
+          "why": "The actual trip destination purpose and service coverage are unavailable as schema facts."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_covered_medical_purpose",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-005",
+      "qualification": "GAM-005",
+      "name": "Georgia Medicaid no alternate transport determination",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Program",
+      "citation_url": "https://medicaid.georgia.gov/programs/all-programs/non-emergency-medical-transportation",
+      "citation_text": "members must have no other means of transportation available",
+      "requirement_text": "The broker must verify the beneficiary has no other available transportation under Georgia NEMT policy.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Broker eligibility decision: no other available transportation."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.member_lacks_other_transport",
+          "why": "This is a broker gatekeeping determination, not a driver document."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_no_alternate_transport_determination",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-006",
+      "qualification": "GAM-006",
+      "name": "Appropriate Georgia NEMT service mode",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 100.8",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "The Broker shall determine the most appropriate mode of transportation based on information provided by the member or their representative.",
+      "requirement_text": "Assign a transport mode matching the broker-approved needs of the member.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Assigned vehicle class compared to broker-approved mode."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.broker_approved_transport_mode",
+          "why": "Trip needs mode: ambulatory, wheelchair, stretcher, etc."
+        },
+        {
+          "kind": "fact",
+          "name": "vehicle.trip_transport_mode_capability",
+          "why": "Vehicle class must support mode and medical equipment."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.appropriate_georgia_nemt_service_mode",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-001",
+      "qualification": "DRV-001",
+      "name": "Georgia Medicaid driver license",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.12(1)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All drivers must be at least twenty-one (21) years of age and have a current valid state issued driver’s license.",
+      "requirement_text": "Each DCH NEMT driver must hold a valid state-issued license appropriate for the vehicle.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "license"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-002",
+      "qualification": "GAD-003",
+      "name": "Georgia Medicaid minimum driver age 21",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.12(1)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All drivers must be at least twenty-one (21) years of age and have a current valid state issued driver’s license.",
+      "requirement_text": "Georgia Medicaid NEMT driver must be at least 21 years old.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "fact",
+        "fact": "driver.age",
+        "gte": 21
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-003",
+      "qualification": "BKG-005",
+      "name": "Georgia Medicaid no disqualifying violent or sexual conviction",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.12(2)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All drivers and attendants must have no prior convictions for a sexual crime or crime of violence.",
+      "requirement_text": "Driver must satisfy Georgia DCH NEMT disqualification rule relating to sexual crimes and crimes of violence.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Current approved criminal-background screening adjudication for the DCH NEMT standard."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "ga_nemt_criminal_adjudication",
+          "why": "An FBI or state background-check document alone cannot establish result and legally relevant disqualification criteria."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_no_disqualifying_violent_or_sexual_conviction",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-004",
+      "qualification": "BKG-006",
+      "name": "Georgia Medicaid DUI lookback",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.12(3)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "The transportation provider shall not utilize drivers who have been convicted of driving under the influence of alcohol, narcotics or drugs/medications within the last five years prior to date of employment.",
+      "requirement_text": "Do not assign a driver disqualified by the five-year pre-employment DUI conviction restriction.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Adjudicated DUI conviction history relative to date of employment."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.ga_nemt_dui_conviction_lookback",
+          "why": "The engine has no adjudicated DUI conviction history by date and time of hire."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_dui_lookback",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-005",
+      "qualification": "BKG-007",
+      "name": "Georgia Medicaid recent felony approved review",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.12(3)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Any person who has been convicted of a felony during the last five (5) years will drive and/or attend passengers only after satisfactory review by the Broker and DCH or its agent.",
+      "requirement_text": "A driver convicted of a felony within the five-year lookback may operate only after satisfactory broker/DCH review.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Date-specific felony screening and, where applicable, broker/DCH approval."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.ga_recent_felony",
+          "why": "Recent felony history not present."
+        },
+        {
+          "kind": "evidence",
+          "name": "ga_felony_approval",
+          "why": "Satisfactory broker and DCH review evidence is not supported."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_recent_felony_approved_review",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-006",
+      "qualification": "GAD-004",
+      "name": "Georgia Medicaid suspended or revoked license history",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.12(4)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Individuals who have had within the last five (5) years or currently have suspended or revoked driver’s license, commercial or other, are prohibited from driving under the NEMT program.",
+      "requirement_text": "Exclude drivers with a prohibited current or five-year license suspension/revocation, considering the child-support exception.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Five-year license suspension/revocation history and approved exception adjudication."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.ga_five_year_license_suspension",
+          "why": "Existing driver.licenseaction covers only self-reported three years, not verified five-year history."
+        },
+        {
+          "kind": "fact",
+          "name": "driver.ga_child_support_suspension_exception",
+          "why": "Must process verified release and 90-day standing exception."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_suspended_or_revoked_license_history",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-007",
+      "qualification": "DRV-003",
+      "name": "Georgia Medicaid three-year driving history in file",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 400.6(5)(c)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "prior driving record for previous three (3) years obtained from Georgia State Patrol;",
+      "requirement_text": "Maintain the driver three-year driving record required in broker transportation provider files.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "driving_record",
+        "lookback_years": 3
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "ga_approved_mvr_source",
+          "why": "2022 policy names Georgia State Patrol; determine whether the 2026 manual accepts Georgia DDS/another authoritative source. The policy imposes broker recordkeeping."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-008",
+      "qualification": "GAD-005",
+      "name": "Georgia Medicaid moving violation disqualification",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.12(5)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Drivers who receive citations and are convicted of two (2) moving violations and/or accidents where the driver was at fault, must be removed from service.",
+      "requirement_text": "Remove a driver who meets the DCH disqualifying moving-violation/at-fault accident rule.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Adjudicated moving violations and at-fault accident history with applicable time basis."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.ga_moving_violations_and_fault_accidents",
+          "why": "Need conviction and accident determinations, and 2026 manual confirmation of count/lookback; quoted 2022 provision does not specify a lookback window."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_moving_violation_disqualification",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-009",
+      "qualification": "TRN-006",
+      "name": "Georgia NEMT driver training completion",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.13",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All drivers must have successfully completed driver training, first aid training and training in the use of a spill kit and the removal of biohazards prior to driving under the NEMT program.",
+      "requirement_text": "Ensure driver training is completed as required before DCH Medicaid transportation, with any approved broker alternative.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "GENERAL_ORIENTATION"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_broker_approved_alternate_training",
+          "why": "Section 300.13 allows broker standards in lieu of the published curriculum if preapproved; default 2022 wording also has 90-day completion sentence creating an apparent timing conflict."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-010",
+      "qualification": "TRN-007",
+      "name": "Georgia Medicaid driver first-aid training",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.13",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All drivers must have successfully completed driver training, first aid training and training in the use of a spill kit and the removal of biohazards prior to driving under the NEMT program.",
+      "requirement_text": "Maintain qualifying first-aid training required by the Georgia DCH NEMT standard.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "FIRST_AID"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_broker_approved_alternate_training",
+          "why": "A DCH-approved broker-specific alternative may control; reconcile training timing with the 90-day clause."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-011",
+      "qualification": "TRN-008",
+      "name": "Georgia Medicaid spill and biohazard training",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.13",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All drivers must have successfully completed driver training, first aid training and training in the use of a spill kit and the removal of biohazards prior to driving under the NEMT program.",
+      "requirement_text": "Ensure driver has the required spill-kit and biohazard removal training.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "SPILL_KIT_BIOHAZARD"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-012",
+      "qualification": "TRN-003",
+      "name": "Georgia Medicaid passenger assistance training",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.13(1)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "a passenger assistance orientation program;",
+      "requirement_text": "Maintain training in passenger assistance for Georgia DCH NEMT service.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "PASSENGER_ASSISTANCE"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-013",
+      "qualification": "TRN-009",
+      "name": "Georgia Medicaid safety and sensitivity training",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.13(2)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "an on-going safety and sensitivity program to ensure a safe operating environment;",
+      "requirement_text": "Maintain the required ongoing safety and sensitivity training.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "SAFETY_SENSITIVITY"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "company.ga_broker_training_refresh",
+          "why": "Manual requires ongoing program but supplies no fixed universal renewal interval."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-014",
+      "qualification": "TRN-010",
+      "name": "Georgia Medicaid defensive driver training",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.13(3)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "a defensive driving training.",
+      "requirement_text": "Driver must complete required defensive driving training.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "DEFENSIVE_DRIVING"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-015",
+      "qualification": "GAD-006",
+      "name": "Georgia Medicaid employer driver credential records",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 400.6(5)(b)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "copy of the driver’s license;",
+      "requirement_text": "Maintain a copy of the driver license in the Medicaid broker provider file.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "license_copy"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject. Separate documentary duty from license-validity rule. The 2022 manual assigns record preservation to broker; should be assigned to provider only if required by service agreement.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-016",
+      "qualification": "GAD-007",
+      "name": "Georgia Medicaid driver identification",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.5(3)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All drivers and attendants must wear or have visible, easily readable official company I.D.",
+      "requirement_text": "Drivers performing Georgia DCH NEMT services must carry or visibly wear compliant company identification.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Issued and active driver company identification."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_driver_identification",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-017",
+      "qualification": "GAD-008",
+      "name": "Georgia Medicaid no impaired operation",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.5(1)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "No driver or attendant shall use or be under the influence of alcohol, narcotics, illegal drugs or drugs that impair ability to perform while on duty",
+      "requirement_text": "Do not assign a driver currently impaired or removed from service for suspected unsafe impairment.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Current safety hold or fit-for-duty determination."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.ga_nemt_impairment_hold",
+          "why": "Prior screening is not equivalent to fitness for duty; current hold and evaluation status required."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_no_impaired_operation",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-DRV-018",
+      "qualification": "TRN-011",
+      "name": "Georgia Medicaid wheelchair securement retraining after incident",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "driver",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.5(16)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Drivers with one confirmed incident of failure to properly secure a member’s wheelchair must be removed from providing services until such time as the NEMT Provider submits documentation to the Broker to support that the Driver has been properly trained in the use of securement devices.",
+      "requirement_text": "Block a driver suspended after a confirmed securement failure until retraining documentation has been submitted to the broker.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Driver securement-related hold, completion of retraining, and broker documentation submission."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "driver.ga_wheelchair_securement_hold",
+          "why": "Requires incident and clearance statuses linked to driver."
+        },
+        {
+          "kind": "evidence",
+          "name": "ga_wheelchair_retraining_broker_submission",
+          "why": "Evidence of completed retraining and required broker submission."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_wheelchair_securement_retraining_after_incident",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-001",
+      "qualification": "GAV-003",
+      "name": "Georgia Medicaid vehicle initial inspection",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.8",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "the Broker shall conduct a completed satisfactory initial inspection of all the transportation provider’s vehicles, when applicable",
+      "requirement_text": "Vehicle must have satisfactory initial program inspection before entering service under the Georgia DCH broker.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "BROKER_VEHICLE_INSPECTION"
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "ga_initial_inspection_pass",
+          "why": "Inspection document needs distinct type initial, date, passing status and service entry date."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-002",
+      "qualification": "GAV-004",
+      "name": "Georgia Medicaid vehicle inspection every six months",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.8",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Subsequent inspections must be completed no later than six (6) months after the most recent inspection.",
+      "requirement_text": "For an ongoing broker-contracted Georgia Medicaid NEMT vehicle, retain a passing inspection no more than six months old.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "BROKER_VEHICLE_INSPECTION"
+      },
+      "validity": {
+        "renewal": "months",
+        "every": 6
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "ga_inspection_approved_and_passing",
+          "why": "Confirm broker/DCH approved inspection method, date, passing result, and exemption for exceptions."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-003",
+      "qualification": "GAV-005",
+      "name": "Georgia Medicaid vehicle safety compliance",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Vehicles and all components must comply with or exceed the manufacturers, State and federal, safety and mechanical operating and maintenance standards for the vehicles and models used for the NEMT program.",
+      "requirement_text": "Use only vehicles meeting applicable manufacturer, state and federal safety/maintenance requirements.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "VEHICLE_INSPECTION"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "ga_vehicle_safety_condition",
+          "why": "Recent inspection document does not prove unresolved safety defects are corrected."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-004",
+      "qualification": "GAV-006",
+      "name": "Georgia Medicaid two-way communications",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(1)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "A vehicle with an inoperative two-way communication system must be placed out-of-service until the system is repaired or replaced.",
+      "requirement_text": "Transport vehicle must have working two-way communication with the provider during NEMT service.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Vehicle real-time two-way communication operability status."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_communications_operational",
+          "why": "The schema has no functioning two-way communications status or recent test."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_two_way_communications",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-005",
+      "qualification": "GAV-007",
+      "name": "Georgia Medicaid vehicle HVAC operational",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(2)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Any vehicle with a non-functioning climate control system must be placed out-of-service until appropriate corrective action is taken.",
+      "requirement_text": "Do not assign a NEMT vehicle with non-functioning passenger climate control.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Current vehicle heating and air conditioning operability."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_hvac_operational",
+          "why": "HVAC failure and repair status must be recorded."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_vehicle_hvac_operational",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-006",
+      "qualification": "GAV-008",
+      "name": "Georgia Medicaid passenger seat belts",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(3)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All vehicles must have functioning, clean and accessible seat belts for each passenger seat position",
+      "requirement_text": "Assigned vehicle must have working accessible belts for every passenger seating position.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Seat-belt functionality checklist and open vehicle defect statuses."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_seatbelts_operational",
+          "why": "Number and operability of seat belts not a current fact."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_passenger_seat_belts",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-007",
+      "qualification": "GAV-009",
+      "name": "Georgia Medicaid seat-belt extensions",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(3)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Each vehicle shall have at least two (2) seat belt extensions provided.",
+      "requirement_text": "Carry two functioning seat-belt extensions per vehicle when the published DCH policy applies.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Vehicle equipment inventory showing at least two seatbelt extensions."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_seatbelt_extensions_count",
+          "why": "Equipment quantity not supported."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_seat_belt_extensions",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-008",
+      "qualification": "GAV-010",
+      "name": "Georgia Medicaid emergency belt cutter",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(3)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "each vehicle shall be equipped with seat belt cutter(s), mounted above the driver’s door",
+      "requirement_text": "Carry installed emergency belt cutter at required position.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Verified emergency seatbelt cutter presence and mounting."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_belt_cutter_installed",
+          "why": "Missing installed safety device evidence."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_emergency_belt_cutter",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-009",
+      "qualification": "GAV-011",
+      "name": "Georgia Medicaid fire extinguisher equipment",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(16)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All vehicles must be equipped with one or more functional fire extinguishers at least 2.5 pounds each in size, with a combined capacity totaling at least 5.0 pounds in size",
+      "requirement_text": "Carry inspected functioning fire extinguisher equipment meeting the Georgia DCH NEMT capacity requirement.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Fire extinguisher equipment size, inspection tag date and placement."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_fire_extinguisher_current",
+          "why": "Equipment size, tag validity and availability are not modeled."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_fire_extinguisher_equipment",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-010",
+      "qualification": "GAV-012",
+      "name": "Georgia Medicaid three warning triangles",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(18)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All vehicles must have on board three (3) portable triangular reflectors mounted on stands.",
+      "requirement_text": "Carry three portable roadside warning triangles.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Equipment inventory showing three reflectors."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_reflectors_count",
+          "why": "Warning device inventory not modeled."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_three_warning_triangles",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-011",
+      "qualification": "GAV-013",
+      "name": "Georgia Medicaid first-aid and spill kits",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(20)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All vehicles must be provided with a fully equipped first aid kit and a “spill kit”",
+      "requirement_text": "Maintain a complete usable first aid kit and biohazard spill kit in the vehicle.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Vehicle first-aid and biohazard spill kit presence and inspection status."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_firstaid_spill_kits_ready",
+          "why": "Kit contents, expiration and presence not supported."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_first_aid_and_spill_kits",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-012",
+      "qualification": "GAV-014",
+      "name": "Georgia Medicaid registration/insurance proof on vehicle",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(19)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "vehicle registration; insurance card; and accident procedures and forms.",
+      "requirement_text": "Carry the required registration, insurance, and accident-procedure documentation in the vehicle.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Vehicle document packet inventory and current registration and insurance cards."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_accident_packet_onboard",
+          "why": "Current registration and insurance artifacts alone cannot prove accident instructions stored on board."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_registration_insurance_proof_on_vehicle",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-013",
+      "qualification": "GAV-015",
+      "name": "Georgia Medicaid wheelchair securement devices",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.7(5)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "for each wheelchair position, a wheelchair securement device (or “tiedown”) shall be provided that complies with applicable ADA standards;",
+      "requirement_text": "Each wheelchair position in a Georgia Medicaid wheelchair vehicle must have conforming securement.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.medicaidstates",
+            "has": "GA"
+          },
+          {
+            "fact": "vehicle.lift",
+            "is": true
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Securement system certification, functioning tie-downs, and wheelchair positions."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_wheelchair_securements_ready",
+          "why": "Need type, location, quantity, condition and appropriate standards for tie-downs."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_wheelchair_securement_devices",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-014",
+      "qualification": "GAV-016",
+      "name": "Georgia Medicaid lift interlock",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.7(2)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "must have an engine-wheelchair lift interlock system, which requires that the vehicle’s transmission be placed in park, and the emergency brake engaged to prevent vehicle movement when the lift or ramp is deployed;",
+      "requirement_text": "Ensure the applicable wheelchair lift/ramp vehicle has the required interlock protection.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.medicaidstates",
+            "has": "GA"
+          },
+          {
+            "fact": "vehicle.lift",
+            "is": true
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Vehicle-specific functioning interlock test."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_wheelchair_interlock_pass",
+          "why": "Lift/ramp interlock test and applicable vehicle configuration unavailable."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_lift_interlock",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-015",
+      "qualification": "GAV-017",
+      "name": "Georgia Medicaid wheelchair vehicle access requirements",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.7",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All vehicles used to transport wheelchair passengers must comply with the ADA requirements in effect at the time of the vehicle’s construction.",
+      "requirement_text": "Vehicle used to transport wheelchair passengers must satisfy applicable standards for its manufacture/configuration.",
+      "applies_when": {
+        "all": [
+          {
+            "fact": "company.medicaidstates",
+            "has": "GA"
+          },
+          {
+            "fact": "vehicle.lift",
+            "is": true
+          }
+        ]
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "credential",
+        "credential": "LIFT_CERTIFICATION"
+      },
+      "validity": {
+        "renewal": "ondocument"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_wheelchair_accessibility_standard",
+          "why": "Construction date, applicable ADA standards, and compliant inspection are required; certificate alone insufficient."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-016",
+      "qualification": "GAV-018",
+      "name": "Georgia Medicaid unsafe vehicle removed from service",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.11",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Any vehicle found not in compliance with the required vehicle standards or any State or federal standards must be removed from service immediately until DCH certifies, in writing, that it may be returned to service.",
+      "requirement_text": "Do not assign a vehicle on DCH safety suspension until documented written DCH return-to-service clearance.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Vehicle DCH out-of-service order and release documentation."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_dch_out_of_service_status",
+          "why": "Current return-to-service status, including written DCH clearance, is not supported."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_unsafe_vehicle_removed_from_service",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-017",
+      "qualification": "GAV-019",
+      "name": "Georgia Medicaid vehicle identification and broker number",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(13)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All vehicles must have the transportation provider’s name, vehicle number, and the Broker’s phone number prominently displayed within the interior of each vehicle.",
+      "requirement_text": "Display provider name, vehicle number and broker contact number inside the vehicle.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Vehicle display and broker identity inspection verification."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_vehicle_identification_and_broker_number",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-018",
+      "qualification": "GAV-020",
+      "name": "Georgia Medicaid safe step assistance",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.6(17)",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "All vehicles, except stretcher vans, that require a step up for entry, must include a retractable step, or a step stool as approved by DCH to aid in passenger boarding.",
+      "requirement_text": "If a non-stretcher vehicle requires a step up, provide an approved safe passenger entry step.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Approved boarding step/stool on vehicle."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "vehicle.ga_entrance_requires_step",
+          "why": "Need trip vehicle entrance configuration and stretcher vehicle exclusion."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_safe_step_assistance",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-VEH-019",
+      "qualification": "GAV-021",
+      "name": "Georgia Medicaid no smoking on vehicle",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "vehicle",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 300.9",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Smoking is prohibited on the vehicles while performing service for DCH.",
+      "requirement_text": "DCH NEMT vehicles must be smoke-free during service.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Operational no-smoking policy and incident status."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_no_smoking_on_vehicle",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-007",
+      "qualification": "GAM-007",
+      "name": "Georgia Medicaid transportation provider records available",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 400.6",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "The Broker must establish, maintain and provide upon request, the following records and related information in its files for each non-public transportation provider with which the Broker has entered a Service Agreement:",
+      "requirement_text": "Supply the broker the required provider, vehicle, driver and inspection documentation as required by the service agreement.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Complete broker-required provider records and executed service agreement."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject. The quoted section places direct preservation duty on broker; provider must supply records under service agreement, not necessarily independently by this clause.",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_transportation_provider_records_available",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-008",
+      "qualification": "GAM-008",
+      "name": "Georgia Medicaid daily driver manifest",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT Policies, Section 400.7",
+      "citation_url": "https://medicaid.georgia.gov/document/document/nemt-rfp-policy-manual/download",
+      "citation_text": "Vehicle manifests are to be completed by each vehicle driver daily and must contain the following information:",
+      "requirement_text": "Ensure each driver completes required Medicaid trip manifest details for each day of service.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Trip manifests containing all applicable minimum fields."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2022-07-01",
+      "notes": "Quoted from official Georgia DCH July 1, 2022 NEMT manual. The effective_from value here denotes the available source version, NOT the original legal effective date; historical application must be reviewed. Georgia MMIS portal lists an October 1, 2026 update; its full text was not independently retrieved, so this obligation must be reconciled before production deployment. In the 2022 manual the listed duty may be imposed on the broker to ensure provider compliance; TripProof monitors the provider/driver/vehicle as the practical qualified subject.",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "trip_manifest_completeness",
+          "why": "Need per-trip actual times, mileage, pickup/drop-off, member, driver, escort fields and record retention."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "fact",
+          "name": "ga_medicaid_current_manual_confirmed",
+          "why": "Georgia MMIS lists October 1, 2026 NEMT manual; current detailed wording and effective date must be checked before enforcing a legacy July 2022 manual provision."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_daily_driver_manifest",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-009",
+      "qualification": "GAM-009",
+      "name": "Georgia Medicaid provider no passenger co-pay",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT FAQs",
+      "citation_url": "https://medicaid.georgia.gov/programs/all-programs/non-emergency-medical-transportation/non-emergency-medical-transportation",
+      "citation_text": "There is no co-payment required.",
+      "requirement_text": "Do not collect a NEMT beneficiary copayment for Georgia Medicaid-covered transportation.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Trip member billing records showing no copay."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "ongoing",
+      "on_failure": "track",
+      "effective_from": "2022-07-01",
+      "needs": [
+        {
+          "kind": "evidence",
+          "name": "trip_member_charges",
+          "why": "Billing must distinguish state-funded NEMT from private-pay or noncovered charges."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_provider_no_passenger_co_pay",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    },
+    {
+      "id": "MED-CO-010",
+      "qualification": "GAM-010",
+      "name": "Georgia Medicaid qualified escort permitted",
+      "category": "MEDICAID",
+      "jurisdiction": "GA",
+      "subject": "company",
+      "authority": "Georgia DCH",
+      "citation": "DCH NEMT FAQs",
+      "citation_url": "https://medicaid.georgia.gov/programs/all-programs/non-emergency-medical-transportation/non-emergency-medical-transportation",
+      "citation_text": "The broker must allow, without charge to the escort or member, one escort to accompany a member when medically necessary.",
+      "requirement_text": "Allow a medically necessary broker-approved escort without transport charge.",
+      "applies_when": {
+        "fact": "company.medicaidstates",
+        "has": "GA"
+      },
+      "programs": [
+        "medicaid"
+      ],
+      "evidence": {
+        "type": "other",
+        "describe": "Trip escort authorization and passenger capacity."
+      },
+      "validity": {
+        "renewal": "once"
+      },
+      "due": "predrive",
+      "on_failure": "block",
+      "effective_from": "2022-07-01",
+      "needs": [
+        {
+          "kind": "fact",
+          "name": "trip.escort_required",
+          "why": "Trip requires medical need and authorized escort details."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.available_escort_seat",
+          "why": "Vehicle and route passenger seating availability not in schema."
+        },
+        {
+          "kind": "fact",
+          "name": "trip.medicaid_state",
+          "why": "Company may carry Medicaid trips for several states; Georgia program rules must be selected using the state of this particular trip, not only company.medicaidstates."
+        },
+        {
+          "kind": "evidence",
+          "name": "evidence.georgia_medicaid_qualified_escort_permitted",
+          "why": "The current schema has no deterministic evidence evaluator for this obligation."
+        }
+      ]
+    }
+  ]
+}

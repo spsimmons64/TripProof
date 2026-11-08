@@ -1,5 +1,8 @@
 """Text messages to drivers and the office, through Bandwidth (Twilio where Bandwidth is not set).
 
+A driver with the TripProofDriver app on their phone is told by a notification on it instead
+(app/push.py), and texted only if that cannot be done - no app, or a phone Firebase has forgotten.
+
 A driver is texted when the office gives them a trip, changes one they are on, takes them off one,
 or cancels one. Only the trip's reference and its time go in the text: a text is not a secure
 channel, so nothing about the passenger does. The details are in the app.
@@ -22,6 +25,7 @@ from datetime import datetime
 
 from sqlalchemy.engine import Connection
 
+from app import push
 from app.config import settings
 from app.db import engine, newid, row, run, utcnow
 
@@ -52,16 +56,50 @@ def tell(conn: Connection, accountid: str, driverid: str | None, kind: str, text
         return
     d = row(conn, "SELECT phone FROM drivers WHERE recordid = :d AND accountid = :a", d=driverid, a=accountid)
     to = number((d or {}).get("phone"))
-    status = "queued" if can_send() and to else ("nophone" if not to else "off")
+    device = row(conn, """
+        SELECT recordid, token FROM driverdevices
+        WHERE accountid = :a AND driverid = :d AND ended IS NULL ORDER BY lastseen DESC LIMIT 1
+    """, a=accountid, d=driverid) if push.can_push() else None
+    if device:
+        channel, status = "push", "queued"
+    else:
+        channel, status = "sms", ("queued" if can_send() and to else ("nophone" if not to else "off"))
     rid = newid()
     body = f"TripProof: {text}"[:480]
     run(conn, """
-        INSERT INTO drivertexts (recordid, accountid, driverid, tripid, legid, kind, tonumber, body, status, added)
-        VALUES (:id, :a, :d, :t, :l, :k, :to, :b, :s, :now)
-    """, id=rid, a=accountid, d=driverid, t=tripid, l=legid, k=kind, to=to, b=body, s=status, now=utcnow())
-    if status == "queued":
+        INSERT INTO drivertexts (recordid, accountid, driverid, tripid, legid, kind, channel, tonumber, body, status, added)
+        VALUES (:id, :a, :d, :t, :l, :k, :c, :to, :b, :s, :now)
+    """, id=rid, a=accountid, d=driverid, t=tripid, l=legid, k=kind, c=channel, to=to, b=body, s=status, now=utcnow())
+    if status != "queued":
+        return
+    if device:
+        said = {"kind": kind, "legid": legid, "tripid": tripid}
+        conn.info.setdefault("after_commit", []).append(
+            lambda: threading.Thread(target=_notify, args=(rid, device, text[:470], said, to), daemon=True).start())
+    else:
         conn.info.setdefault("after_commit", []).append(
             lambda: threading.Thread(target=_send, args=(rid, to, body), daemon=True).start())
+
+
+def _notify(rid: str, device: dict, text: str, data: dict, to: str | None) -> None:
+    """A notification to the driver's app; a text instead if Firebase will not take it."""
+    status, name, error, gone = push.send(device["token"], text, data)
+    with engine.begin() as conn:
+        if gone:
+            # The app is gone from that phone. Ended, so the next message goes straight to a text.
+            run(conn, "UPDATE driverdevices SET ended = :now WHERE recordid = :r AND ended IS NULL",
+                now=utcnow(), r=device["recordid"])
+        if status == "sent":
+            run(conn, "UPDATE drivertexts SET status = 'sent', twiliosid = :n, sent = :now WHERE recordid = :r",
+                n=(name or "")[-64:] or None, now=utcnow(), r=rid)
+            return
+        log.warning("notification %s failed: %s", rid, error)
+        if not (to and can_send()):
+            run(conn, "UPDATE drivertexts SET status = 'failed', error = :e, sent = :now WHERE recordid = :r",
+                e=(error or "")[:400] or None, now=utcnow(), r=rid)
+            return
+        run(conn, "UPDATE drivertexts SET channel = 'sms' WHERE recordid = :r", r=rid)
+    _send(rid, to, f"TripProof: {text}"[:480])
 
 
 def tell_user(conn: Connection, accountid: str, userid: str, kind: str, text: str,

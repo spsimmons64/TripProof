@@ -71,6 +71,15 @@ def _miles(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 3958.8 * 2 * asin(sqrt(h))
 
 
+# What a dispatch screen says about a driver whose own qualification stops them - and nothing more.
+# The reason (a drug test result, a driving record) is confidential to the people who act on it and
+# is on the driver's file; a dispatch screen is seen by whoever is standing near it. Reasons that
+# are not about the person - busy, not hired, a vehicle's own defect - are still said.
+NOT_ELIGIBLE = "Not Eligible To Drive Today"
+# Said in full: about the trip's contract, not the person.
+SAID_IN_FULL = ("APPROVAL", "DRIVERAPPROVAL")
+
+
 def _because(stop: dict) -> str:
     """Why this one is stopped, in words rather than as the title of a rule.
 
@@ -81,7 +90,8 @@ def _because(stop: dict) -> str:
     does not say what is missing. So the requirement's name, then the first sentence of the
     reason; the rest, citation and all, is on the driver's or vehicle's own page.
     """
-    name = stop.get("name") or stop.get("code") or ""
+    # The requirement's name, never its internal code - a check with no name is said by its sentence.
+    name = stop.get("name") or ("" if stop.get("why") else stop.get("code")) or ""
     said = (stop.get("why") or "").strip()
     first = said.split(". ")[0].strip().rstrip(".") if said else ""
     if first and name:
@@ -225,9 +235,9 @@ def drivers_for(conn: Connection, accountid: str, *, when: datetime, minutes: in
             # An approved rule stops them; one still in draft is said and stops nobody.
             held = [r for r in stops if _approved(r)]
             if held:
-                blocks.append(_because(held[0]))
+                blocks.append(NOT_ELIGIBLE)
             elif stops:
-                drafts.append(f"{_because(stops[0])} (rule not yet approved)")
+                drafts.append("A requirement is not met (rule not yet approved)")
             else:
                 why.append("Qualified to drive")
 
@@ -479,7 +489,13 @@ def _judge(conn: Connection, accountid: str, drivers: list[dict], vehicles: list
         # and whether they are hired is already said by the candidate list itself.
         mine = [b for b in said["blockers"]
                 if not b.get("vehicle") and b["code"] not in ("HIRED", "DRIVER")]
-        stop, drafts = split(fresh(candidate, mine))
+        found = fresh(candidate, mine)
+        stop = [said_of(b) for b in found if b.get("enforceable") and b["code"] in SAID_IN_FULL]
+        if any(b.get("enforceable") and b["code"] not in SAID_IN_FULL for b in found) \
+                and NOT_ELIGIBLE not in candidate["blocked"]:
+            stop.append(NOT_ELIGIBLE)
+        drafts = (["A requirement is not met (rule not yet approved)"]
+                  if any(not b.get("enforceable") for b in found) else [])
         return stop, drafts, [said_of(h) for h in said.get("holds") or []]
 
     def split(found: list[dict]) -> tuple[list[str], list[str]]:

@@ -329,6 +329,17 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
     The imported trips arrive priced; this one does not. `billedamount` is zero until a fee
     schedule exists to work it out, and saying zero is honest where inventing a number is
     not."""
+    got = book(conn, user, body)
+    log(conn, user, "trip-booked", "trip", got["recordid"],
+        {"passenger": body.passenger, "legs": len(body.legs)}, ip=client_ip(request))
+    saved(conn)
+    return got
+
+
+def book(conn: Connection, user: dict, body: Booking) -> dict:
+    """Every check and every row of a booking, without committing it. Also how a facility's trip
+    request is tried (inside a savepoint that is then rolled back) and how it is booked once the
+    office accepts it: one set of rules for every way a trip comes in."""
     acct = user["accountid"]
     if not body.legs:
         raise HTTPException(400, "A trip needs at least one leg")
@@ -428,6 +439,18 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
         # without this row the trip has no record of who was put on it or when. "Someone Is Out"
         # then has nothing to end, and the leg's own timeline opens with the driver already there
         # as though nobody ever decided it.
+        # Booked straight onto a driver: the same hard blocks an assignment answers to, which
+        # nobody can override. Booking is not a way round Assign.
+        if leg.driverid:
+            said = dispatch.for_leg(conn, acct, legrec, only={leg.driverid},
+                                    vehicle_of={leg.driverid: leg.vehicleid} if leg.vehicleid else None)
+            who = next((d for d in (said or {}).get("drivers", []) if d["driverid"] == leg.driverid), None)
+            unit = next((v for v in (said or {}).get("vehicles", []) if v["vehicleid"] == leg.vehicleid), None)
+            if not who:
+                raise HTTPException(404, "No such driver on this account")
+            for x, name in ((who, (who.get("name") or "").title()), (unit, (unit or {}).get("externalid") or "")):
+                if x and x["blocked"]:
+                    raise HTTPException(409, f"Not booked. {name} cannot take this trip: {x['blocked'][0]}")
         if leg.driverid or leg.vehicleid:
             run(conn, """
                 INSERT INTO tripassignments (recordid, accountid, legid, driverid, vehicleid,
@@ -449,9 +472,6 @@ def book_a_trip(body: Booking, request: Request, user: dict = Depends(editor),
                            {"recordid": legrec, "driverid": None, "pickupat": None}, "outsidehours",
                            "RETURN ARRANGED WITH THE BROKER WHEN BOOKED: IT COULD RUN PAST CLOSING")
 
-    log(conn, user, "trip-booked", "trip", tripid,
-        {"passenger": body.passenger, "legs": len(body.legs)}, ip=client_ip(request))
-    saved(conn)
     return {"recordid": tripid, "externalid": external}
 
 
@@ -612,7 +632,7 @@ def get_trip(tripid: str, user: dict = Depends(current_user), conn: Connection =
     t["endreasons"] = END_REASONS
     # Every text sent to a driver about this trip, and whether it went.
     t["texts"] = rows(conn, """
-        SELECT x.recordid, x.kind, x.body, x.status, x.error, x.added, x.tonumber,
+        SELECT x.recordid, x.kind, x.channel, x.body, x.status, x.error, x.added, x.tonumber,
                TRIM(CONCAT(COALESCE(d.firstname, ''), ' ', COALESCE(d.lastname, ''))) AS drivername
         FROM drivertexts x LEFT JOIN drivers d ON d.recordid = x.driverid
         WHERE x.accountid = :a AND x.tripid = :t ORDER BY x.added DESC
@@ -1764,8 +1784,9 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
         # A will-call waiting for the passenger's call has no pickup time, so it is on every day's
         # board until it is called or settled. One settled before the call - canceled - belongs to
         # the day it was settled, in the company's own clock (the stamps are UTC).
+        # From its own trip day onward - never on a day before the trip it belongs to.
         where.append("""(DATE(l.pickupat) = :day
-                         OR (l.pickupat IS NULL AND l.outcomestate IS NULL)
+                         OR (l.pickupat IS NULL AND l.outcomestate IS NULL AND t.tripdate <= :day)
                          OR (l.pickupat IS NULL AND l.outcomestate IS NOT NULL
                              AND DATE(DATE_ADD(COALESCE(t.cancelledon,
                                                        (SELECT MAX(c.changedon) FROM tripchanges c WHERE c.legid = l.recordid),
@@ -1855,6 +1876,7 @@ def dispatch_board(day: date | None = None, state: str = "needsdriver", q: str |
                (l.legnumber = 1 AND EXISTS (SELECT 1 FROM triplegs r WHERE r.tripid = l.tripid AND r.legnumber > 1
                     AND r.responsibility = 'unconfirmed' AND r.brokerstate IS NULL AND r.outcomestate IS NULL)) AS returnundecided,
                t.recordid AS tripid, t.externalid, t.passenger, t.servicelevel, t.critical,
+               t.billedamount,
                COALESCE(l.brokerstate, t.brokerstate) AS brokerstate,
                (SELECT MIN(p.closesat) FROM places p WHERE p.accountid = l.accountid AND p.deleted IS NULL
                    AND CONCAT_WS(', ', p.address, p.city, CONCAT_WS(' ', p.state, p.zip)) = l.pickupplace) AS facilitycloses,
@@ -2916,17 +2938,13 @@ def _settle_dispatch_state(conn: Connection, accountid: str, tripid: str) -> Non
 
 def _shadow_check(conn: Connection, accountid: str, driverid: str | None, vehicleid: str | None,
                   legid: str, userid: str) -> None:
-    """The trip eligibility check on every assignment.
-
-    In shadow - the default - it is recorded and not obeyed: whatever goes wrong in it, the
-    assignment stands, because it is there to be compared until it is switched on. Once the company
-    turns enforcement on, an assignment that fails anything enforceable - a rule a reviewer
-    approved, or a plain fact such as no lift for a wheelchair trip - is refused, with the reason.
-    A draft rule is never enforced, whatever the switch says."""
+    """The trip eligibility check on every assignment. An assignment that fails anything
+    enforceable - a rule a reviewer approved, or a plain fact such as no lift for a wheelchair
+    trip - is refused, with the reason. A draft rule is never enforced."""
     if not driverid:
         return
-    enforce = bool((row(conn, "SELECT enforcetripcheck FROM companyprofiles WHERE accountid = :a",
-                        a=accountid) or {}).get("enforcetripcheck"))
+    # Always enforced: a company cannot switch off a requirement the law or its contracts impose.
+    enforce = True
     try:
         got = tripcheck.check(conn, accountid, driverid, vehicleid, legid=legid, userid=userid,
                               shadow=not enforce)
@@ -2948,9 +2966,12 @@ def _shadow_check(conn: Connection, accountid: str, driverid: str | None, vehicl
                     id=again["evaluationid"])
         except Exception:                   # noqa: BLE001 - the refusal stands regardless
             pass
-        raise HTTPException(409, f'This driver cannot take this trip: '
-                                 f'{first.get("name") + " - " if first.get("name") else ""}'
-                                 f'{first.get("reason")}')
+        # A vehicle's own problem is said; the driver's is not - only that they are not eligible.
+        if first.get("vehicle") or first.get("code") in dispatch.SAID_IN_FULL:
+            raise HTTPException(409, f'This driver cannot take this trip: '
+                                     f'{first.get("name") + " - " if first.get("name") else ""}'
+                                     f'{first.get("reason")}')
+        raise HTTPException(409, f"This driver is {dispatch.NOT_ELIGIBLE.lower()}.")
 
 
 class EligibilityIn(BaseModel):

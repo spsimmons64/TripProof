@@ -1,0 +1,62 @@
+# TripProofDriver for iPhone, built on Codemagic's Macs (there is no Mac here) and sent to TestFlight.
+#
+# One-time setup in Codemagic (codemagic.io, signed in with GitHub):
+#   1. Add the TripProof repository.
+#   2. Teams > Integrations > App Store Connect: add an API key from App Store Connect (Users and
+#      Access > Integrations > App Store Connect API, role App Manager). Name it "TripProof".
+#   3. App > Environment variables: group "firebase", variable GOOGLE_SERVICE_INFO_PLIST, secure,
+#      value = the GoogleService-Info.plist from the Firebase console, base64 encoded
+#      (base64 -w0 GoogleService-Info.plist). Skip it if that file is committed instead.
+#   4. Start the "TripProofDriver iOS" workflow by hand. The build lands in TestFlight; install
+#      TestFlight on the iPad and accept the invitation.
+#
+# Push on iPhone needs the APNs key (.p8) from the Apple Developer portal uploaded to Firebase
+# (Project settings > Cloud Messaging > Apple app configuration), and Push Notifications ticked on
+# the com.tripproofonline.driver identifier.
+workflows:
+  ios-driver:
+    name: TripProofDriver iOS
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: TripProof
+    environment:
+      groups:
+        - firebase
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.tripproofonline.driver
+      node: 22
+      xcode: latest
+      vars:
+        VITE_API_BASE: https://dev.tripproofonline.com
+    scripts:
+      - name: Firebase configuration
+        script: |
+          PLIST=web/ios/App/App/GoogleService-Info.plist
+          if [ ! -s "$PLIST" ] && [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > "$PLIST"
+          fi
+          test -s "$PLIST" || { echo "No GoogleService-Info.plist - see the top of codemagic.yaml"; exit 1; }
+      - name: Driver app
+        script: |
+          cd web
+          npm ci
+          VITE_PUSH=1 npx vite build -c vite.app.config.js
+          npx cap sync ios
+      - name: Signing
+        script: xcode-project use-profiles
+      - name: Version
+        script: |
+          cd web/ios/App
+          VERSION=$(node -p "require('../../package.json').appVersion")
+          agvtool new-marketing-version "$VERSION"
+          agvtool new-version -all "$(TZ=America/New_York date +%y%m%d%H%M)"
+      - name: Build
+        script: xcode-project build-ipa --project web/ios/App/App.xcodeproj --scheme App
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

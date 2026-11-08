@@ -54,3 +54,38 @@ export function printHtml(title, css, html) {
 function escapeText(s) {
   return String(s || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
 }
+
+// An HTML document as something to read, never to run. Uploaded HTML can carry scripts, and a
+// script running in this page's origin could read the signed-in session, so everything active is
+// removed - scripts, frames, plugins, event handlers and javascript: links - before it is shown,
+// and it is shown and printed only in frames that are not allowed to run scripts anyway.
+export function inertHtml(text) {
+  const doc = new DOMParser().parseFromString(text || '', 'text/html')
+  doc.querySelectorAll('script, iframe, frame, frameset, object, embed, applet, base, meta[http-equiv]')
+    .forEach((n) => n.remove())
+  doc.querySelectorAll('*').forEach((n) => {
+    for (const a of [...n.attributes]) {
+      const v = (a.value || '').trim().toLowerCase()
+      if (a.name.toLowerCase().startsWith('on')
+          || (['href', 'src', 'action', 'formaction', 'xlink:href'].includes(a.name.toLowerCase())
+              && (v.startsWith('javascript:') || v.startsWith('data:text/html')))) {
+        n.removeAttribute(a.name)
+      }
+    }
+  })
+  return '<!doctype html>' + doc.documentElement.outerHTML
+}
+
+// Print an HTML document made inert by inertHtml: the same hidden-frame road as a file, with the
+// frame forbidden to run scripts.
+export function printInertHtml(html) {
+  const frame = document.createElement('iframe')
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
+  frame.setAttribute('sandbox', 'allow-same-origin allow-modals')
+  frame.onload = () => {
+    try { frame.contentWindow.focus(); frame.contentWindow.print() } catch { /* nothing else to try */ }
+    setTimeout(() => frame.remove(), KEEP)
+  }
+  frame.srcdoc = html
+  document.body.appendChild(frame)
+}

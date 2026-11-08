@@ -144,18 +144,7 @@ export function DriverLicenses({ id, onChanged, bare, adding: addingFrom, onAddi
               <div><dt>Class</dt><dd>{open.classification || '-'}</dd></div>
               {/* The class letter does not say whether it is a CDL - Georgia's ordinary license is
                   a Class C - so it is answered here, on the license already on file. */}
-              <div><dt>Commercial (CDL)</dt><dd>
-                <select value={open.commercial === true || open.commercial === 1 ? 'yes'
-                  : open.commercial === false || open.commercial === 0 ? 'no' : ''}
-                  disabled={busy === 'commercial'}
-                  onChange={(e) => act(() => api.post(`/drivers/${id}/licenses/${open.recordid}/commercial`,
-                    { commercial: e.target.value === 'yes' ? true : e.target.value === 'no' ? false : null }),
-                    'commercial')}>
-                  <option value="">Not said</option>
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                </select>
-              </dd></div>
+              <div><dt>Commercial (CDL)</dt><dd>{cdlWord(open.commercial)}</dd></div>
               <div><dt>Endorsements</dt>
                 <dd>{(open.endorsements || '').split('').filter(Boolean).join(' · ') || '-'}</dd></div>
               <div><dt>Issued</dt><dd>{open.issued ? date(open.issued) : '-'}</dd></div>

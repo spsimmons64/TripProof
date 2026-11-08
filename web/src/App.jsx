@@ -26,6 +26,7 @@ import Dispatch from './pages/Dispatch.jsx'
 import ProblemAlert from './components/ProblemAlert.jsx'
 import SavedList from './pages/SavedList.jsx'
 import DriverApp from './driver/DriverApp.jsx'
+import FacilityApp from './facility/FacilityApp.jsx'
 import TripDetail from './pages/TripDetail.jsx'
 import Import from './pages/Import.jsx'
 import Drivers from './pages/Drivers.jsx'
@@ -64,8 +65,9 @@ function Shell({ user, children }) {
     // file; the random testing programme is the carrier checking on itself all year against a
     // rate it has to meet. They belong together because they are the same question asked from
     // two sides, and the names say which side.
+    // D&A Random Testing is part of DOT & CDL Compliance, and is not shown without it.
     ['Auditing', [
-      ['/random-testing', FlaskConical, 'D&A Random Testing'],
+      ...(user.dotmodule ? [['/random-testing', FlaskConical, 'D&A Random Testing']] : []),
       ['/audits', FileCheck2, 'External Audits'],
     ]],
     ['Settings', [
@@ -176,6 +178,8 @@ export default function App() {
   // decided, so a phone never loads the dispatcher's world to throw it away.
   const path = window.location.pathname
   if (path === '/drive' || path.startsWith('/drive/')) return <DriverApp />
+  // The facility portal: the same standing - a different application with its own sign-in.
+  if (path === '/facility' || path.startsWith('/facility/')) return <FacilityApp />
   const [user, setUser] = useState(undefined)
   const [token, setToken] = useState(auth.get())
 
@@ -314,7 +318,7 @@ export default function App() {
           {/* The documents live under Company Requirements now, filed against the requirement
               they answer rather than in a list of their own. An old link lands there. */}
           <Route path="/documents" element={<Company tab="requirements" />} />
-          <Route path="/random-testing" element={<RandomTesting />} />
+          <Route path="/random-testing" element={user.dotmodule ? <RandomTesting /> : <Navigate to="/" />} />
           <Route path="/audits" element={<Audits />} />
           <Route path="/audits/:id" element={<AuditDetail />} />
           <Route path="/billing" element={<Company tab="billing" />} />

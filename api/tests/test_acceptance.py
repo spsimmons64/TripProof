@@ -3037,7 +3037,8 @@ def test_6ae_a_brokers_own_rules_are_kept_where_they_are_filled_in(make):
 
 
 def test_6af_a_driver_who_may_not_drive_is_not_offered_as_driving_today(make):
-    """Who's Driving Today? shows a disqualified driver with the reason, unticked, and will not take him."""
+    """Who's Driving Today? shows a disqualified driver as not eligible, unticked, and will not take him -
+    and no dispatch screen or refusal names the reason, which stays on the driver's own file."""
     from app.db import localnow
     from app import dispatch as dsp
     co = make()
@@ -3048,6 +3049,374 @@ def test_6af_a_driver_who_may_not_drive_is_not_offered_as_driving_today(make):
     assert first["on"] and not first["stopped"], first
     driving_record(co, "disqualified", "LICENSE SUSPENDED 2023")
     then = next(d for d in c.get(f"/api/dispatch/crew?day={today}", headers=h).json()["drivers"] if d["driverid"] == co["driver"])
-    assert not then["on"] and then["stopped"], then
+    assert not then["on"] and then["stopped"] == "Not Eligible To Drive Today", then
     refused = c.post("/api/dispatch/crew", headers=h, json={"day": str(today), "driverids": [co["driver"]]})
-    assert refused.status_code == 409 and "may not drive" in refused.text, refused.text
+    assert refused.status_code == 409 and "not eligible to drive today" in refused.text, refused.text
+    # Nor booked straight onto a trip, nor put on call: every way onto a trip refuses him.
+    booked = c.post("/api/trips", headers=h, json={"passenger": "STOP TEST", "tripdate": str(today + timedelta(days=2)), "legs": [
+        {"pickupat": f"{today + timedelta(days=2)}T13:30:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+         "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202", "driverid": co["driver"], "vehicleid": co["vehicle"]}]})
+    assert booked.status_code == 409 and "Not Eligible To Drive Today" in booked.text, booked.text
+    assert "SUSPENDED" not in booked.text and "driving record" not in booked.text.lower(), booked.text
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = '9045550177' WHERE recordid = :d"), {"d": co["driver"]})
+    oncall = c.put("/api/oncall", headers=h, json={"day": str(today), "items": [{"driverid": co["driver"], "vehicleid": co["vehicle"]}]})
+    assert oncall.status_code == 409 and "not eligible to drive today" in oncall.text, oncall.text
+
+
+def test_6ag_a_driver_with_the_app_is_notified_on_it_and_texted_only_when_that_fails(make, monkeypatch):
+    """A phone with TripProofDriver registers itself and is told about trips by notification, not
+    text - the same words, nothing about the passenger. A token Firebase no longer knows is ended
+    and that message goes as a text. Signing out, or in elsewhere, stops the phone being told. And
+    the driver can delete their own login from the app: it stops working at once, the company's
+    record of them stays."""
+    from app import push, sms
+    from app.routers.driverapp import start_session
+    co = make()
+    c, h = co["client"], co["h"]
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE drivers SET phone = '9045550100', appaccess = 1, passwordhash = 'x' WHERE recordid = :d"),
+                     {"d": co["driver"]})
+        me = {"Authorization": f"Bearer {start_session(conn, co['driver'])}"}
+
+    class Now:                                   # the after-commit sender, run where the test can see it
+        def __init__(self, target, args, daemon=None):
+            self.go = lambda: target(*args)
+
+        def start(self):
+            self.go()
+    monkeypatch.setattr(sms.threading, "Thread", Now)
+    monkeypatch.setattr(push, "can_push", lambda: True)
+    monkeypatch.setattr(sms, "can_send", lambda: True)
+    pushed, texted, answer = [], [], {"v": ("sent", "projects/p/messages/1", None, False)}
+    monkeypatch.setattr(push, "send", lambda token, body, data: pushed.append((token, body, data)) or answer["v"])
+    monkeypatch.setattr(sms, "_send", lambda rid, to, body: texted.append((to, body)))
+
+    phone = "fcm-" + "x" * 60
+    assert c.post("/api/driver/device", headers=me, json={"platform": "android", "token": "short"}).status_code == 400
+    assert c.post("/api/driver/device", headers=me, json={"platform": "android", "token": phone}).status_code == 200
+    assert c.post("/api/driver/device", headers=me, json={"platform": "android", "token": phone}).status_code == 200
+
+    on = date.today() + timedelta(days=2)
+    trip = c.post("/api/trips", headers=h, json={"passenger": "SECRET PASSENGER", "tripdate": str(on), "legs": [
+        {"pickupat": f"{on}T09:30:00", "pickupplace": "40 BAY ST, JACKSONVILLE, FL 32207",
+         "dropoffplace": "1 MAIN ST, JACKSONVILLE, FL 32202"}]}).json()
+    with co["db"].connect() as conn:
+        legid = conn.execute(text("SELECT recordid FROM triplegs WHERE tripid = :t"), {"t": trip["recordid"]}).scalar()
+    assert c.post(f"/api/legs/{legid}/assign", headers=h, json={"driverid": co["driver"], "vehicleid": co["vehicle"],
+                                                                "overridereason": "TEST"}).status_code == 200
+    assert len(pushed) == 1 and not texted, (pushed, texted)
+    token, body, data = pushed[0]
+    assert token == phone and trip["externalid"] in body and "SECRET" not in body and not body.startswith("TripProof:")
+    assert data == {"kind": "assigned", "legid": legid, "tripid": trip["recordid"]}
+    with co["db"].connect() as conn:
+        held = conn.execute(text("SELECT channel, status FROM drivertexts WHERE tripid = :t"), {"t": trip["recordid"]}).mappings().one()
+    assert dict(held) == {"channel": "push", "status": "sent"}
+    shown = c.get(f"/api/trips/{trip['recordid']}", headers=h).json()["texts"]
+    assert shown[0]["channel"] == "push"
+
+    # The app is gone from that phone: the message goes as a text instead, and the next goes straight to text.
+    answer["v"] = ("failed", None, "Requested entity was not found.", True)
+    assert c.post(f"/api/trips/{trip['recordid']}/cancel", headers=h, json={"reason": "passenger"}).status_code == 200
+    assert len(pushed) == 2 and texted == [("+19045550100", f"TripProof: {pushed[1][1]}")], texted
+    with co["db"].connect() as conn:
+        kinds = conn.execute(text("SELECT kind, channel FROM drivertexts WHERE tripid = :t"), {"t": trip["recordid"]}).all()
+        live = conn.execute(text("SELECT COUNT(*) FROM driverdevices WHERE driverid = :d AND ended IS NULL"), {"d": co["driver"]}).scalar()
+    assert sorted(map(tuple, kinds)) == [("assigned", "push"), ("canceled", "sms")] and live == 0
+    with co["db"].begin() as conn:
+        sms.tell(conn, co["acct"], co["driver"], "oncall", "TEST")
+        assert conn.execute(text("SELECT channel FROM drivertexts WHERE kind = 'oncall' AND driverid = :d"),
+                            {"d": co["driver"]}).scalar() == "sms"
+
+    # Signing out ends the phone; so does signing in somewhere else.
+    assert c.post("/api/driver/device", headers=me, json={"platform": "ios", "token": phone}).status_code == 200
+    assert c.post("/api/driver/signout", headers=me).status_code == 200
+    assert c.get("/api/driver/me", headers=me).status_code == 401
+    with co["db"].begin() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM driverdevices WHERE driverid = :d AND ended IS NULL"),
+                            {"d": co["driver"]}).scalar() == 0
+        me = {"Authorization": f"Bearer {start_session(conn, co['driver'])}"}
+
+    # Deleting the login: gone at once, and the driver record is still the company's.
+    assert c.post("/api/driver/device", headers=me, json={"platform": "android", "token": phone}).status_code == 200
+    assert c.post("/api/driver/delete-login", headers=me).status_code == 200
+    assert c.get("/api/driver/me", headers=me).status_code == 401
+    with co["db"].connect() as conn:
+        d = conn.execute(text("SELECT appaccess, passwordhash, deleted FROM drivers WHERE recordid = :d"), {"d": co["driver"]}).mappings().one()
+        gone = conn.execute(text("SELECT COUNT(*) FROM driverdeletions WHERE driverid = :d"), {"d": co["driver"]}).scalar()
+        live = conn.execute(text("SELECT COUNT(*) FROM driverdevices WHERE driverid = :d AND ended IS NULL"), {"d": co["driver"]}).scalar()
+    assert dict(d) == {"appaccess": 0, "passwordhash": None, "deleted": None} and gone == 1 and live == 0
+
+
+def test_6ah_a_push_message_is_built_for_both_phones():
+    """What goes to Firebase: the trip words as the notification, every data value a string, high
+    priority on Android in the trips channel, and a sound on iPhone."""
+    from app import push
+    m = push.message("tok", "Trip 100 at 9:30 AM", {"legid": "L", "tripid": None, "n": 3})["message"]
+    assert m["token"] == "tok" and m["notification"] == {"title": "TripProof", "body": "Trip 100 at 9:30 AM"}
+    assert m["data"] == {"legid": "L", "n": "3"}
+    assert m["android"]["priority"] == "HIGH" and m["android"]["notification"]["channel_id"] == "trips"
+    assert m["apns"]["payload"]["aps"]["sound"] == "default"
+
+
+def test_6ai_a_facility_requests_trips_and_dispatch_accepts_or_declines_them(make):
+    """A Location with the portal on gets its own logins. A facility user sees only private-pay and
+    contract trips at their door, requests trips that wait for the office, presses Ready For Pickup on
+    a will-call leaving their door, and cancels as the facility. A broker's trip there is not theirs to
+    see; a facility token opens nothing in the office, and an office token nothing in the portal."""
+    from app.db import localnow
+    from app import dispatch as dsp
+    co = make()
+    c, h = co["client"], co["h"]
+    place = c.post("/api/places", headers=h, json={"name": "TEST KIDNEY CARE", "address": "100 RIDGE RD",
+                                                   "city": "PORT RICHEY", "state": "FL", "zip": "34668"}).json()["recordid"]
+    here = "100 RIDGE RD, PORT RICHEY, FL 34668"
+    home = "40 BAY ST, JACKSONVILLE, FL 32207"
+    assert c.post(f"/api/places/{place}/logins", headers=h, json={"name": "Dee Facility", "email": "dee@kidney.test"}).status_code == 200
+    login = c.get(f"/api/places/{place}/portal", headers=h).json()["logins"][0]
+    assert login["status"] == "Invited" and login["name"] == "DEE FACILITY"
+    link = c.post(f"/api/facility-logins/{login['recordid']}/invite", headers=h).json()["link"]
+    token = link.split("token=")[1]
+    # The portal is off until the office turns it on.
+    me = {"Authorization": "Bearer " + c.post("/api/facility/password", json={"token": token, "password": "Kidney-Care-2026"}).json()["token"]}
+    assert c.get("/api/facility/me", headers=me).status_code == 401
+    assert c.put(f"/api/places/{place}/portal", headers=h, json={"portal": True}).status_code == 200
+    me = {"Authorization": "Bearer " + c.post("/api/facility/signin", json={"email": "DEE@kidney.test", "password": "Kidney-Care-2026"}).json()["token"]}
+    assert c.get("/api/facility/me", headers=me).json()["place"] == "TEST KIDNEY CARE"
+    assert c.get("/api/dispatch/requests", headers=me).status_code == 401          # not an office session
+    assert c.get("/api/facility/me", headers=h).status_code == 401                 # not a facility session
+
+    on = date.today() + timedelta(days=2)
+    ask = {"passenger": "Pat Rider", "phone": "9045550100", "servicelevel": "ambulatory", "direction": "from",
+           "address": home, "tripdate": str(on), "time": "10:00", "billto": "private"}
+    assert c.post("/api/facility/requests", headers=me, json={**ask, "billto": "contract"}).status_code == 400
+    first = c.post("/api/facility/requests", headers=me, json=ask)
+    assert first.status_code == 200, first.text
+    waiting = c.get("/api/dispatch/requests", headers=h).json()["items"]
+    mine = next(x for x in waiting if x["recordid"] == first.json()["recordid"])
+    assert mine["check"] is None and mine["place"] == "TEST KIDNEY CARE" and mine["passenger"] == "PAT RIDER"
+    assert mine["service"] == "Ambulatory" and c.get("/api/facility/me", headers=me).json()["services"]["wheelchair"] == "Wheelchair"
+    day = c.get(f"/api/facility/schedule?day={on}", headers=me).json()["items"]
+    assert [(x["kind"], x["status"], x["direction"], x["service"]) for x in day] == [("request", "Requested", "From Facility", "Ambulatory")]
+
+    booked = c.post(f"/api/dispatch/requests/{mine['recordid']}/accept", headers=h)
+    assert booked.status_code == 200, booked.text
+    assert c.post(f"/api/dispatch/requests/{mine['recordid']}/accept", headers=h).status_code == 409
+    second = c.post("/api/facility/requests", headers=me, json={**ask, "passenger": "Sam Rider", "tripdate": str(on + timedelta(days=1))})
+    assert second.status_code == 200, second.text
+    second = second.json()
+    assert c.post(f"/api/dispatch/requests/{second['recordid']}/decline", headers=h, json={"reason": " "}).status_code == 400
+    assert c.post(f"/api/dispatch/requests/{second['recordid']}/decline", headers=h, json={"reason": "no van free"}).status_code == 200
+    third = c.post("/api/facility/requests", headers=me, json={**ask, "passenger": "Lou Rider", "tripdate": str(on + timedelta(days=3))}).json()
+    assert c.post(f"/api/facility/requests/{third['recordid']}/withdraw", headers=me).status_code == 200
+    day = c.get(f"/api/facility/schedule?day={on}", headers=me).json()["items"]
+    assert [(x["passenger"], x["status"], x["progress"]) for x in day] == [("PAT RIDER", "Scheduled", "")]
+    day = c.get(f"/api/facility/schedule?day={on + timedelta(days=1)}", headers=me).json()["items"]
+    assert [(x["passenger"], x["status"], x["progress"]) for x in day] == [("SAM RIDER", "Declined", "NO VAN FREE")]
+    assert c.get(f"/api/facility/schedule?day={on + timedelta(days=3)}", headers=me).json()["items"] == []
+
+    # A broker's trip at the same door is the broker's, not the facility's.
+    add_line(co, co["payer"], "FL")
+    bd = on + timedelta(days=5)
+    bt = c.post("/api/trips", headers=h, json={"passenger": "BROKER RIDER", "tripdate": str(bd), "payer": "broker", "brokerid": co["payer"],
+                                             "legs": [{"pickupat": f"{bd}T11:00:00", "pickupplace": here, "dropoffplace": home}]})
+    assert bt.status_code == 200, bt.text
+    assert c.get(f"/api/facility/schedule?day={bd}", headers=me).json()["items"] == []
+    assert c.get(f"/api/facility/trips/{bt.json()['recordid']}/cancel", headers=me).status_code == 404
+
+    # Ready For Pickup on today's will-call leaving the facility, then the facility cancels another trip.
+    with co["db"].connect() as conn:
+        today = localnow(dsp.zone(conn, co["acct"])).date()
+    wc = c.post("/api/trips", headers=h, json={"passenger": "WILL RIDER", "tripdate": str(today), "legs": [
+        {"pickupat": f"{today}T00:05:00", "pickupplace": home, "dropoffplace": here, "driverid": co["driver"], "vehicleid": co["vehicle"]},
+        {"pickupat": None, "pickupplace": here, "dropoffplace": home, "responsibility": "provider"}]})
+    assert wc.status_code == 200, wc.text
+    row_ = next(x for x in c.get(f"/api/facility/schedule?day={today}", headers=me).json()["items"] if x["status"] == "Waiting For Call")
+    assert row_["canready"] and row_["direction"] == "From Facility"
+    assert c.post(f"/api/facility/legs/{row_['id']}/ready", headers=me).status_code == 200, "ready"
+    with co["db"].connect() as conn:
+        leg = conn.execute(text("SELECT pickupat, activationsource FROM triplegs WHERE recordid = :l"), {"l": row_["id"]}).mappings().one()
+    assert leg["pickupat"] is not None and leg["activationsource"] == "facility"
+    tid = booked.json()["recordid"]
+    assert c.get(f"/api/facility/trips/{tid}/cancel", headers=me).json() == {"charge": 0.0}
+    assert c.post(f"/api/facility/trips/{tid}/cancel", headers=me, json={"charge": 0}).status_code == 200
+    with co["db"].connect() as conn:
+        assert conn.execute(text("SELECT cancelreason FROM trips WHERE recordid = :t"), {"t": tid}).scalar() == "facility"
+
+    # Refused for the office's reasons, told in the facility's terms; a request gone stale cannot be accepted.
+    late = c.post("/api/facility/requests", headers=me, json={**ask, "passenger": "Late Rider", "tripdate": str(bd), "time": "11:00"})
+    assert late.status_code == 409 and late.json()["detail"].startswith("Not sent.") and "On Call" not in late.text, late.text
+    stale = c.post("/api/facility/requests", headers=me, json={**ask, "passenger": "Old Rider", "tripdate": str(on + timedelta(days=7))}).json()
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE triprequests SET pickupat = '2020-01-01 09:00:00' WHERE recordid = :r"), {"r": stale["recordid"]})
+    gone = next(x for x in c.get("/api/dispatch/requests", headers=h).json()["items"] if x["recordid"] == stale["recordid"])
+    assert gone["check"] == "The pickup time has passed. Decline it."
+    assert c.post(f"/api/dispatch/requests/{stale['recordid']}/accept", headers=h).status_code == 409
+
+    # A closed login stops at once.
+    assert c.post(f"/api/facility-logins/{login['recordid']}/close", headers=h).status_code == 200
+    assert c.get("/api/facility/me", headers=me).status_code == 401
+
+
+def test_6aj_without_dot_and_cdl_compliance_the_dot_rules_are_left_out_and_dot_vehicles_held(make):
+    """DOT & CDL Compliance is a paid add-on. Without it no FMCSA rule is listed for the company,
+    the driver or the vehicle, the DOT screens refuse, and a vehicle DOT rules reach cannot be
+    dispatched - it is not treated as if nothing were owed on it. A van stays as it was, a driver
+    barred from safety-sensitive work stays barred, and turning it on brings the rules back."""
+    from app import facts as factset, rules, tripcheck
+    co = make()
+    c, h, acct = co["client"], co["h"], co["acct"]
+    bus = new_vehicle(co, "BUS26", seats=20, gvwr=26001, forcompensation=True)
+    with co["db"].begin() as conn:
+        conn.execute(text("INSERT INTO companyanswers (accountid, code, answer, updated) "
+                          "VALUES (:a, 'INTERSTATE', 1, NOW())"), {"a": acct})
+        conn.execute(text("UPDATE drivers SET operation = 'cdl' WHERE recordid = :d"),
+                     {"d": co["driver"]})
+
+    def lists(on):
+        with co["db"].begin() as conn:
+            conn.execute(text("UPDATE accounts SET dotmodule = :o WHERE recordid = :a"),
+                         {"o": int(on), "a": acct})
+            company = factset.assemble(conn, acct)["facts"]
+            driver = factset.assemble(conn, acct, co["driver"], bus)["facts"]
+            vfacts = factset.assemble(conn, acct, None, bus)["facts"]
+            return ({r["code"] for r in rules.for_company(conn, acct, company)},
+                    {r["code"] for r in rules.for_driver(conn, acct, co["driver"], driver)},
+                    rules.for_vehicle(conn, acct, bus, vfacts),
+                    tripcheck.vehicle_blockers(conn, acct, bus, None, datetime.now()),
+                    tripcheck.vehicle_blockers(conn, acct, co["vehicle"], None, datetime.now()))
+
+    company, driver, vehicle, busstops, vanstops = lists(False)
+    assert not company & {"USDOT_AUTHORITY", "DER_DESIGNATION", "CLEARINGHOUSE_REGISTRATION"}
+    assert not driver & {"MEDICAL_CERT", "ROAD_TEST", "CLEARINGHOUSE", "MVR_ANNUAL"}
+    assert "DRIVER_LICENSE" in driver and "DA_PROHIBITION" in driver
+    assert not {r["code"] for r in vehicle} & {"DOT_ANNUAL_INSPECTION", "MAINTENANCE_RECORDS"}
+    held = [b for b in busstops if b["code"] == rules.DOT_MODULE]
+    assert held and held[0]["enforceable"] and "DOT & CDL Compliance" in held[0]["reason"], busstops
+    assert not any(b["code"] == rules.DOT_MODULE for b in vanstops), vanstops
+    # The hold is a note on the vehicle's page, not a row among its requirements.
+    assert "can't be dispatched until DOT & CDL Compliance" in c.get(f"/api/vehicles/{bus}", headers=h).json()["dothold"]
+    assert c.get(f"/api/vehicles/{co['vehicle']}", headers=h).json()["dothold"] is None
+    assert not any(i["code"] == rules.DOT_MODULE
+                   for i in c.get(f"/api/vehicles/{bus}/requirements", headers=h).json()["items"])
+    # The DOT screens refuse, and the Operations tab does not ask FMCSA's MIS question.
+    assert c.get("/api/company/random-pool", headers=h).status_code == 403
+    assert c.get("/api/company/mis-report", headers=h).status_code == 403
+    assert "MIS_REQUESTED" not in {q["code"] for q in c.get("/api/company/questions", headers=h).json()["questions"]}
+    assert c.get("/api/auth/me", headers=h).json()["dotmodule"] is False
+    # Billing prices it on the drivers whose job is driving a commercial vehicle.
+    bill = c.get("/api/billing", headers=h).json()["dot"]
+    assert bill == {**bill, "on": False, "drivers": 1, "monthly": 49}
+
+    # TripProof staff switch it on, not the customer. Everything comes back and the bus is no
+    # longer held by the module.
+    from app.cli import create_admin
+    assert c.put(f"/api/admin/accounts/{acct}/dot-module", headers=h, json={"on": True}).status_code == 403
+    assert c.put("/api/billing/dot-module", headers=h, json={"on": True}).status_code in (404, 405)
+    staff = f"staff-{co['tag']}@tripproof.test"
+    create_admin(staff, "Staff", PASSWORD, "superadmin")
+    sh = login(c, staff)
+    assert c.put(f"/api/admin/accounts/{acct}/dot-module", headers=sh, json={"on": True}).status_code == 200
+    assert c.get(f"/api/admin/accounts/{acct}", headers=sh).json()["dot"]["on"] is True
+    # And from the customer dialog's Save, which is where staff set it.
+    assert c.patch(f"/api/admin/accounts/{acct}", headers=sh, json={"dotmodule": False}).status_code == 200
+    assert c.get("/api/billing", headers=h).json()["dot"]["on"] is False
+    assert c.patch(f"/api/admin/accounts/{acct}", headers=sh, json={"dotmodule": True}).status_code == 200
+    assert c.get("/api/billing", headers=h).json()["dot"]["on"] is True
+    company, driver, vehicle, busstops, _ = lists(True)
+    assert {"USDOT_AUTHORITY", "DER_DESIGNATION"} <= company
+    assert {"MEDICAL_CERT", "ROAD_TEST"} <= driver
+    assert not any(r["code"] == rules.DOT_MODULE for r in vehicle)
+    assert c.get("/api/company/random-pool", headers=h).status_code == 200
+    # DOT & CDL Setup for a driver: what they operate and the endorsements, on their own endpoint,
+    # and the whole-driver save no longer overwrites them when it leaves them out.
+    d = co["driver"]
+    assert c.put(f"/api/drivers/{d}/dot", headers=h, json={"operation": "cdlheavy", "endorsementsneeded": "s, p"}).status_code == 200
+    got = c.get(f"/api/drivers/{d}/dot", headers=h).json()
+    assert got["operation"] == "cdlheavy" and got["endorsementsneeded"] == "PS"
+    rec = c.get(f"/api/drivers/{d}", headers=h).json()
+    body = {k: rec.get(k) for k in ("firstname", "lastname", "phone", "state")}
+    assert c.put(f"/api/drivers/{d}", headers=h, json=body).status_code == 200
+    got = c.get(f"/api/drivers/{d}/dot", headers=h).json()
+    assert got["operation"] == "cdlheavy" and got["endorsementsneeded"] == "PS"
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE accounts SET dotmodule = 0 WHERE recordid = :a"), {"a": acct})
+    assert c.get(f"/api/drivers/{d}/dot", headers=h).status_code == 403
+    with co["db"].begin() as conn:
+        conn.execute(text("UPDATE accounts SET dotmodule = 1 WHERE recordid = :a"), {"a": acct})
+    from app import plans
+    assert [plans.dot_fee(n) for n in (1, 5, 10, 20, 30)] == [49, 49, 99, 199, 299]
+
+
+def test_6ak_one_facility_person_at_two_companies_switches_between_them(make):
+    """A facility coordinator booking with two transportation companies on TripProof: each company
+    invites its own login, one password covers both, sign-in opens one, and the header switch moves
+    to the other - each company's schedule only ever its own. Another person's login is not reachable."""
+    def company(email):
+        co = make()
+        c, h = co["client"], co["h"]
+        place = c.post("/api/places", headers=h, json={"name": "SHARED DIALYSIS", "address": "7 MAIN ST",
+                       "city": "PORT RICHEY", "state": "FL", "zip": "34668"}).json()["recordid"]
+        assert c.put(f"/api/places/{place}/portal", headers=h, json={"portal": True}).status_code == 200
+        assert c.post(f"/api/places/{place}/logins", headers=h, json={"name": "Kay Coordinator", "email": email}).status_code == 200
+        login = c.get(f"/api/places/{place}/portal", headers=h).json()["logins"][0]
+        link = c.post(f"/api/facility-logins/{login['recordid']}/invite", headers=h).json()["link"]
+        return co, login["recordid"], link.split("token=")[1]
+    email = f"kay-{uuid.uuid4().hex[:6]}@dialysis.test"
+    one, l1, t1 = company(email)
+    two, l2, _ = company(email.upper())
+    c = one["client"]
+    # The first company's invitation sets the password for both logins.
+    assert c.post("/api/facility/password", json={"token": t1, "password": "Shared-Pass-2026"}).status_code == 200
+    me = {"Authorization": "Bearer " + c.post("/api/facility/signin", json={"email": email, "password": "Shared-Pass-2026"}).json()["token"]}
+    got = c.get("/api/facility/me", headers=me).json()
+    assert {p["id"] for p in got["providers"]} == {l1, l2}
+    other = l2 if got["id"] == l1 else l1
+    switched = c.post("/api/facility/switch", headers=me, json={"id": other})
+    assert switched.status_code == 200
+    me2 = {"Authorization": "Bearer " + switched.json()["token"]}
+    assert c.get("/api/facility/me", headers=me2).json()["id"] == other
+    assert c.get("/api/facility/me", headers=me).status_code == 401          # the login left is signed out
+    # Somebody else's login is not a provider of this person's.
+    _, stranger, _ = company(f"someone-{uuid.uuid4().hex[:6]}@else.test")
+    assert c.post("/api/facility/switch", headers=me2, json={"id": stranger}).status_code == 404
+
+
+def test_6al_filing_a_document_in_the_office_closes_the_request_sent_to_the_driver(make):
+    """Asked the driver for a CPR card, then filed one in the office before they sent it: the
+    request is answered. It leaves the outstanding list and its link no longer works."""
+    co = make()
+    c, h, d = co["client"], co["h"], co["driver"]
+    sent = c.post(f"/api/drivers/{d}/upload-requests", headers=h, json={"code": "CPR"})
+    assert sent.status_code == 200, sent.text
+    token = sent.json()["link"].rsplit("/", 1)[-1].split("token=")[-1]
+    assert [r["credentialcode"] for r in c.get(f"/api/drivers/{d}/upload-requests", headers=h).json()["requests"]] == ["CPR"]
+    filed = c.post(f"/api/drivers/{d}/requirements/CPR/document", headers=h,
+                   data={"effectiveon": "2026-11-01"},
+                   files={"file": ("cpr.pdf", b"%PDF-1.4 cpr card", "application/pdf")})
+    assert filed.status_code == 200, filed.text
+    assert c.get(f"/api/drivers/{d}/upload-requests", headers=h).json()["requests"] == []
+    with co["db"].begin() as conn:
+        held = conn.execute(text("SELECT cancelledon FROM uploadrequests WHERE token = :t"), {"t": token}).scalar()
+    assert held is not None
+
+
+def test_6am_a_document_filed_after_the_request_outranks_waiting_on_the_driver(make):
+    """A request still open from before (filed by a path that did not close it): the record filed
+    after it answers the requirement. It reads as on file, not "asked of the driver, not back yet"."""
+    co = make()
+    c, h, d = co["client"], co["h"], co["driver"]
+    items = c.get(f"/api/drivers/{d}/requirements", headers=h).json()["items"]
+    target = next(i for i in items if i["applies"] is True and (i.get("evidencesource") or "").startswith("credential:")
+                  and i["status"] in ("pending", "failed", "overdue"))
+    which = target["evidencesource"].split(":", 1)[1]
+    assert c.post(f"/api/drivers/{d}/upload-requests", headers=h, json={"code": which}).status_code == 200
+    asked = next(i for i in c.get(f"/api/drivers/{d}/requirements", headers=h).json()["items"] if i["code"] == target["code"])
+    assert asked["status"] == "ordered", asked
+    with co["db"].begin() as conn:
+        conn.execute(text("""INSERT INTO credentials (recordid, accountid, credentialtypeid, subject, subjectid,
+                                 issuedon, added)
+                             SELECT UUID(), :a, recordid, 'driver', :d, CURDATE(), UTC_TIMESTAMP() + INTERVAL 1 SECOND
+                             FROM credentialtypes WHERE code = :c"""), {"a": co["acct"], "d": d, "c": which})
+    item = next(i for i in c.get(f"/api/drivers/{d}/requirements", headers=h).json()["items"] if i["code"] == target["code"])
+    assert item["status"] != "ordered" and "not back yet" not in (item.get("why") or ""), item

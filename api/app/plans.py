@@ -45,3 +45,12 @@ def check_no_overlap(conn: Connection, minv: int, maxv: int | None, active: bool
     """, id=planid, minv=minv, maxv=maxv)
     if clash:
         raise HTTPException(409, f"That vehicle range overlaps the active “{clash['name']}” plan")
+
+
+# DOT & CDL Compliance, the add-on: a base price covering the first few active DOT-regulated
+# drivers, and a price for each one past them.
+DOT_BASE, DOT_INCLUDED, DOT_EACH = 49, 5, 10
+
+
+def dot_fee(drivers: int) -> int:
+    return DOT_BASE + DOT_EACH * max(0, drivers - DOT_INCLUDED)

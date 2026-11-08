@@ -1,0 +1,92 @@
+{
+  "report_title": "TripProof Federal + Medicaid import correction review",
+  "date": "2026-11-07",
+  "original_import_report_provided_by_user": {
+    "requirements": 73,
+    "ready": 23,
+    "waiting": 47,
+    "refused": 3,
+    "current_rules_no_counterpart": 36
+  },
+  "corrections": [
+    {
+      "id": "FED-CO-018",
+      "field": "citation_text",
+      "old_value": "A contract between the covered entity and a business associate must establish",
+      "new_value": "A contract between the covered entity and a business associate must:",
+      "official_reference": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-E/section-164.504"
+    },
+    {
+      "id": "FED-CO-018",
+      "field": "citation_url",
+      "old_value": "https://www.ecfr.gov/current/title-45/section-164.504",
+      "new_value": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-E/section-164.504",
+      "official_reference": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-E/section-164.504"
+    },
+    {
+      "id": "FED-CO-023",
+      "field": "citation_url",
+      "old_value": "https://www.ecfr.gov/current/title-49/section-387.33",
+      "new_value": "https://www.ecfr.gov/current/title-49/subtitle-B/chapter-III/subchapter-B/part-387/subpart-B/section-387.33T",
+      "official_reference": "https://www.ecfr.gov/current/title-49/subtitle-B/chapter-III/subchapter-B/part-387/subpart-B/section-387.33T"
+    },
+    {
+      "id": "FED-CO-024",
+      "field": "citation_url",
+      "old_value": "https://www.ecfr.gov/current/title-49/section-390.19",
+      "new_value": "https://www.ecfr.gov/current/title-49/subtitle-B/chapter-III/subchapter-B/part-390/subpart-B/section-390.19T",
+      "official_reference": "https://www.ecfr.gov/current/title-49/subtitle-B/chapter-III/subchapter-B/part-390/subpart-B/section-390.19T"
+    }
+  ],
+  "refused_ids_addressed": [
+    "FED-CO-018",
+    "FED-CO-023",
+    "FED-CO-024"
+  ],
+  "json_schema_validation": {
+    "status": "PASS",
+    "schema": "tripproof-requirements/1",
+    "file_errors": [],
+    "total_rules": 73,
+    "unique_ids": 73,
+    "medicaid_records_unchanged": 13,
+    "federal_records": 60
+  },
+  "citation_check_status": "Only the three reported refused citations were checked against official eCFR text. Other citations and effective_from dates are not re-verified.",
+  "predicted_reimport_distribution_unverified": {
+    "ready": 23,
+    "waiting": 50,
+    "refused": 0,
+    "explanation": "Assumes the three refused records move to waiting due to existing needs. Only actual TripProof import can establish statuses."
+  },
+  "unresolved_items": [
+    {
+      "group": "waiting",
+      "count_from_user_report": 47,
+      "next_step": "Implement missing facts/evidence types; do not remove needs until behavior is truly implemented."
+    },
+    {
+      "group": "existing_rules_no_counterpart",
+      "count_from_user_report": 36,
+      "next_step": "Keep existing rules; compare exact existing IDs, qualifications and legal sources, marking overlap, supplemental contract/company rule, missing federal rule, or obsolete rule."
+    },
+    {
+      "group": "federal_38733T",
+      "next_step": "Verify current insurance policy amount, coverage period and applicable exceptions; credential existence alone is insufficient."
+    },
+    {
+      "group": "federal_39019T",
+      "next_step": "Verify USDOT registration status and filing schedule; FMCSA temporarily suspended biennial-update enforcement for dates after 2026-06-01, not the underlying initial identification requirement."
+    },
+    {
+      "group": "HIPAA_164504",
+      "next_step": "Determine whether provider is covered entity or business associate and whether BAA is needed for a particular counterparty."
+    }
+  ],
+  "official_sources": {
+    "FED-CO-018": "https://www.ecfr.gov/current/title-45/subtitle-A/subchapter-C/part-164/subpart-E/section-164.504",
+    "FED-CO-023": "https://www.ecfr.gov/current/title-49/subtitle-B/chapter-III/subchapter-B/part-387/subpart-B/section-387.33T",
+    "FED-CO-024": "https://www.ecfr.gov/current/title-49/subtitle-B/chapter-III/subchapter-B/part-390/subpart-B/section-390.19T"
+  },
+  "non_regression": "No IDs, qualifications, conditions, evidence, validity, due, on_failure or effective dates changed. No rule was added, removed, or retired."
+}

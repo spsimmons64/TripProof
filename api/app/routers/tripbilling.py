@@ -308,7 +308,12 @@ def queue(state: str = "ready", payer: str | None = None, q: str | None = None, 
         WHERE b.accountid = :a GROUP BY b.recordid, b.number, p.name ORDER BY b.number
     """, a=acct)
     month = utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    received = row(conn, "SELECT COALESCE(SUM(amount), 0) AS n FROM billpayments WHERE accountid = :a AND denied = 0 AND voidedon IS NULL AND recordedon >= :m", a=acct, m=month)["n"]
+    # Only payments on trips still on the books - the same trips the Paid list shows - so the tile
+    # and the list beneath it cannot disagree.
+    received = row(conn, """SELECT COALESCE(SUM(p.amount), 0) AS n FROM billpayments p
+                            JOIN trips t ON t.recordid = p.tripid AND t.deleted IS NULL
+                            WHERE p.accountid = :a AND p.denied = 0 AND p.voidedon IS NULL
+                              AND p.recordedon >= :m""", a=acct, m=month)["n"]
     items = {"ready": ready, "submitted": submitted, "exceptions": excepted, "paid": paid, "outstanding": outstanding}[state]
     payers = sorted({t["payer"] for t in ready + submitted + excepted + paid})
     if payer:

@@ -24,7 +24,7 @@ def configured() -> bool:
 
 
 def send(to: str, subject: str, html: str, text: str,
-         attachments: list[tuple[str, bytes, str]] | None = None) -> bool:
+         attachments: list[tuple[str, bytes, str]] | None = None, reply_to: str | None = None) -> bool:
     """Send one message. Returns False (and logs why) instead of raising, so a mail outage never
     breaks the action that triggered it.
 
@@ -37,6 +37,8 @@ def send(to: str, subject: str, html: str, text: str,
     msg["From"] = settings.smtp_from
     msg["To"] = to
     msg["Subject"] = subject
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg["Date"] = formatdate(localtime=False)
     msg["Message-ID"] = make_msgid(domain=settings.smtp_from.rsplit("@", 1)[-1].rstrip(">") or None)
     msg.set_content(text)

@@ -4,7 +4,7 @@ import { Mail, Pencil, Plus, Rocket } from 'lucide-react'
 import { launchAccount } from '../lib/launch.js'
 import { api } from '../lib/api.js'
 import { Email } from '../components/Contact.jsx'
-import { count, tzDate, tzDateTime, money0 } from '../lib/format.js'
+import { count, money, tzDate, tzDateTime, money0 } from '../lib/format.js'
 import { formatEin, formatPhone } from '../lib/masks.js'
 import TimeZoneSelect from '../components/TimeZoneSelect.jsx'
 import { Badge, Loading, Tile, useLoad } from '../components/ui.jsx'
@@ -114,6 +114,20 @@ export default function CustomerDetail() {
           </table></div>
           {!a.emailconfigured && <div className="small muted" style={{ marginTop: 8 }}>Email isn’t set up on this server - invitation links are shown to you to pass on.</div>}
         </div>
+      </div>
+
+      <div className="card">
+        <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
+          <h2 style={{ margin: 0 }}>DOT &amp; CDL Compliance</h2>
+        </div>
+        <div className="tablewrap"><table>
+          <thead><tr><th>Status</th><th>Active DOT Drivers</th><th className="num">Monthly</th></tr></thead>
+          <tbody><tr>
+            <td>{a.dot.on ? `On since ${tzDate(a.dot.since)}` : 'Off'}</td>
+            <td>{a.dot.drivers}</td>
+            <td className="num">{a.dot.on ? money(a.dot.monthly) : '-'}</td>
+          </tr></tbody>
+        </table></div>
       </div>
 
       <div className="card">

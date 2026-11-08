@@ -109,6 +109,11 @@ def set_on_call(body: OnCallIn, request: Request, user: dict = Depends(editor),
                       "WHERE recordid = :d AND accountid = :a", d=o.driverid, a=acct)
         if not d:
             raise HTTPException(404, "No such driver")
+        # A driver who may not drive any trip is not on call for any: the office would believe the
+        # will-calls covered, and the driver's app would refuse every one of them.
+        stop = _stopped(conn, acct, o.driverid)
+        if stop:
+            raise HTTPException(409, f"{d['n'].title()} is not eligible to drive today.")
         if not sms.number(d["phone"]):
             raise HTTPException(409, f"{d['n'].title()} has no mobile number on file, so cannot be texted the "
                                      f"will-calls. Add it to their driver record first.")
@@ -412,7 +417,8 @@ def _stopped(conn: Connection, acct: str, driverid: str) -> str | None:
     from app import tripcheck
     said = tripcheck.check(conn, acct, driverid, None, at=utcnow(), record=False)
     hit = next((b for b in said["blockers"] if b["code"] in STOPS_EVERY_TRIP and b.get("enforceable")), None)
-    return (hit.get("reason") or hit.get("name") or "Disqualified").rstrip(".") if hit else None
+    # Whether, never why: the reason is confidential and is on the driver's own file.
+    return dispatch.NOT_ELIGIBLE if hit else None
 
 
 @router.get("/dispatch/crew")
@@ -452,7 +458,7 @@ def set_crew(body: CrewIn, request: Request, user: dict = Depends(editor), conn:
         why = _stopped(conn, acct, d)
         if why:
             who = row(conn, "SELECT TRIM(CONCAT(firstname, ' ', lastname)) AS n FROM drivers WHERE recordid = :d AND accountid = :a", d=d, a=acct)
-            raise HTTPException(409, f"{((who or {}).get('n') or 'That driver').title()} may not drive: {why}.")
+            raise HTTPException(409, f"{((who or {}).get('n') or 'That driver').title()} is not eligible to drive today.")
     held = rows(conn, "SELECT recordid, driverid FROM dayshifts WHERE accountid = :a AND workday = :w "
                       "AND driverid IS NOT NULL", a=acct, w=body.day)
     for s in held:

@@ -35,6 +35,11 @@ def _clean(v: str | None, n: int) -> str | None:
     return " ".join((v or "").split())[:n] or None
 
 
+def _welcome(to: str) -> None:
+    subject, html, text = emails.tester_welcome()
+    mailer.send(to, subject, html, text, reply_to=settings.tester_notify)
+
+
 def _tell(to: str, s: dict) -> None:
     rows_ = "".join(emails.p(f"<strong>{k}:</strong> {emails.escape(v)}") for k, v in (
         ("Company", s["company"]), ("Name", s["name"]), ("Email", s["email"]), ("Phone", s["phone"]), ("State", s["state"]),
@@ -66,6 +71,7 @@ def sign_up(body: SignupIn, request: Request, tasks: BackgroundTasks, conn: Conn
         i=newid(), ip=who, now=utcnow(), **s)
     saved(conn)
     tasks.add_task(_tell, settings.tester_notify, s)
+    tasks.add_task(_welcome, s["email"])
     return {"ok": True}
 
 

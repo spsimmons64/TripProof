@@ -46,6 +46,10 @@ def _onboarding(items: list[dict]) -> dict:
             + [i["name"] for i in hr if i["applies"] is None]}
 
 
+# Rows that bar the driver outright, whose reason is the point.
+BARS = ("DA_PROHIBITION",)
+
+
 def _program(key: str, items: list[dict]) -> dict:
     """Whether the driver is qualified for one program - each row judged on its own sources for
     that program, never on another program's."""
@@ -65,14 +69,26 @@ def _program(key: str, items: list[dict]) -> dict:
         status = "Review Required"
     else:
         status = "Qualified"
+    # A bar on the driver says what it is, not just which rule it is.
+    named = lambda i: f'{i["name"]}: {i["why"]}' if i["code"] in BARS and i.get("why") else i["name"]  # noqa: E731
     return {"program": key, "label": PROGRAMS.get(key, key), "status": status,
-            "reasons": [i["name"] for i in failing][:4]
+            "reasons": [named(i) for i in failing][:4]
             + [f'{i["name"]} - waiting to be read' for i in waiting][:4]
             + [f'{i["name"]} - applicability undecided' for i in undecided][:4]}
 
 
+# What a driver has to get through before the hiring decision. Until they are hired, the overview
+# judges only these: training and paperwork owed once hired would read as reasons a pending driver
+# is "Not Qualified" when nothing about them is late. Pending first, then hired.
+BEFORE_HIRE = ("prehire", "predrive")
+ONBOOKS = ("hired", "inactive")
+
+
 def overview(driver: dict, items: list[dict], facts: dict, barred: dict | None = None) -> dict:
     """The driver's four answers, each kept to its own scope."""
+    hired = bool(driver.get("hiredon")) or driver.get("status") in ONBOOKS
+    if not hired:
+        items = [i for i in items if (i.get("duestage") or "prehire") in BEFORE_HIRE]
     programs = list(facts.get("company.programs") or [])
     if not programs:
         # No programs recorded on the operating profile: what the company has said about itself
@@ -81,7 +97,8 @@ def overview(driver: dict, items: list[dict], facts: dict, barred: dict | None =
     judged = [_program(p, items) for p in programs]
     if barred:
         # A disqualifying driving record stops every trip, so it stops every program.
-        judged = [{**p, "status": "Not Qualified", "reasons": [barred["name"], *p["reasons"]]} for p in judged]
+        said = f'{barred["name"]}: {barred["why"]}' if barred.get("why") else barred["name"]
+        judged = [{**p, "status": "Not Qualified", "reasons": [said, *p["reasons"]]} for p in judged]
     return {"employment": EMPLOYMENT.get(driver.get("status"), driver.get("status") or "-"),
-            "onboarding": _onboarding(items),
+            "onboarding": _onboarding(items) if hired else {"status": "Begins When Hired", "outstanding": []},
             "programs": judged}

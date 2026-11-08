@@ -34,7 +34,9 @@ export function SingleDocumentDialog({ title, brief, err, notice, row, columns =
                                        unread = false, actions, emptyActions, onClose,
                                        subject = 'Driver' }) {
   return (
-    <Modal title={title} onClose={onClose} brief={brief} width={720}
+    // Wider when the record carries columns of its own - a result, a source - so the table fits
+    // without scrolling sideways. The width the other detail dialogs use.
+    <Modal title={title} onClose={onClose} brief={brief} width={columns.length ? 900 : 720}
       footer={row ? <>
         <button type="button" className="primary" onClick={onView}>
           <Eye size={14} /> {unread ? 'Review' : 'View'}

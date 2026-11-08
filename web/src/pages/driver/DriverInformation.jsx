@@ -10,7 +10,6 @@ import { date } from '../../lib/format.js'
 import { Bubble, Loading, useLoad } from '../../components/ui.jsx'
 import { Modal } from '../../admin/common.jsx'
 import Pager, { PAGE_SIZES } from '../../components/Pager.jsx'
-import { useUser } from '../../App.jsx'
 import SignatureBlock from '../../components/UserSignature.jsx'
 import { ItemPanel, PanelsDialog, ReadingViewer, SingleDocumentDialog, docStanding } from '../../components/RequirementDialogs.jsx'
 import DocumentViewer, { DocumentPane } from '../../components/DocumentViewer.jsx'
@@ -21,18 +20,6 @@ import LicenseDialog from '../../components/LicenseDialog.jsx'
 import TestDialog from '../../components/TestDialog.jsx'
 import WithdrawDialog, { WithdrawnDialog } from '../../components/WithdrawDialog.jsx'
 import { Email, Phone } from '../../components/Contact.jsx'
-
-const LEVEL_OF = { none: 'noncmv', cmv: 'cmv', cdl: 'cdl', heavy: 'cdlheavy' }
-
-const TICKED = {
-  noncmv: { cmv: false, cdl: false, heavy: false },
-  cmv: { cmv: true, cdl: false, heavy: false },
-  cdl: { cmv: true, cdl: true, heavy: false },
-  cdlheavy: { cmv: true, cdl: true, heavy: true },
-}
-
-const levelFrom = (o) => (o.heavy ? LEVEL_OF.heavy : o.cdl ? LEVEL_OF.cdl
-  : o.cmv ? LEVEL_OF.cmv : LEVEL_OF.none)
 
 // Something went in. It is a small thing to say, so it is said small: a mark, a word, and a way
 // out - not a dialog dressed as a decision.
@@ -61,9 +48,7 @@ export function DriverInformation({ record, onSaved }) {
     emergencyname: record?.emergencyname || '', emergencyphone: record?.emergencyphone || '',
     // Dispatch knows the driver by the driver ID unless somebody says otherwise.
     externalid: String(record?.externalid || record?.drivernumber || ''), hiredon: record?.hiredon || '',
-    endorsementsneeded: record?.endorsementsneeded || '',
     terminatedon: record?.terminatedon || '',
-    operation: record?.operation || 'noncmv',
     engagement: record?.engagement || '',
     licensenumber: record?.licensenumber || '', licensestate: record?.licensestate || '',
     licenseclass: record?.licenseclass || '', endorsements: record?.endorsements || '',
@@ -74,16 +59,6 @@ export function DriverInformation({ record, onSaved }) {
   if (!record) return <div className="card qualcard"><h3>Driver Information</h3></div>
 
   const set = (k) => (e) => { setSaved(false); setF({ ...f, [k]: e.target.value }) }
-
-  const ticks = TICKED[f.operation] || TICKED.noncmv
-  // Ticking a box turns on everything it implies; clearing one turns off everything that implies it.
-  const operate = (which, on) => {
-    const next = on
-      ? { cmv: true, cdl: which !== 'cmv' , heavy: which === 'heavy' }
-      : { cmv: which !== 'cmv' && ticks.cmv, cdl: which === 'heavy' && ticks.cdl, heavy: false }
-    setSaved(false)
-    setF({ ...f, operation: levelFrom(next) })
-  }
 
   const field = (k, label, node, span) => (
     <label className={`field${span ? ` span-${span}` : ''}`}>{label}
@@ -174,36 +149,6 @@ export function DriverInformation({ record, onSaved }) {
             <label className="field span-1">Terminated
               <input type="date" value={f.terminatedon || ''} disabled /></label>
           </div>
-          <hr className="formrule span-6" />
-          {/* What this driver is being qualified to operate - not what the yard holds today. A
-              company buying a bus next quarter has to be able to qualify drivers for it now.
-
-              One ordered answer rather than three boxes, because the thresholds are nested: a CDL
-              vehicle is always a commercial motor vehicle, and 26,001 lb always needs a CDL. Boxes
-              could be ticked into states that cannot exist. */}
-          <label className="field check span-6">
-            <input type="checkbox" checked={ticks.cmv}
-              onChange={(e) => operate('cmv', e.target.checked)} />
-            Driver will be operating Commercial Motor Vehicles in accordance with FMCSA 49 CFR §390.5
-          </label>
-          <label className="field check span-6">
-            <input type="checkbox" checked={ticks.cdl}
-              onChange={(e) => operate('cdl', e.target.checked)} />
-            Driver will be operating a vehicle that requires a CDL (49 CFR 383.91)
-          </label>
-          <label className="field check span-6">
-            <input type="checkbox" checked={ticks.heavy}
-              onChange={(e) => operate('heavy', e.target.checked)} />
-            Driver will be operating a vehicle rated 26,001 lb or more
-          </label>
-          {/* What the work requires, as against what the license carries. An endorsement nobody
-              has stated is an endorsement nothing can check for, and the first anybody hears of a
-              missing P is the day somebody puts the driver in a bus. */}
-          <label className="field span-4">Endorsements This Driver Needs
-            <input value={f.endorsementsneeded} placeholder="P, S"
-              onChange={(e) => { setSaved(false)
-                setF({ ...f, endorsementsneeded: e.target.value.toUpperCase() }) }} />
-          </label>
           <hr className="formrule span-6" />
           <TransitAssignments id={record.recordid} onChanged={onSaved} />
         </div>
